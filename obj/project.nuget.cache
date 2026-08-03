@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "dgSpecHash": "bahLg/VFvwM=",
+  "success": true,
+  "projectFilePath": "F:\\LAPORAN BULANAN\\CKPN\\CKPNLibrary_ExcelDNA\\CKPNLibrary.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\Administrator\\.nuget\\packages\\exceldna.addin\\1.8.0\\exceldna.addin.1.8.0.nupkg.sha512",
+    "C:\\Users\\Administrator\\.nuget\\packages\\exceldna.integration\\1.8.0\\exceldna.integration.1.8.0.nupkg.sha512",
+    "C:\\Users\\Administrator\\.nuget\\packages\\microsoft.office.interop.excel\\15.0.4795.1000\\microsoft.office.interop.excel.15.0.4795.1000.nupkg.sha512"
+  ],
+  "logs": []
+}

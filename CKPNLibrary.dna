@@ -1,0 +1,3 @@
+<DnaLibrary Name="CKPN PSAK 414" RuntimeVersion="v4.0" xmlns="http://schemas.excel-dna.net/addin/2020/07/dnalibrary">
+  <ExternalLibrary Path="CKPNLibrary.dll" LoadFromBytes="true" Pack="true" />
+</DnaLibrary>
