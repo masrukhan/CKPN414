@@ -26,8 +26,8 @@ namespace CKPNLibrary.Modules
         private const int DataSourceFirstRow = 7;
         private const int DataSourceLastRow  = 12;   // 6 segmen
 
-        private const int DashARowFirst = 9;   // Section A (PD Net Flow) data start
-        private const int DashCRowFirst = 19;  // Section C (PD Migration) data start
+        private const int DashARowFirst = 10;   // Section A (PD Net Flow) data start
+        private const int DashCRowFirst = 21;  // Section C (PD Migration) data start
 
         public DashboardBuilder(Excel.Application app)
         {
@@ -48,7 +48,11 @@ namespace CKPNLibrary.Modules
             int nSegmen = DataSourceLastRow - DataSourceFirstRow + 1;
             var hasilLog = new List<string>();
 
-            const int DashDRowFirst = 49;   // Section D (PD Migration & LGD) data start
+            const int DashDRowFirst = 61;   // Section D (PD Migration & LGD) data start
+
+            double abaCkpn  = 0;   // Summary!C26 -> F9 & F20
+            double abaPpka  = 0;   // Summary!H2  -> G9 & G20
+            bool   abaFound = false;
 
             for (int i = 0; i < nSegmen; i++)
             {
@@ -92,17 +96,24 @@ namespace CKPNLibrary.Modules
                     {
                         var wsSum = (Excel.Worksheet)wbSrc.Worksheets[SheetSummary];
 
+                        if (!abaFound)
+                        {
+                            abaCkpn  = ToDouble(((Excel.Range)wsSum.Range["C26"]).Value2);
+                            abaPpka  = ToDouble(((Excel.Range)wsSum.Range["H2"]).Value2);
+                            abaFound = true;
+                        }
+
                         ((Excel.Range)wsDash.Cells[rowDashA, "C"]).Value2 = ToDouble(((Excel.Range)wsSum.Range["B6"]).Value2);
                         ((Excel.Range)wsDash.Cells[rowDashA, "D"]).Value2 = topN;
                         ((Excel.Range)wsDash.Cells[rowDashA, "E"]).Value2 = ToDouble(((Excel.Range)wsSum.Range["C6"]).Value2);
                         ((Excel.Range)wsDash.Cells[rowDashA, "F"]).Value2 = ToDouble(((Excel.Range)wsSum.Range["B7"]).Value2);
                         ((Excel.Range)wsDash.Cells[rowDashA, "G"]).Value2 = ToDouble(((Excel.Range)wsSum.Range["C7"]).Value2);
 
-                        ((Excel.Range)wsDash.Cells[rowDashC, "C"]).Value2 = ToDouble(((Excel.Range)wsSum.Range["B21"]).Value2);
+                        ((Excel.Range)wsDash.Cells[rowDashC, "C"]).Value2 = ToDouble(((Excel.Range)wsSum.Range["B13"]).Value2);
                         ((Excel.Range)wsDash.Cells[rowDashC, "D"]).Value2 = topN;
-                        ((Excel.Range)wsDash.Cells[rowDashC, "E"]).Value2 = ToDouble(((Excel.Range)wsSum.Range["C21"]).Value2);
-                        ((Excel.Range)wsDash.Cells[rowDashC, "F"]).Value2 = ToDouble(((Excel.Range)wsSum.Range["B22"]).Value2);
-                        ((Excel.Range)wsDash.Cells[rowDashC, "G"]).Value2 = ToDouble(((Excel.Range)wsSum.Range["C22"]).Value2);
+                        ((Excel.Range)wsDash.Cells[rowDashC, "E"]).Value2 = ToDouble(((Excel.Range)wsSum.Range["C13"]).Value2);
+                        ((Excel.Range)wsDash.Cells[rowDashC, "F"]).Value2 = ToDouble(((Excel.Range)wsSum.Range["B14"]).Value2);
+                        ((Excel.Range)wsDash.Cells[rowDashC, "G"]).Value2 = ToDouble(((Excel.Range)wsSum.Range["C14"]).Value2);
 
                         hasilLog.Add(segmen + ": OK (Top N=" + topN + ")");
                     }
@@ -134,7 +145,7 @@ namespace CKPNLibrary.Modules
                         for (int b = 0; b < 14; b++)
                         {
                             int rowSumber = 6 + b;    // E6..E19
-                            int rowDashE  = 61 + b;   // baris 61..74
+                            int rowDashE  = 73 + b;   // baris 61..74
                             ((Excel.Range)wsDash.Cells[rowDashE, colDashE]).Value2 =
                                 ToDouble(((Excel.Range)wsKol.Cells[rowSumber, "E"]).Value2);
                         }
@@ -154,6 +165,11 @@ namespace CKPNLibrary.Modules
                     if (wbSrc != null) try { wbSrc.Close(false); } catch { }
                 }
             }
+
+            ((Excel.Range)wsDash.Range["F9"]).Value2  = abaCkpn;   // CKPN Kolektif
+            ((Excel.Range)wsDash.Range["G9"]).Value2  = abaPpka;   // PPKA Kolektif
+            ((Excel.Range)wsDash.Range["F20"]).Value2 = abaCkpn;
+            ((Excel.Range)wsDash.Range["G20"]).Value2 = abaPpka;
 
             ((Excel.Range)wsDash.Range["C5"]).Value2 = DateTime.Now.ToOADate();
             _app.Calculate();
@@ -200,14 +216,14 @@ namespace CKPNLibrary.Modules
             ((Excel.Range)wsRiwayat.Cells[nextRow, "B"]).NumberFormat = "m/d/yyyy h:mm";
 
             // Grand Total Section A (PD Net Flow) — baris 15 di Dashboard
-            ((Excel.Range)wsRiwayat.Cells[nextRow, "C"]).Value2 = ToDouble(((Excel.Range)wsDash.Range["H15"]).Value2);
-            ((Excel.Range)wsRiwayat.Cells[nextRow, "D"]).Value2 = ToDouble(((Excel.Range)wsDash.Range["I15"]).Value2);
-            ((Excel.Range)wsRiwayat.Cells[nextRow, "E"]).Value2 = ToDouble(((Excel.Range)wsDash.Range["J15"]).Value2);
+            ((Excel.Range)wsRiwayat.Cells[nextRow, "C"]).Value2 = ToDouble(((Excel.Range)wsDash.Range["H16"]).Value2);
+            ((Excel.Range)wsRiwayat.Cells[nextRow, "D"]).Value2 = ToDouble(((Excel.Range)wsDash.Range["I16"]).Value2);
+            ((Excel.Range)wsRiwayat.Cells[nextRow, "E"]).Value2 = ToDouble(((Excel.Range)wsDash.Range["J16"]).Value2);
 
             // Grand Total Section C (PD Migration) — baris 25 di Dashboard
-            ((Excel.Range)wsRiwayat.Cells[nextRow, "F"]).Value2 = ToDouble(((Excel.Range)wsDash.Range["H25"]).Value2);
-            ((Excel.Range)wsRiwayat.Cells[nextRow, "G"]).Value2 = ToDouble(((Excel.Range)wsDash.Range["I25"]).Value2);
-            ((Excel.Range)wsRiwayat.Cells[nextRow, "H"]).Value2 = ToDouble(((Excel.Range)wsDash.Range["J25"]).Value2);
+            ((Excel.Range)wsRiwayat.Cells[nextRow, "F"]).Value2 = ToDouble(((Excel.Range)wsDash.Range["H27"]).Value2);
+            ((Excel.Range)wsRiwayat.Cells[nextRow, "G"]).Value2 = ToDouble(((Excel.Range)wsDash.Range["I27"]).Value2);
+            ((Excel.Range)wsRiwayat.Cells[nextRow, "H"]).Value2 = ToDouble(((Excel.Range)wsDash.Range["J27"]).Value2);
         }
 
         private void TulisKosong(Excel.Worksheet ws, int row)
@@ -232,7 +248,7 @@ namespace CKPNLibrary.Modules
         {
             string col = ((char)('D' + segmenIndex)).ToString();
             for (int b = 0; b < 14; b++)
-                ((Excel.Range)ws.Cells[61 + b, col]).Value2 = 0;
+                ((Excel.Range)ws.Cells[73 + b, col]).Value2 = 0;
         }
 
         private static int NextAuditLogRow(Excel.Worksheet wsLog)
