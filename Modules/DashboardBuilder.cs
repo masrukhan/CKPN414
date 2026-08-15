@@ -171,6 +171,10 @@ namespace CKPNLibrary.Modules
             ((Excel.Range)wsDash.Range["F20"]).Value2 = abaCkpn;
             ((Excel.Range)wsDash.Range["G20"]).Value2 = abaPpka;
 
+            // CONTROL PPKA per KC -> M20:M26
+            try { TarikPPKAperKC(wsData, wsDash, hasilLog); }
+            catch (Exception ex) { hasilLog.Add("PPKA per KC: gagal (" + ex.Message + ")"); }
+
             ((Excel.Range)wsDash.Range["C5"]).Value2 = DateTime.Now.ToOADate();
             _app.Calculate();
 
@@ -279,6 +283,122 @@ namespace CKPNLibrary.Modules
                 if (string.Equals(sh.Name, name, StringComparison.OrdinalIgnoreCase))
                     return sh;
             return null;
+        }
+
+        // ----------------------------------------------------------------
+        // CONTROL PPKA per KC -> Dashboard M20:M26
+        //   PPKA = jumlah satu kolom mulai baris tertentu di sheet KC pada
+        //   file sumber ('Sumber Data'!E7). Semua KC selalu diikutkan
+        //   (abaikan ruang lingkup/checkbox di Master).
+        // ----------------------------------------------------------------
+        private void TarikPPKAperKC(Excel.Worksheet wsData, Excel.Worksheet wsDash, List<string> hasilLog)
+        {
+            // Tahap 1: file indeks dari 'Sumber Data'!E7
+            string pathIndeks = ToStr(((Excel.Range)wsData.Range["E7"]).Value2);
+
+            // Mapping: baris tujuan (kol M), nama sheet KC, kolom sumber, baris awal
+            var map = new object[][]
+            {
+                new object[] { 20, "KC0500", "X",  4 },
+                new object[] { 21, "KC0600", "AV", 5 },
+                new object[] { 22, "KC0700", "AV", 5 },
+                new object[] { 23, "KC0800", "AV", 5 },
+                new object[] { 24, "KC0900", "AT", 5 },
+                new object[] { 25, "KC1000", "BB", 5 },
+                new object[] { 26, "KC1100", "BA", 5 },
+            };
+
+            if (string.IsNullOrEmpty(pathIndeks) || !System.IO.File.Exists(pathIndeks))
+            {
+                foreach (var m in map)
+                    ((Excel.Range)wsDash.Cells[(int)m[0], "M"]).Value2 = 0;
+                hasilLog.Add("PPKA per KC: path E7 kosong/tidak ditemukan -> semua 0");
+                return;
+            }
+
+            Excel.Workbook wbIndeks = null;
+            Excel.Workbook wbSrc    = null;
+            try
+            {
+                // Tahap 2: buka file indeks, ambil path KC dari Master!D14
+                wbIndeks = _app.Workbooks.Open(pathIndeks, UpdateLinks: 0, ReadOnly: true);
+
+                string pathKC = "";
+                if (ExcelHelper.SheetAda(wbIndeks, "Master"))
+                {
+                    var wsMaster = (Excel.Worksheet)wbIndeks.Worksheets["Master"];
+                    pathKC = ToStr(((Excel.Range)wsMaster.Range["D14"]).Value2);
+                }
+                else
+                {
+                    hasilLog.Add("PPKA per KC: sheet 'Master' tidak ada di file E7");
+                }
+
+                wbIndeks.Close(false); wbIndeks = null;
+
+                if (string.IsNullOrEmpty(pathKC) || !System.IO.File.Exists(pathKC))
+                {
+                    foreach (var m in map)
+                        ((Excel.Range)wsDash.Cells[(int)m[0], "M"]).Value2 = 0;
+                    hasilLog.Add("PPKA per KC: path Master!D14 kosong/tidak ditemukan (" + pathKC + ") -> semua 0");
+                    return;
+                }
+
+                // Tahap 3: buka file KC sebenarnya, jumlahkan kolom per KC
+                wbSrc = _app.Workbooks.Open(pathKC, UpdateLinks: 0, ReadOnly: true);
+
+                foreach (var m in map)
+                {
+                    int    rowDash  = (int)m[0];
+                    string kc       = (string)m[1];
+                    string col      = (string)m[2];
+                    int    startRow = (int)m[3];
+
+                    double nilai = 0;
+                    if (ExcelHelper.SheetAda(wbSrc, kc))
+                    {
+                        var wsKc = (Excel.Worksheet)wbSrc.Worksheets[kc];
+                        nilai = JumlahKolomAngka(wsKc, col, startRow);
+                        hasilLog.Add("PPKA " + kc + " (" + col + startRow + ":bawah) = " + nilai.ToString("#,##0"));
+                    }
+                    else
+                    {
+                        hasilLog.Add("PPKA " + kc + ": sheet tidak ada -> 0");
+                    }
+                    ((Excel.Range)wsDash.Cells[rowDash, "M"]).Value2 = nilai;
+                }
+
+                wbSrc.Close(false); wbSrc = null;
+            }
+            finally
+            {
+                if (wbIndeks != null) try { wbIndeks.Close(false); } catch { }
+                if (wbSrc    != null) try { wbSrc.Close(false);    } catch { }
+            }
+        }
+
+        // Jumlahkan seluruh sel numerik pada satu kolom, dari startRow s/d baris terakhir berisi data
+        private static double JumlahKolomAngka(Excel.Worksheet ws, string col, int startRow)
+        {
+            Excel.Range lastCell = (Excel.Range)ws.Cells[ws.Rows.Count, col];
+            int lastRow = lastCell.End[Excel.XlDirection.xlUp].Row;
+            if (lastRow < startRow) return 0;
+
+            Excel.Range rng = ws.Range[col + startRow + ":" + col + lastRow];
+            object nilai = rng.Value2;
+
+            double total = 0;
+            if (nilai is object[,] arr)                 // banyak sel
+            {
+                int rows = arr.GetLength(0);
+                for (int r = 1; r <= rows; r++)
+                    total += ToDouble(arr[r, 1]);
+            }
+            else                                        // hanya satu sel
+            {
+                total = ToDouble(nilai);
+            }
+            return total;
         }
     }
 }

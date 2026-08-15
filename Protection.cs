@@ -8,8 +8,8 @@ namespace CKPNLibrary
     {
         private static readonly string[] NamaFileDiizinkan = new[]
         {
-            "CKPN414_Himbarsi_Ed2026.xlsm",
-            "CKPN414_Himbarsi_Ed2026.xlsb",
+            "Aplikasi_CKPN_414.xlsm",
+            "Aplikasi_CKPN_414.xlsb",
         };
 
         private static readonly string[] SheetWajib = new[]

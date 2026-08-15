@@ -183,5 +183,26 @@ namespace CKPNLibrary
                 System.Windows.Forms.MessageBoxButtons.OK,
                 System.Windows.Forms.MessageBoxIcon.Error);
         }
+
+        // ----------------------------------------------------------------
+        // Refresh Summary: formula link + CKPN/PPKA/ABA dari file eksternal
+        // Dipanggil VBA:
+        //   Application.Run "CKPN_RefreshSummary", srcPath, sheetKCList
+        //
+        // srcPath     : Master!D14 (path file sumber)
+        // sheetKCList : KC aktif pisah koma, mis. "KC0600,KC0700,KC1100"
+        //               KC0500 (ABA) selalu ikut, tidak perlu dikirim
+        // ----------------------------------------------------------------
+        [ExcelCommand(Name = "CKPN_RefreshSummary")]
+        public static void RefreshSummaryCmd(string filePath, string sheetKCList)
+        {
+            try
+            {
+                var app = (Excel.Application)ExcelDnaUtil.Application;
+                if (!Protection.CekProteksi(app)) return;
+                new RefreshSummary(app).Refresh(filePath, sheetKCList);
+            }
+            catch (Exception ex) { TampilError("Refresh Summary", ex); }
+        }
     }
 }
