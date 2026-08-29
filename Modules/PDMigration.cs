@@ -282,19 +282,15 @@ namespace CKPNLibrary.Modules
             System.Windows.Forms.MessageBox.Show(
                 "Selesai.\n" +
                 triwulan + " -> B2.PD-Migration baris " + baseRow + ":" + (baseRow + 4) + "\n\n" +
-                "Top-N       : " + topN + " diminta, " + topNInfo.DaftarCIF.Count + " CIF terpakai\n" +
-                "Rek Individu: " + topNInfo.JumlahRekSkip + " rekening\n" +
-                "OS Individu : " + topNInfo.OSTopN.ToString("N0") + "\n" +
-                "OS Bruto    : " + topNInfo.OSBruto.ToString("N0") + "\n\n" +
-                "Awal        : " + (lastB - 2) + " baris\n" +
-                "Akhir       : " + (lastG - 2) + " baris\n" +
-                "Rek WO      : " + stat.RekWO + " (" + stat.NominalWO.ToString("N0") + ")\n" +
-                "Rek Lainnya : " + stat.RekLainnya + " (" + stat.NominalLainnya.ToString("N0") + ")\n\n" +
-                "Ada di KC2900 tapi BUKAN WO: " + stat.RekWOTakTerpakai +
-                " (" + stat.NominalWOTakTerpakai.ToString("N0") + ")\n" +
-                "  " + stat.RincianWOTakTerpakai() + "\n" +
-                "  -> lihat kolom K:P sheet '" + SheetState + "' untuk detailnya\n\n" +
-                "Diagnostik KC2900:\n" + diagWO,
+                "Top-N        : " + topN + " diminta, " + topNInfo.DaftarCIF.Count + " CIF terpakai\n" +
+                "Rek Individu : " + topNInfo.JumlahRekSkip + " rekening\n" +
+                "OS Individu  : " + topNInfo.OSTopN.ToString("N0") + "\n" +
+                "OS Bruto     : " + topNInfo.OSBruto.ToString("N0") + "\n\n" +
+                "Baris Awal   : " + (lastB - 2) + "\n" +
+                "Baris Akhir  : " + (lastG - 2) + "\n\n" +
+                "Rek Bertahan : " + stat.RekBertahan + "\n" +
+                "Rek WO       : " + stat.RekWO + " (" + stat.NominalWO.ToString("N0") + ")\n" +
+                "Rek Lainnya  : " + stat.RekLainnya + " (" + stat.NominalLainnya.ToString("N0") + ")",
                 "PD Migration", System.Windows.Forms.MessageBoxButtons.OK,
                 System.Windows.Forms.MessageBoxIcon.Information);
         }
