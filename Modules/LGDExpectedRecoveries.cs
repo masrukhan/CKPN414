@@ -105,6 +105,10 @@ namespace CKPNLibrary.Modules
             // dataByYear[year]    = Dictionary<noRek, double[]{ baki, tglHB }>
             // rekPerTahun[year]   = jumlah rekening KC2900 per file
             // bakiPerTahun[year]  = total baki KC2900 per file
+            // statRefKC: rekap Jenis Instrumen x Kode KC lintas file, dikumpulkan
+            // SEBELUM filter scopeKC agar rekening tanpa Kode KC tetap terlihat
+            var statRefKC = new StatistikRefKC();
+
             var dataByYear   = new Dictionary<int, Dictionary<string, double[]>>();
             var rekPerTahun  = new Dictionary<int, int>();
             var bakiPerTahun = new Dictionary<int, double>();
@@ -117,7 +121,7 @@ namespace CKPNLibrary.Modules
                 try
                 {
                     srcWb = _app.Workbooks.Open(kv.Value, UpdateLinks: 0, ReadOnly: true);
-                    var dataYear = BacaKC2900(srcWb, scopeKC);
+                    var dataYear = BacaKC2900(srcWb, scopeKC, kv.Key, statRefKC);
                     dataByYear[kv.Key]   = dataYear;
                     rekPerTahun[kv.Key]  = dataYear.Count;
 
@@ -209,12 +213,31 @@ namespace CKPNLibrary.Modules
             }
             catch { /* abaikan error logging — jangan gagalkan proses utama */ }
 
+            // ---- Audit Log: rekap Jenis Instrumen x Kode KC ----
+            try { TulisLogRefKC(wsLog, statRefKC); }
+            catch { /* abaikan error logging — jangan gagalkan proses utama */ }
+
+            // ---- Pesan selesai ----
+            string pesan = "Selesai.\nTotal rekening: " + accountMeta.Count +
+                           " dalam " + cohortRek.Count + " cohort.";
+
+            if (statRefKC.TotalTanpaKC > 0)
+            {
+                pesan += "\n\nPERHATIAN: " + statRefKC.TotalTanpaKC +
+                         " rekening tidak punya Kode KC (kolom M) senilai " +
+                         statRefKC.BakiTanpaKC.ToString("N0") + "." +
+                         "\nRekening ini TIDAK ikut dihitung." +
+                         "\nJenis instrumen: " + statRefKC.RingkasProdukTanpaKC() +
+                         "\nRincian per tahun ada di sheet 'Audit Log' " +
+                         "(baris \"LGD ER - Referensi KC\").";
+            }
+
             System.Windows.Forms.MessageBox.Show(
-                "Selesai.\nTotal rekening: " + accountMeta.Count +
-                " dalam " + cohortRek.Count + " cohort.",
-                "LGD Expected Recoveries",
+                pesan, "LGD Expected Recoveries",
                 System.Windows.Forms.MessageBoxButtons.OK,
-                System.Windows.Forms.MessageBoxIcon.Information);
+                statRefKC.TotalTanpaKC > 0
+                    ? System.Windows.Forms.MessageBoxIcon.Warning
+                    : System.Windows.Forms.MessageBoxIcon.Information);
         }
 
         // ================================================================
@@ -222,7 +245,7 @@ namespace CKPNLibrary.Modules
         // Return: Dictionary<noRek, double[]{ baki, tglHB }>
         // ================================================================
         private Dictionary<string, double[]> BacaKC2900(
-            Excel.Workbook wb, HashSet<string> scopeKC)
+            Excel.Workbook wb, HashSet<string> scopeKC, int tahun, StatistikRefKC stat)
         {
             var d = new Dictionary<string, double[]>(StringComparer.OrdinalIgnoreCase);
             if (!ExcelHelper.SheetAda(wb, SheetKC2900)) return d;
@@ -231,7 +254,8 @@ namespace CKPNLibrary.Modules
             int lastRow = ExcelHelper.CariLastRow(ws, "H", KC2900Start - 1);
             if (lastRow < KC2900Start) return d;
 
-            // Bulk read: H=NoRek, I=TglHB, L=Baki, M=KodeKC
+            // Bulk read: G=JenisInstrumen, H=NoRek, I=TglHB, L=Baki, M=KodeKC
+            string[] prodArr = ExcelHelper.BacaKolomString(ws, "G", KC2900Start, lastRow);
             string[] rekArr  = ExcelHelper.BacaKolomString(ws, "H", KC2900Start, lastRow);
             double[] tglArr  = ExcelHelper.BacaKolomDouble(ws, "I", KC2900Start, lastRow);
             double[] bakiArr = ExcelHelper.BacaKolomDouble(ws, "L", KC2900Start, lastRow);
@@ -244,7 +268,14 @@ namespace CKPNLibrary.Modules
                 string noRek = NormNoRek(rekArr[i]);
                 if (string.IsNullOrEmpty(noRek)) continue;
 
-                string refKC = refArr[i].Trim().ToUpper();
+                string refKC = NormKodeKC(refArr[i]);
+
+                // Rekap dicatat SEBELUM filter scope, sehingga rekening yang
+                // gagal dipetakan (kode konversi CBS lama / WO lama) tetap
+                // muncul di Audit Log dan bisa dilengkapi manual oleh user.
+                if (stat != null)
+                    stat.Catat(tahun, prodArr[i], refKC, noRek, bakiArr[i]);
+
                 if (!scopeKC.Contains(refKC)) continue;
 
                 // Jika noRek sudah ada (duplikat), akumulasi baki
@@ -797,6 +828,242 @@ namespace CKPNLibrary.Modules
                 if (string.IsNullOrEmpty(a) && string.IsNullOrEmpty(b)) return r;
             }
             return 1000001;
+        }
+
+        // ================================================================
+        // NormKodeKC: normalisasi isi kolom M (Kode KC) di KC2900
+        //
+        // Kolom M diisi otomatis oleh RefKCBuilder dengan cara memetakan
+        // nomor kontrak ke sheet KC di file sumber. Pemetaan bisa GAGAL untuk:
+        //   - nomor kontrak yang sudah lama dihapus buku sehingga tidak lagi
+        //     muncul di sheet KC mana pun
+        //   - nomor kontrak hasil konversi dari CBS lama dengan format berbeda
+        //
+        // Saat gagal, sel bisa berisi kosong, spasi, "FALSE" (hasil formula
+        // boolean), "#N/A", atau "0". Semuanya dianggap TIDAK TERPETAKAN dan
+        // dinormalisasi menjadi string kosong.
+        // ================================================================
+        private static string NormKodeKC(string raw)
+        {
+            if (raw == null) return "";
+            string s = raw.Trim().ToUpper();
+            if (s.Length == 0)      return "";
+            if (s == "FALSE")       return "";
+            if (s == "TRUE")        return "";
+            if (s == "0")           return "";
+            if (s.StartsWith("#"))  return "";   // #N/A, #REF!, dll
+            return s;
+        }
+
+        // ================================================================
+        // StatistikRefKC: rekap distinct Jenis Instrumen x Kode KC
+        //
+        // Dikumpulkan saat membaca KC2900 setiap file tahunan, SEBELUM filter
+        // ruang lingkup KC diterapkan. Tujuannya agar user bisa melihat:
+        //   1. kombinasi produk dan KC apa saja yang ada di data
+        //   2. produk mana yang rekeningnya gagal dipetakan ke KC
+        //   3. produk yang terpetakan ke lebih dari satu KC (indikasi salah map)
+        // sehingga kolom M bisa dilengkapi/dikoreksi manual.
+        // ================================================================
+        internal class StatistikRefKC
+        {
+            internal class Baris
+            {
+                public int    Tahun;
+                public string Produk;
+                public string KodeKC;      // "" = tidak terpetakan
+                public int    Jumlah;
+                public double Baki;
+                public readonly List<string> Contoh = new List<string>();
+            }
+
+            private readonly Dictionary<string, Baris> _map =
+                new Dictionary<string, Baris>(StringComparer.OrdinalIgnoreCase);
+
+            private const int MaksContoh = 5;
+
+            public void Catat(int tahun, string produk, string kodeKC,
+                              string noRek, double baki)
+            {
+                string p = (produk ?? "").Trim();
+                if (p.Length == 0) p = "(kosong)";
+                string k = kodeKC ?? "";
+
+                string key = tahun + "\u0001" + p + "\u0001" + k;
+                Baris b;
+                if (!_map.TryGetValue(key, out b))
+                {
+                    b = new Baris { Tahun = tahun, Produk = p, KodeKC = k };
+                    _map[key] = b;
+                }
+                b.Jumlah++;
+                b.Baki += baki;
+
+                // Contoh nomor rekening hanya disimpan untuk yang gagal
+                // dipetakan — itulah yang perlu ditelusuri user
+                if (k.Length == 0 && b.Contoh.Count < MaksContoh)
+                    b.Contoh.Add(noRek);
+            }
+
+            /// <summary>Semua baris, diurutkan: tahun, produk, lalu kode KC (kosong terakhir).</summary>
+            public List<Baris> Semua()
+            {
+                var list = new List<Baris>(_map.Values);
+                list.Sort(delegate (Baris a, Baris b)
+                {
+                    if (a.Tahun != b.Tahun) return a.Tahun.CompareTo(b.Tahun);
+                    int c = string.Compare(a.Produk, b.Produk, StringComparison.OrdinalIgnoreCase);
+                    if (c != 0) return c;
+                    bool ax = a.KodeKC.Length == 0, bx = b.KodeKC.Length == 0;
+                    if (ax != bx) return ax ? 1 : -1;   // tanpa KC ditaruh paling bawah
+                    return string.Compare(a.KodeKC, b.KodeKC, StringComparison.OrdinalIgnoreCase);
+                });
+                return list;
+            }
+
+            public int TotalTanpaKC
+            {
+                get
+                {
+                    int n = 0;
+                    foreach (var b in _map.Values) if (b.KodeKC.Length == 0) n += b.Jumlah;
+                    return n;
+                }
+            }
+
+            public double BakiTanpaKC
+            {
+                get
+                {
+                    double v = 0;
+                    foreach (var b in _map.Values) if (b.KodeKC.Length == 0) v += b.Baki;
+                    return v;
+                }
+            }
+
+            /// <summary>Daftar produk yang punya minimal satu rekening tanpa Kode KC.</summary>
+            public string RingkasProdukTanpaKC()
+            {
+                var set = new List<string>();
+                foreach (var b in Semua())
+                    if (b.KodeKC.Length == 0 && !set.Contains(b.Produk)) set.Add(b.Produk);
+                return set.Count == 0 ? "-" : string.Join("; ", set.ToArray());
+            }
+
+            /// <summary>
+            /// Kumpulan "tahun|produk" yang terpetakan ke lebih dari satu Kode KC.
+            /// Biasanya indikasi salah pemetaan yang perlu dicek user.
+            /// </summary>
+            public HashSet<string> ProdukGanda()
+            {
+                var kcPerProduk = new Dictionary<string, HashSet<string>>();
+                foreach (var b in _map.Values)
+                {
+                    if (b.KodeKC.Length == 0) continue;
+                    string key = b.Tahun + "|" + b.Produk;
+                    if (!kcPerProduk.ContainsKey(key))
+                        kcPerProduk[key] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    kcPerProduk[key].Add(b.KodeKC);
+                }
+                var hasil = new HashSet<string>();
+                foreach (var kv in kcPerProduk)
+                    if (kv.Value.Count > 1) hasil.Add(kv.Key);
+                return hasil;
+            }
+        }
+
+        // ================================================================
+        // TulisLogRefKC: tulis rekap Jenis Instrumen x Kode KC ke Audit Log
+        //
+        // Satu baris per kombinasi (tahun, jenis instrumen, kode KC), plus
+        // satu baris ringkasan rekening tanpa Kode KC di akhir.
+        //
+        // Pemetaan kolom (mengikuti konvensi Audit Log yang sudah ada):
+        //   A  Timestamp
+        //   B  Jenis Proses  = "LGD ER - Referensi KC"
+        //   C  Periode       = "Des yyyy"
+        //   D  Tahun file
+        //   H  Status        = "Terpetakan" / "TIDAK ADA KC" / "Terpetakan (ganda)"
+        //   I  Jumlah rekening
+        //   L  Total baki debet
+        //   T  Rek tanpa Kode KC (hanya di baris ringkasan)
+        //   U  Jenis Instrumen
+        //   V  Kode KC
+        //   W  Contoh No Rekening (maksimal 5, hanya untuk yang tanpa KC)
+        // ================================================================
+        private void TulisLogRefKC(Excel.Worksheet wsLog, StatistikRefKC stat)
+        {
+            var baris = stat.Semua();
+            if (baris.Count == 0) return;
+
+            var ganda   = stat.ProdukGanda();
+            int nextRow = NextAuditLogRow(wsLog);
+            double ts   = DateTime.Now.ToOADate();
+
+            // Header kolom tambahan — ditulis ulang agar selalu berlabel
+            ((Excel.Range)wsLog.Cells[4, 20]).Value2 = "Rek tanpa Kode KC";
+            ((Excel.Range)wsLog.Cells[4, 21]).Value2 = "Jenis Instrumen";
+            ((Excel.Range)wsLog.Cells[4, 22]).Value2 = "Kode KC";
+            ((Excel.Range)wsLog.Cells[4, 23]).Value2 = "Contoh No Rekening";
+
+            foreach (var b in baris)
+            {
+                bool tanpaKC = b.KodeKC.Length == 0;
+                string status;
+                if (tanpaKC)
+                    status = "TIDAK ADA KC - lengkapi kolom M manual";
+                else if (ganda.Contains(b.Tahun + "|" + b.Produk))
+                    status = "Terpetakan (produk ini juga ke KC lain)";
+                else
+                    status = "Terpetakan";
+
+                ((Excel.Range)wsLog.Cells[nextRow, 1]).Value2 = ts;
+                ((Excel.Range)wsLog.Cells[nextRow, 1]).NumberFormat = "m/d/yyyy h:mm";
+                ((Excel.Range)wsLog.Cells[nextRow, 2]).Value2 = "LGD ER - Referensi KC";
+                ((Excel.Range)wsLog.Cells[nextRow, 3]).Value2 = "Des " + b.Tahun;
+                ((Excel.Range)wsLog.Cells[nextRow, 4]).Value2 = b.Tahun;
+                ((Excel.Range)wsLog.Cells[nextRow, 8]).Value2 = status;
+                ((Excel.Range)wsLog.Cells[nextRow, 9]).Value2 = b.Jumlah;
+                ((Excel.Range)wsLog.Cells[nextRow, 12]).Value2 = b.Baki;
+                ((Excel.Range)wsLog.Cells[nextRow, 12]).NumberFormat = "#,##0;(#,##0);-";
+                ((Excel.Range)wsLog.Cells[nextRow, 21]).NumberFormat = "@";
+                ((Excel.Range)wsLog.Cells[nextRow, 21]).Value2 = b.Produk;
+                ((Excel.Range)wsLog.Cells[nextRow, 22]).NumberFormat = "@";
+                ((Excel.Range)wsLog.Cells[nextRow, 22]).Value2 =
+                    tanpaKC ? "(kosong)" : b.KodeKC;
+                ((Excel.Range)wsLog.Cells[nextRow, 23]).NumberFormat = "@";
+                ((Excel.Range)wsLog.Cells[nextRow, 23]).Value2 =
+                    tanpaKC ? string.Join(", ", b.Contoh.ToArray()) : "";
+
+                // Baris tanpa Kode KC diberi warna agar langsung terlihat
+                if (tanpaKC)
+                {
+                    Excel.Range rng = (Excel.Range)wsLog.Range[
+                        wsLog.Cells[nextRow, 1], wsLog.Cells[nextRow, 23]];
+                    rng.Interior.Color = CLR_HIGHLIGHT_YELLOW;
+                }
+                nextRow++;
+            }
+
+            // ---- Baris ringkasan ----
+            ((Excel.Range)wsLog.Cells[nextRow, 1]).Value2 = ts;
+            ((Excel.Range)wsLog.Cells[nextRow, 1]).NumberFormat = "m/d/yyyy h:mm";
+            ((Excel.Range)wsLog.Cells[nextRow, 2]).Value2 = "LGD ER - Referensi KC";
+            ((Excel.Range)wsLog.Cells[nextRow, 3]).Value2 = "RINGKASAN";
+            ((Excel.Range)wsLog.Cells[nextRow, 8]).Value2 =
+                stat.TotalTanpaKC == 0
+                    ? "OK - semua rekening terpetakan"
+                    : "PERLU TINDAKAN - ada rekening tanpa Kode KC";
+            ((Excel.Range)wsLog.Cells[nextRow, 12]).Value2 = stat.BakiTanpaKC;
+            ((Excel.Range)wsLog.Cells[nextRow, 12]).NumberFormat = "#,##0;(#,##0);-";
+            ((Excel.Range)wsLog.Cells[nextRow, 20]).Value2 = stat.TotalTanpaKC;
+            ((Excel.Range)wsLog.Cells[nextRow, 21]).NumberFormat = "@";
+            ((Excel.Range)wsLog.Cells[nextRow, 21]).Value2 = stat.RingkasProdukTanpaKC();
+
+            Excel.Range ringkasanRng = (Excel.Range)wsLog.Range[
+                wsLog.Cells[nextRow, 1], wsLog.Cells[nextRow, 23]];
+            ringkasanRng.Interior.Color = CLR_GREEN_LIGHT;
+            ringkasanRng.Font.Bold      = true;
         }
 
         private static Excel.Worksheet CariSheet(Excel.Workbook wb, string name)
