@@ -10,25 +10,47 @@ namespace CKPNLibrary.Modules
     ///
     /// Tugas:
     ///   1. Menulis formula link internal ke sheet "Summary"
-    ///        B6/B7/B8   = Section A (Net Flow)
-    ///        B13/B14/B15= Section C (PD Migration)
     ///   2. Membuka file sumber (read-only) lalu:
-    ///        - SUM Nilai CKPN per Jenis (Individual/Kolektif) per sheet KC -> C6/C7 & C13/C14
+    ///        - SUM Nilai CKPN per Jenis (Individual/Kolektif) per sheet KC
     ///        - SUM PPKA OJK per KC (termasuk KC0500) -> H2:H8
     ///        - Hitung CKPN Antar Bank (ABA) dari KC0500 -> C18/C19
-    ///   3. Menulis rincian ABA & peringatan "Jenis tak dikenal" ke sheet "Audit Log".
+    ///   3. Menulis rincian ABA & peringatan "Jenis tak dikenal" ke "Audit Log".
     ///
-    /// Ruang lingkup KC dibaca di VBA (checkbox Form Control) lalu dikirim
-    /// sebagai string dipisah koma, mis. "KC0600,KC0700,KC1100".
-    /// KC0500 (ABA) SELALU ikut — tidak punya checkbox.
+    /// ----------------------------------------------------------------
+    /// REVISI — Diagnostik error 0x800A03EC (Excel error 1004)
+    /// ----------------------------------------------------------------
+    /// Error 1004 adalah pesan generik Excel: "operasi ditolak". Versi lama
+    /// tidak memberi petunjuk operasi mana yang gagal, sehingga sulit
+    /// ditelusuri ketika hanya terjadi di sebagian komputer.
+    ///
+    /// Perbaikan pada versi ini:
+    ///   1. Penanda langkah (_langkah) diperbarui sebelum setiap operasi
+    ///      berisiko. Bila terjadi error, pesan menyebut langkahnya.
+    ///   2. Praterbang (PraterbangSummary): sebelum satu sel pun ditulis,
+    ///      diperiksa keberadaan sheet yang direferensikan formula, kondisi
+    ///      proteksi sheet Summary, dan sel target yang ter-merge. Ketiganya
+    ///      adalah penyebab 1004 yang paling sering dan paling sulit dilihat.
+    ///   3. BarisKosongBerikutnya tidak lagi memakai UsedRange. UsedRange
+    ///      menghitung sel yang pernah diformat meski kosong, sehingga bisa
+    ///      mengembalikan baris di luar batas Excel (>1.048.576) dan memicu
+    ///      1004 saat penulisan Audit Log.
+    ///   4. String range multi-area ("B6:B8,B13:B15") dipecah menjadi
+    ///      penulisan per area untuk menghindari perbedaan parsing separator.
+    ///   5. Blok finally dibungkus try agar kegagalan pemulihan state tidak
+    ///      menutupi hasil yang sebenarnya sudah berhasil.
     /// </summary>
     internal class RefreshSummary
     {
         private readonly Excel.Application _app;
         private Excel.Workbook _wbApp;      // workbook aplikasi (Aplikasi_CKPN_414.xlsm)
 
+        // Penanda langkah untuk diagnostik error
+        private string _langkah = "(belum dimulai)";
+
+        private const string SH_SUM  = "Summary";
         private const string SH_INDV = "A. CKPN - INDV";
         private const string SH_KOL  = "B. CKPN - KOL INDV";
+        private const string SH_LOG  = "Audit Log";
         private const string FMT_NUM = "#,##0;(#,##0);-";
 
         // ---- Konstanta ABA (KC0500) ----
@@ -39,26 +61,64 @@ namespace CKPNLibrary.Modules
         private const int    ABA_START_ROW = 4;
         private const double PLAFON_LPS    = 2000000000d;   // 2 miliar
 
+        // Sel target yang ditulis di sheet Summary — dipakai untuk praterbang
+        private static readonly string[] SelTarget = new[]
+        {
+            "B6","B7","B8","B13","B14","B15",
+            "C6","C7","C8","C13","C14","C15",
+            "C18","C19",
+            "H2","H3","H4","H5","H6","H7","H8","H9"
+        };
+
         public RefreshSummary(Excel.Application app)
         {
             _app = app ?? throw new ArgumentNullException("app");
         }
+
+        private void Langkah(string s) { _langkah = s; }
 
         // ================================================================
         // ENTRY POINT
         // ================================================================
         public void Refresh(string filePath, string sheetKCList)
         {
+            try
+            {
+                RefreshInti(filePath, sheetKCList);
+            }
+            catch (Exception ex)
+            {
+                // Bungkus ulang dengan penanda langkah supaya error 1004
+                // yang generik menjadi bisa ditelusuri.
+                throw new InvalidOperationException(
+                    "Gagal pada langkah:\n  " + _langkah + "\n\n" +
+                    "Pesan Excel:\n  " + ex.Message + "\n\n" +
+                    "Catatan: 0x800A03EC = Excel error 1004 (\"operasi ditolak\").\n" +
+                    "Penyebab tersering: sheet yang direferensikan tidak ada,\n" +
+                    "sheet Summary terproteksi, sel target ter-merge, atau\n" +
+                    "file sumber terbuka dalam Protected View.",
+                    ex);
+            }
+        }
+
+        private void RefreshInti(string filePath, string sheetKCList)
+        {
+            Langkah("Mengambil workbook aktif");
             var wb = _app.ActiveWorkbook;
             if (wb == null)
                 throw new InvalidOperationException("Tidak ada workbook yang aktif.");
+            _wbApp = wb;
 
-            var wsSum = CariSheet(wb, "Summary");
+            Langkah("Mencari sheet '" + SH_SUM + "'");
+            var wsSum = CariSheet(wb, SH_SUM);
             if (wsSum == null)
-                throw new InvalidOperationException("Sheet 'Summary' tidak ditemukan.");
-            _wbApp = wb;                                    // <-- tambahkan
-            Excel.Worksheet wsAktifAwal = null;             // <-- untuk perbaikan No. 2
-            try { wsAktifAwal = _app.ActiveSheet as Excel.Worksheet; } catch { }
+                throw new InvalidOperationException("Sheet '" + SH_SUM + "' tidak ditemukan.");
+
+            // ---------- 0. Praterbang ----------
+            // Semua pemeriksaan yang bisa memicu 1004 dilakukan di sini,
+            // SEBELUM satu sel pun ditulis, agar pesan errornya spesifik.
+            Langkah("Praterbang: memeriksa sheet, proteksi, dan sel target");
+            PraterbangSummary(wb, wsSum);
 
             var kcAktif = ParseSheetKC(sheetKCList);
 
@@ -72,18 +132,22 @@ namespace CKPNLibrary.Modules
 
             try
             {
-                _app.ScreenUpdating = false;
-                _app.EnableEvents   = false;
-                _app.DisplayAlerts  = false;
+                Langkah("Menyiapkan state aplikasi (ScreenUpdating/Events/Calculation)");
+                try { _app.ScreenUpdating = false; } catch { }
+                try { _app.EnableEvents   = false; } catch { }
+                try { _app.DisplayAlerts  = false; } catch { }
                 try { _app.Calculation = Excel.XlCalculation.xlCalculationManual; } catch { }
 
                 // ---------- 1. Formula link internal (kolom B) ----------
+                Langkah("Menulis formula link internal ke Summary B6:B8 dan B13:B15");
                 TulisFormulaLink(wsSum);
 
                 // ---------- 2. Kosongkan target hasil ----------
+                Langkah("Mengosongkan sel hasil di Summary");
                 BersihkanTarget(wsSum);
 
                 // ---------- 3. Validasi file sumber ----------
+                Langkah("Memvalidasi path file sumber (Master!D14)");
                 if (string.IsNullOrEmpty(filePath) || filePath.Trim().Length == 0)
                     throw new InvalidOperationException("Path file sumber (Master!D14) kosong.");
                 if (!System.IO.File.Exists(filePath))
@@ -92,41 +156,67 @@ namespace CKPNLibrary.Modules
                     throw new InvalidOperationException("Tidak ada KC yang dicentang di Master.");
 
                 // ---------- 4. Buka file sumber ----------
+                Langkah("Membuka file sumber (read-only):\n  " + filePath);
                 wbSrc = _app.Workbooks.Open(filePath,
                                             UpdateLinks: 0,
                                             ReadOnly: true,
                                             IgnoreReadOnlyRecommended: true);
+
+                // Deteksi Protected View: workbook terbuka tetapi sheet tidak
+                // bisa diakses. Ini sering terjadi di komputer baru karena
+                // Trust Center masih default dan file berasal dari jaringan.
+                Langkah("Memeriksa apakah file sumber dapat dibaca (Protected View?)");
+                int jumlahSheet;
+                try { jumlahSheet = wbSrc.Worksheets.Count; }
+                catch (Exception exPV)
+                {
+                    throw new InvalidOperationException(
+                        "File sumber terbuka tetapi isinya tidak dapat dibaca.\n" +
+                        "Kemungkinan Excel membukanya dalam Protected View.\n\n" +
+                        "Solusi: File > Options > Trust Center > Trust Center Settings >\n" +
+                        "Trusted Locations, lalu tambahkan folder file sumber.\n\n" +
+                        "Detail: " + exPV.Message, exPV);
+                }
+                if (jumlahSheet == 0)
+                    throw new InvalidOperationException("File sumber tidak memiliki sheet yang dapat dibaca.");
 
                 var takDikenal = new List<BarisTakDikenal>();
                 var lapOK   = new StringBuilder();
                 var lapSkip = new StringBuilder();
 
                 // BAGIAN 1: CKPN per Jenis
+                Langkah("Menghitung CKPN per Jenis (Individual/Kolektif) dari file sumber");
                 double totalIndv = 0, totalKol = 0;
                 HitungCKPNPerJenis(wbSrc, kcAktif, ref totalIndv, ref totalKol,
                                    takDikenal, lapOK, lapSkip);
 
                 // BAGIAN 2: PPKA per KC -> H2:H8
+                Langkah("Menghitung PPKA per KC dan menulis ke Summary H2:H8");
                 var lapPPKA = new StringBuilder();
                 HitungPPKA(wbSrc, wsSum, kcAktif, lapPPKA);
 
                 // BAGIAN 3: ABA (KC0500) -> C18/C19 + Audit Log
+                Langkah("Menghitung CKPN Antar Bank dari " + ABA_SHEET);
                 double abaDijamin = 0, abaDiAtasPlafon = 0;
                 HitungEADAntarBank(wbSrc, wsSum, ref abaDijamin, ref abaDiAtasPlafon);
 
+                Langkah("Menutup file sumber");
                 wbSrc.Close(false);
                 wbSrc = null;
 
                 // ---------- 5. Tulis hasil CKPN ----------
-                ((Excel.Range)wsSum.Range["C6"]).Value2  = totalIndv;   // Section A - Individual
-                ((Excel.Range)wsSum.Range["C7"]).Value2  = totalKol;    // Section A - Kolektif
-                ((Excel.Range)wsSum.Range["C13"]).Value2 = totalIndv;   // Section C - Individual
-                ((Excel.Range)wsSum.Range["C14"]).Value2 = totalKol;    // Section C - Kolektif
+                Langkah("Menulis hasil CKPN ke Summary C6, C7, C13, C14");
+                ((Excel.Range)wsSum.Range["C6"]).Value2  = totalIndv;
+                ((Excel.Range)wsSum.Range["C7"]).Value2  = totalKol;
+                ((Excel.Range)wsSum.Range["C13"]).Value2 = totalIndv;
+                ((Excel.Range)wsSum.Range["C14"]).Value2 = totalKol;
 
                 // ---------- 6. Audit Log: jenis tak dikenal ----------
+                Langkah("Menulis peringatan Jenis CKPN tak dikenal ke Audit Log");
                 try { TulisJenisTakDikenal(takDikenal); } catch { /* abaikan error logging */ }
 
                 // ---------- 7. Laporan ringkas ----------
+                Langkah("Menyusun laporan ringkas");
                 var lap = new StringBuilder();
                 lap.AppendLine("CKPN per Jenis:").Append(lapOK);
                 if (lapSkip.Length > 0) lap.AppendLine().AppendLine("Dilewati:").Append(lapSkip);
@@ -147,38 +237,113 @@ namespace CKPNLibrary.Modules
                     lap.ToString(), "Refresh CKPN & PPKA",
                     System.Windows.Forms.MessageBoxButtons.OK,
                     System.Windows.Forms.MessageBoxIcon.Information);
+
+                Langkah("Selesai");
             }
             finally
             {
+                // Setiap pemulihan dibungkus sendiri. Tanpa ini, kegagalan
+                // pada salah satu baris akan menimpa exception aslinya dan
+                // menyembunyikan penyebab sebenarnya.
                 if (wbSrc != null) { try { wbSrc.Close(false); } catch { } }
-                try { _app.Calculation = prevCalc; } catch { }
-                _app.CutCopyMode    = (Excel.XlCutCopyMode)0;
-                _app.DisplayAlerts  = prevAlerts;
-                _app.EnableEvents   = prevEvents;
-                _app.ScreenUpdating = prevScreen;
+                try { _app.Calculation    = prevCalc;   } catch { }
+                try { _app.CutCopyMode    = (Excel.XlCutCopyMode)0; } catch { }
+                try { _app.DisplayAlerts  = prevAlerts; } catch { }
+                try { _app.EnableEvents   = prevEvents; } catch { }
+                try { _app.ScreenUpdating = prevScreen; } catch { }
             }
+        }
+
+        // ================================================================
+        // 0. PRATERBANG — deteksi penyebab 1004 sebelum menulis apa pun
+        // ================================================================
+        private void PraterbangSummary(Excel.Workbook wb, Excel.Worksheet wsSum)
+        {
+            var masalah = new List<string>();
+
+            // (a) Sheet yang direferensikan formula HARUS ada.
+            //     Menetapkan .Formula yang menyebut sheet tidak ada akan
+            //     langsung melempar error 1004. Kedua sheet ini TIDAK
+            //     diperiksa oleh Protection.SheetWajib, sehingga bisa lolos
+            //     validasi awal tetapi gagal di sini.
+            if (CariSheet(wb, SH_INDV) == null)
+                masalah.Add("Sheet '" + SH_INDV + "' tidak ditemukan " +
+                            "(dipakai formula Summary!B6).");
+            if (CariSheet(wb, SH_KOL) == null)
+                masalah.Add("Sheet '" + SH_KOL + "' tidak ditemukan " +
+                            "(dipakai formula Summary!B7, B13, B14).");
+            if (CariSheet(wb, SH_LOG) == null)
+                masalah.Add("Sheet '" + SH_LOG + "' tidak ditemukan " +
+                            "(tujuan penulisan rincian ABA).");
+
+            // (b) Sheet Summary tidak boleh terproteksi saat ditulis.
+            try
+            {
+                if (wsSum.ProtectContents)
+                    masalah.Add("Sheet '" + SH_SUM + "' dalam kondisi terproteksi. " +
+                                "Buka proteksi sheet Summary (Review > Unprotect Sheet).");
+            }
+            catch { }
+
+            // (c) Sel target tidak boleh ter-merge. Menulis ke sebagian sel
+            //     yang ter-merge ditolak Excel dengan error 1004.
+            var merged = new List<string>();
+            foreach (var alamat in SelTarget)
+            {
+                try
+                {
+                    Excel.Range sel = (Excel.Range)wsSum.Range[alamat];
+                    object mc = sel.MergeCells;
+                    if (mc is bool && (bool)mc) merged.Add(alamat);
+                }
+                catch
+                {
+                    masalah.Add("Sel '" + alamat + "' di sheet Summary tidak dapat diakses.");
+                }
+            }
+            if (merged.Count > 0)
+                masalah.Add("Sel target berikut ter-merge dan harus di-unmerge: " +
+                            string.Join(", ", merged.ToArray()));
+
+            if (masalah.Count == 0) return;
+
+            throw new InvalidOperationException(
+                "Praterbang gagal — perbaiki dulu hal berikut:\n\n  - " +
+                string.Join("\n  - ", masalah.ToArray()));
         }
 
         // ================================================================
         // 1. Formula link internal (kolom B)
         // ================================================================
-        private static void TulisFormulaLink(Excel.Worksheet wsSum)
+        private void TulisFormulaLink(Excel.Worksheet wsSum)
         {
             // Section A - Net Flow
+            Langkah("Menulis formula Summary!B6 (INDEX/MATCH ke '" + SH_INDV + "')");
             ((Excel.Range)wsSum.Range["B6"]).Formula =
                 "=INDEX('" + SH_INDV + "'!$A:$K," +
                 "MATCH(\"TOTAL\",'" + SH_INDV + "'!$B:$B,0)," +
                 "MATCH(\"Penurunan Nilai\",'" + SH_INDV + "'!$5:$5,0))";
 
+            Langkah("Menulis formula Summary!B7 (INDEX/MATCH ke '" + SH_KOL + "')");
             ((Excel.Range)wsSum.Range["B7"]).Formula = FormulaKolektif("1. PERHITUNGAN*", 2);
+
+            Langkah("Menulis formula Summary!B8");
             ((Excel.Range)wsSum.Range["B8"]).Formula = "=SUM(B6:B7)";
 
             // Section C - PD Migration
+            Langkah("Menulis formula Summary!B13");
             ((Excel.Range)wsSum.Range["B13"]).Formula = FormulaKolektif("3. PERHITUNGAN*", 1);
+            Langkah("Menulis formula Summary!B14");
             ((Excel.Range)wsSum.Range["B14"]).Formula = FormulaKolektif("3. PERHITUNGAN*", 2);
+            Langkah("Menulis formula Summary!B15");
             ((Excel.Range)wsSum.Range["B15"]).Formula = "=SUM(B13:B14)";
 
-            ((Excel.Range)wsSum.Range["B6:B8,B13:B15"]).NumberFormat = FMT_NUM;
+            // Format ditulis per area, bukan sebagai string range gabungan
+            // "B6:B8,B13:B15". Parsing string multi-area memakai jalur yang
+            // berbeda dan lebih sensitif terhadap separator sistem.
+            Langkah("Menerapkan format angka pada Summary!B6:B8 dan B13:B15");
+            ((Excel.Range)wsSum.Range["B6:B8"]).NumberFormat   = FMT_NUM;
+            ((Excel.Range)wsSum.Range["B13:B15"]).NumberFormat = FMT_NUM;
         }
 
         /// <summary>
@@ -198,18 +363,26 @@ namespace CKPNLibrary.Modules
         // ================================================================
         // 2. Kosongkan target hasil + set formula subtotal
         // ================================================================
-        private static void BersihkanTarget(Excel.Worksheet wsSum)
+        private void BersihkanTarget(Excel.Worksheet wsSum)
         {
-            ((Excel.Range)wsSum.Range["C6:C7"]).ClearContents();    // Section A
-            ((Excel.Range)wsSum.Range["C13:C14"]).ClearContents();  // Section C
+            Langkah("Mengosongkan Summary!C6:C7 dan C13:C14");
+            ((Excel.Range)wsSum.Range["C6:C7"]).ClearContents();
+            ((Excel.Range)wsSum.Range["C13:C14"]).ClearContents();
+
+            Langkah("Menulis formula subtotal Summary!C8 dan C15");
             ((Excel.Range)wsSum.Range["C8"]).Formula  = "=SUM(C6:C7)";
             ((Excel.Range)wsSum.Range["C15"]).Formula = "=SUM(C13:C14)";
-            ((Excel.Range)wsSum.Range["C6:C8,C13:C15"]).NumberFormat = FMT_NUM;
 
-            ((Excel.Range)wsSum.Range["C18:C19"]).ClearContents();  // ABA
+            Langkah("Menerapkan format angka pada Summary!C6:C8 dan C13:C15");
+            ((Excel.Range)wsSum.Range["C6:C8"]).NumberFormat   = FMT_NUM;
+            ((Excel.Range)wsSum.Range["C13:C15"]).NumberFormat = FMT_NUM;
+
+            Langkah("Mengosongkan Summary!C18:C19 (ABA)");
+            ((Excel.Range)wsSum.Range["C18:C19"]).ClearContents();
             ((Excel.Range)wsSum.Range["C18:C19"]).NumberFormat = FMT_NUM;
 
-            ((Excel.Range)wsSum.Range["H2:H8"]).ClearContents();    // PPKA
+            Langkah("Mengosongkan Summary!H2:H8 (PPKA)");
+            ((Excel.Range)wsSum.Range["H2:H8"]).ClearContents();
             ((Excel.Range)wsSum.Range["H9"]).Formula = "=SUM(H2:H8)";
             ((Excel.Range)wsSum.Range["H2:H9"]).NumberFormat = FMT_NUM;
         }
@@ -217,7 +390,7 @@ namespace CKPNLibrary.Modules
         // ================================================================
         // BAGIAN 1: CKPN per Jenis (Individual / Kolektif)
         // ================================================================
-        private static void HitungCKPNPerJenis(
+        private void HitungCKPNPerJenis(
             Excel.Workbook wbSrc, List<string> kcAktif,
             ref double totalIndv, ref double totalKol,
             List<BarisTakDikenal> takDikenal,
@@ -225,6 +398,8 @@ namespace CKPNLibrary.Modules
         {
             foreach (var namaKC in kcAktif)
             {
+                Langkah("Membaca CKPN per Jenis dari sheet " + namaKC + " di file sumber");
+
                 var wsKC = CariSheet(wbSrc, namaKC);
                 if (wsKC == null)
                 {
@@ -299,7 +474,7 @@ namespace CKPNLibrary.Modules
         // ================================================================
         // BAGIAN 2: PPKA OJK per KC -> H2:H8
         // ================================================================
-        private static void HitungPPKA(
+        private void HitungPPKA(
             Excel.Workbook wbSrc, Excel.Worksheet wsSum,
             List<string> kcAktif, StringBuilder lapPPKA)
         {
@@ -316,6 +491,8 @@ namespace CKPNLibrary.Modules
 
             foreach (var mp in map)
             {
+                Langkah("Menghitung PPKA " + mp.KC + " -> Summary!" + mp.Sel);
+
                 bool ikut = !mp.PakaiCheckbox || AdaDiDaftar(kcAktif, mp.KC);
                 double nilai = 0;
 
@@ -372,6 +549,7 @@ namespace CKPNLibrary.Modules
             var wsKC = CariSheet(wbSrc, ABA_SHEET);
             if (wsKC == null) return;
 
+            Langkah("Membaca " + ABA_SHEET + " untuk perhitungan ABA");
             int lastRow = Math.Max(BarisTerakhir(wsKC, ABA_COL_EAD),
                                    BarisTerakhir(wsKC, ABA_COL_SANDI));
             if (lastRow < ABA_START_ROW) return;
@@ -408,7 +586,8 @@ namespace CKPNLibrary.Modules
             }
 
             // Siapkan Audit Log
-            var wsLog = CariSheet(_wbApp, "Audit Log");
+            Langkah("Menulis rincian ABA ke sheet Audit Log");
+            var wsLog = CariSheet(_wbApp, SH_LOG);
             int rowLog = 0;
             if (wsLog != null)
             {
@@ -453,6 +632,7 @@ namespace CKPNLibrary.Modules
                 rowLog = TulisTotalLog(wsLog, rowLog, "TOTAL EAD Antar Bank", totalDijamin + totalPlafon);
             }
 
+            Langkah("Menulis hasil ABA ke Summary!C18 dan C19");
             ((Excel.Range)wsSum.Range["C18"]).Value2 = totalDijamin;
             ((Excel.Range)wsSum.Range["C19"]).Value2 = totalPlafon;
         }
@@ -473,7 +653,7 @@ namespace CKPNLibrary.Modules
         {
             if (data == null || data.Count == 0) return;
 
-            var wsLog = CariSheet(_wbApp, "Audit Log");
+            var wsLog = CariSheet(_wbApp, SH_LOG);
             if (wsLog == null) return;
 
             int row = BarisKosongBerikutnya(wsLog);
@@ -626,16 +806,45 @@ namespace CKPNLibrary.Modules
             return hasil;
         }
 
-        /// <summary>Baris kosong berikutnya di Audit Log (diberi jarak 1 baris dari blok sebelumnya).</summary>
+        // ----------------------------------------------------------------
+        // BarisKosongBerikutnya: baris kosong berikutnya di Audit Log
+        //
+        // TIDAK memakai UsedRange. UsedRange ikut menghitung sel yang pernah
+        // diformat meskipun kosong, sehingga bisa mengembalikan baris di luar
+        // batas Excel (>1.048.576). Menulis ke baris di luar batas ditolak
+        // dengan error 1004 (0x800A03EC) — dan ini bergantung pada riwayat
+        // pemformatan file di masing-masing komputer, sehingga bisa terjadi
+        // hanya di sebagian mesin.
+        //
+        // Cara aman: End(xlUp) pada kolom A-D, ambil baris terbesar, lalu
+        // batasi agar tidak pernah melewati batas baris sheet.
+        // ----------------------------------------------------------------
         private static int BarisKosongBerikutnya(Excel.Worksheet wsLog)
         {
-            try
+            int last = 0;
+            string[] kolom = { "A", "B", "C", "D" };
+
+            foreach (var k in kolom)
             {
-                Excel.Range used = wsLog.UsedRange;
-                int last = used.Row + used.Rows.Count - 1;
-                return last < 1 ? 1 : last + 2;
+                try
+                {
+                    Excel.Range sel = (Excel.Range)wsLog.Cells[wsLog.Rows.Count, k];
+                    int r = (int)((Excel.Range)sel.End[Excel.XlDirection.xlUp]).Row;
+                    if (r > last) last = r;
+                }
+                catch { }
             }
-            catch { return 1; }
+
+            int hasil = last < 1 ? 1 : last + 2;
+
+            int batas;
+            try { batas = wsLog.Rows.Count; } catch { batas = 1048576; }
+            if (hasil > batas - 50)
+                throw new InvalidOperationException(
+                    "Sheet '" + SH_LOG + "' sudah penuh (baris terpakai " + last + ").\n" +
+                    "Hapus baris lama di Audit Log, lalu jalankan ulang.");
+
+            return hasil;
         }
 
         private static Excel.Worksheet CariSheet(Excel.Workbook wb, string name)
