@@ -204,5 +204,18 @@ namespace CKPNLibrary
             }
             catch (Exception ex) { TampilError("Refresh Summary", ex); }
         }
+
+         [ExcelCommand(Name = "CKPN_RefreshDataOverview")]
+        public static void RefreshDataOverview()
+        {
+            try
+            {
+                var app = (Excel.Application)ExcelDnaUtil.Application;
+                if (!ProtectionDashboard.CekProteksi(app)) return;
+                new DataOverviewBuilder(app).Hitung();
+            }
+            catch (Exception ex) { TampilError("Data Overview CKPN", ex); }
+        }
+
     }
 }
