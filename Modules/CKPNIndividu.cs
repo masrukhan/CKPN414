@@ -11,6 +11,10 @@ namespace CKPNLibrary.Modules
     {
         private readonly Excel.Application _app;
 
+        // Password proteksi sheet hasil "A. CKPN - INDV".
+        // Sheet dibuka di awal perhitungan, lalu dikunci ulang di finally.
+        private const string PW_SHEET = "HaiiWhatt??";
+
         public CKPNIndividu(Excel.Application app)
         {
             _app = app ?? throw new ArgumentNullException("app");
@@ -28,6 +32,10 @@ namespace CKPNLibrary.Modules
             Excel.Workbook wbSrc = null;
             try
             {
+                // Buka proteksi sheet output bila sedang terkunci, agar bisa ditulisi.
+                // Dilakukan di DALAM try supaya blok finally dijamin mengunci ulang.
+                BukaProteksiSheet(wsOut);
+
                 wbSrc = _app.Workbooks.Open(filePath, UpdateLinks: 0, ReadOnly: true);
 
                 var dictCIF = new Dictionary<string, CIFData>(StringComparer.OrdinalIgnoreCase);
@@ -57,6 +65,9 @@ namespace CKPNLibrary.Modules
 
                 BersihkanOutput(wsOut);
 
+                // Flag kriteria tambahan: tunggakan > 7 s.d. 30 hari (Master!F13).
+                bool flag7Hari = CekFlag7Hari();
+
                 int baris = 5;
                 for (int rCif = 0; rCif < topN; rCif++)
                 {
@@ -64,7 +75,7 @@ namespace CKPNLibrary.Modules
                     foreach (var kontrak in cifData.Kontrak.Values)
                     {
                         baris++;
-                        string adaPN = TentukanPN(kontrak, dictRestru, flagNPF, flagKol2, flagRestru);
+                        string adaPN = TentukanPN(kontrak, dictRestru, flagNPF, flagKol2, flagRestru, flag7Hari);
                         TulisBaris(wsOut, baris, rCif + 1, cifData.CIF, cifData.Nama, kontrak, adaPN);
                     }
                 }
@@ -72,6 +83,10 @@ namespace CKPNLibrary.Modules
                 int totalRows = baris - 5;
                 if (totalRows > 0)
                     StyleHelper.StyleTabelCKPN(wsOut, totalRows);
+
+                // Atur kunci sel SEBELUM sheet dikunci ulang di finally:
+                //   I & J bebas diedit user, K terkunci + formula disembunyikan.
+                AturKunciKolomOutput(wsOut, baris);
 
                 // ================= Audit Log =================
                 var noaPerKC = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -109,23 +124,44 @@ namespace CKPNLibrary.Modules
             finally
             {
                 if (wbSrc != null) try { wbSrc.Close(false); } catch { }
+
+                // Kunci kembali sheet output — selalu terproteksi setelah selesai,
+                // apa pun yang terjadi selama perhitungan.
+                KunciProteksiSheet(wsOut);
             }
         }
 
         // ----------------------------------------------------------------
         private static string TentukanPN(
             KontrakData kontrak, HashSet<string> dictRestru,
-            bool flagNPF, bool flagKol2, bool flagRestru)
+            bool flagNPF, bool flagKol2, bool flagRestru, bool flag7Hari)
         {
+            // ---- Kriteria existing: Restrukturisasi → NPF → Kolektibilitas 2 ----
             if (flagRestru && dictRestru.Contains(kontrak.NoKontrak.Trim()))
                 return "Ya";
 
+            string hasil;
             switch (kontrak.Kualitas)
             {
-                case 3: case 4: case 5: return flagNPF  ? "Ya" : "Tidak";
-                case 2:                 return flagKol2 ? "Ya" : "Tidak";
-                default:                return "Tidak";
+                case 3: case 4: case 5: hasil = flagNPF  ? "Ya" : "Tidak"; break;
+                case 2:                 hasil = flagKol2 ? "Ya" : "Tidak"; break;
+                default:                hasil = "Tidak"; break;
             }
+
+            // ---- Kriteria BARU (Master!F13 = "Ya"): tunggakan > 7 s.d. 30 hari ----
+            // Hanya diterapkan pada debitur yang LOLOS ketiga kriteria di atas,
+            // yaitu yang hasilnya masih "Tidak" (mis. Lancar, bukan NPF, bukan
+            // Kol-2, bukan restrukturisasi). Bila hari tunggakan berada di rentang
+            // (7, 30] → dianggap ada penurunan nilai (indikasi kenaikan risiko
+            // kredit signifikan sebelum kolektibilitas turun).
+            // Sifatnya hanya menambah: mengubah "Tidak" → "Ya", tidak sebaliknya.
+            if (flag7Hari && hasil == "Tidak")
+            {
+                double hari = kontrak.HariTunggakan;
+                if (hari > 7 && hari <= 30) hasil = "Ya";
+            }
+
+            return hasil;
         }
 
         // ----------------------------------------------------------------
@@ -163,6 +199,32 @@ namespace CKPNLibrary.Modules
             rng.ClearContents();
             rng.ClearFormats();
             try { rng.UnMerge(); } catch { }
+        }
+
+        // ----------------------------------------------------------------
+        // Atur kunci sel pada tabel hasil SEBELUM sheet diproteksi:
+        //   - Kolom I (Nilai Jaminan) & J (Biaya Penjualan): Locked = false
+        //     → tetap bisa diedit user meski sheet terproteksi.
+        //   - Kolom K (Penurunan Nilai): Locked = true + FormulaHidden = true
+        //     → terkunci dan formulanya tidak terlihat di formula bar.
+        // Catatan: properti ini hanya berefek saat sheet dalam kondisi
+        // terproteksi (dikunci di blok finally). ClearFormats di BersihkanOutput
+        // sudah mengembalikan sel ke default (Locked = true) tiap run, sehingga
+        // sisa baris lama tidak tertinggal dalam kondisi tidak terkunci.
+        // ----------------------------------------------------------------
+        private static void AturKunciKolomOutput(Excel.Worksheet wsOut, int barisAkhir)
+        {
+            if (barisAkhir < 6) return;   // tidak ada baris data
+
+            // I & J: bebas diedit
+            Excel.Range rngIJ = (Excel.Range)wsOut.Range["I6", "J" + barisAkhir];
+            rngIJ.Locked        = false;
+            rngIJ.FormulaHidden = false;
+
+            // K: terkunci + formula disembunyikan
+            Excel.Range rngK = (Excel.Range)wsOut.Range["K6", "K" + barisAkhir];
+            rngK.Locked        = true;
+            rngK.FormulaHidden = true;
         }
 
         // ----------------------------------------------------------------
@@ -211,6 +273,19 @@ namespace CKPNLibrary.Modules
             var v = ((Excel.Range)ws.Range["D17"]).Value2;
             string s = (v ?? "").ToString();
             return s.IndexOf("setahun", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        // -------- Switch Master!F13: kriteria tunggakan > 7 s.d. 30 hari --------
+        // "Ya"    -> aktifkan pengecekan tunggakan pada debitur yang lolos
+        //            kriteria NPF/Kol-2/Restrukturisasi.
+        // "Tidak" -> lewati (perilaku lama).
+        private bool CekFlag7Hari()
+        {
+            var ws = CariSheet(_app.ActiveWorkbook, "Master");
+            if (ws == null) return false;
+            var v = ((Excel.Range)ws.Range["F13"]).Value2;
+            string s = (v ?? "").ToString().Trim();
+            return s.Equals("Ya", StringComparison.OrdinalIgnoreCase);
         }
 
         // -------- 14 bucket hari tunggakan -> baris kolom U (blok S5:X20) --------
@@ -301,9 +376,19 @@ namespace CKPNLibrary.Modules
                     h1Arr = ExcelHelper.BacaKolomDouble(ws, spec.ColHariAF, dataStart, lastRow);
                     break;
                 case SheetMode.Tunggakan1:
+                {
+                    // KC1100 (ijarah): hari tunggakan gabungan ada di AK (ColHariPokok),
+                    // nominal = tunggakan pokok (AL) + tunggakan ujroh/imbalan (AM).
+                    // Karena aging pokok & ujroh menyatu di satu kolom (AK), keduanya
+                    // selalu jatuh di bucket hari yang sama → cukup dijumlah ke Nom1.
+                    // Dengan begitu SumBucket & HitungOS tidak perlu diubah.
                     h1Arr = ExcelHelper.BacaKolomDouble(ws, spec.ColHariPokok, dataStart, lastRow);
                     n1Arr = ExcelHelper.BacaKolomDouble(ws, spec.ColNomPokok,  dataStart, lastRow);
+                    double[] ujrohArr = ExcelHelper.BacaKolomDouble(ws, spec.ColNomUjroh, dataStart, lastRow);
+                    int mUj = Math.Min(n1Arr.Length, ujrohArr.Length);
+                    for (int k = 0; k < mUj; k++) n1Arr[k] += ujrohArr[k];
                     break;
+                }
                 default: // Tunggakan2
                     h1Arr = ExcelHelper.BacaKolomDouble(ws, spec.ColHariPokok, dataStart, lastRow);
                     n1Arr = ExcelHelper.BacaKolomDouble(ws, spec.ColNomPokok,  dataStart, lastRow);
@@ -428,6 +513,59 @@ namespace CKPNLibrary.Modules
         }
 
         // ----------------------------------------------------------------
+        // ================================================================
+        // PROTEKSI SHEET — buka di awal, kunci ulang di finally
+        // ================================================================
+
+        /// <summary>
+        /// Membuka proteksi sheet bila sedang terproteksi. Melempar error yang
+        /// jelas bila password tidak cocok, supaya penyebabnya tidak tersamar
+        /// menjadi error 1004 generik saat penulisan sel.
+        /// </summary>
+        private bool BukaProteksiSheet(Excel.Worksheet ws)
+        {
+            if (ws == null) return false;
+
+            bool terproteksi;
+            try { terproteksi = ws.ProtectContents; }
+            catch { return false; }
+
+            if (!terproteksi) return false;   // memang tidak terkunci → tidak perlu apa-apa
+
+            try
+            {
+                ws.Unprotect(PW_SHEET);
+            }
+            catch
+            {
+                throw new InvalidOperationException(
+                    "Gagal membuka proteksi sheet '" + ws.Name + "'.\n\n" +
+                    "Sheet terproteksi dengan password yang BERBEDA dari yang tertanam\n" +
+                    "di aplikasi. Kunci ulang sheet dengan password yang benar, atau\n" +
+                    "buka proteksinya manual sebelum menjalankan perhitungan.");
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Mengunci sheet dengan proteksi standar (password tertanam).
+        /// Dipanggil di finally agar sheet output selalu terproteksi setelah selesai.
+        /// </summary>
+        private void KunciProteksiSheet(Excel.Worksheet ws)
+        {
+            if (ws == null) return;
+            try
+            {
+                ws.Protect(
+                    Password:          PW_SHEET,
+                    DrawingObjects:    true,
+                    Contents:          true,
+                    Scenarios:         true,
+                    UserInterfaceOnly: false);
+            }
+            catch { /* abaikan; mis. sheet sudah terproteksi dgn password lain */ }
+        }
+
         private static Excel.Worksheet CariSheet(Excel.Workbook wb, string name)
         {
             foreach (Excel.Worksheet sh in wb.Worksheets)

@@ -15,6 +15,7 @@ namespace CKPNLibrary
         private static readonly string[] SheetWajib = new[]
         {
             "Master",
+            "Summary",
             "A. CKPN - INDV",
             "B1.PD-Net Flow",
             "B2.PD-Migration",
@@ -35,11 +36,32 @@ namespace CKPNLibrary
         {
             var wb = app.ActiveWorkbook;
             if (wb == null) { TampilkanError("Tidak ada workbook yang aktif."); return false; }
-            if (!CekNamaFile(wb))          return false;
-            if (!CekSheetWajib(wb))        return false;
-            if (!CekProteksiMaster(wb))    return false;
-            if (!CekProteksiWorkbook(wb))  return false;
-            return true;
+
+            // Ingat sheet yang aktif sebelum verifikasi proteksi.
+            // Rangkaian Unprotect/Protect pada beberapa sheet (Master, Summary,
+            // A. CKPN - INDV) dapat menggeser sheet aktif — mis. berhenti di
+            // "Summary". Sheet aktif dipulihkan di blok finally agar setelah
+            // pemeriksaan posisinya tetap seperti semula (umumnya "Master",
+            // tempat tombol perhitungan dijalankan).
+            Excel.Worksheet sheetAktifSemula = null;
+            try { sheetAktifSemula = app.ActiveSheet as Excel.Worksheet; } catch { }
+
+            try
+            {
+                if (!CekNamaFile(wb))          return false;
+                if (!CekSheetWajib(wb))        return false;
+                if (!CekProteksiSheet(wb, "Master"))                     return false;  // verifikasi password penuh
+                if (!CekProteksiSheet(wb, "Summary", false))             return false;  // cukup cek terproteksi
+                if (!CekProteksiSheet(wb, "A. CKPN - INDV", false))      return false;  // cukup cek terproteksi
+                if (!CekProteksiWorkbook(wb))  return false;
+                return true;
+            }
+            finally
+            {
+                // Pulihkan sheet aktif semula, apa pun hasil pemeriksaan.
+                if (sheetAktifSemula != null)
+                    try { sheetAktifSemula.Activate(); } catch { }
+            }
         }
 
         // ----------------------------------------------------------------
@@ -83,7 +105,9 @@ namespace CKPNLibrary
         }
 
         // ----------------------------------------------------------------
-        // Cek 3: sheet "Master" harus terproteksi dengan password yang benar
+        // Cek 3: sheet hasil (Master, Summary, A. CKPN - INDV) HARUS terproteksi
+        // dengan password yang benar. Bila salah satu tidak terproteksi atau
+        // password-nya berbeda, perhitungan ditolak.
         //
         // Cara kerja:
         //   Excel tidak mengekspos password secara langsung — hanya hash-nya.
@@ -94,29 +118,39 @@ namespace CKPNLibrary
         //   dengan password ini.
         //
         //   Kasus yang ditolak:
-        //     a) Sheet Master tidak diproteksi sama sekali (.ProtectContents = false)
-        //     b) Sheet Master diproteksi tapi dengan password berbeda
+        //     a) Sheet tidak diproteksi sama sekali (.ProtectContents = false)
+        //     b) Sheet diproteksi tapi dengan password berbeda
         // ----------------------------------------------------------------
-        private static bool CekProteksiMaster(Excel.Workbook wb)
+        private static bool CekProteksiSheet(Excel.Workbook wb, string namaSheet, bool verifikasiPassword = true)
         {
-            // Cari sheet Master
-            Excel.Worksheet wsMaster = null;
+            // Cari sheet
+            Excel.Worksheet ws = null;
             foreach (Excel.Worksheet sh in wb.Worksheets)
-                if (sh.Name.Equals("Master", StringComparison.OrdinalIgnoreCase))
-                { wsMaster = sh; break; }
+                if (sh.Name.Equals(namaSheet, StringComparison.OrdinalIgnoreCase))
+                { ws = sh; break; }
 
-            if (wsMaster == null)
-                return true;   // sudah ditangani CekSheetWajib
+            if (ws == null)
+                return true;   // ketiadaan sheet sudah ditangani CekSheetWajib
 
             // Kasus a: sheet tidak diproteksi sama sekali
-            if (!wsMaster.ProtectContents)
+            if (!ws.ProtectContents)
             {
                 TampilkanError(
-                    "Sheet 'Master' tidak dalam kondisi terproteksi.\n\n" +
+                    "Sheet '" + namaSheet + "' tidak dalam kondisi terproteksi.\n\n" +
+                    "Sheet ini harus diproteksi terlebih dahulu\n" +
                     "sebelum perhitungan dapat dijalankan.\n\n" +
                     "Hubungi administrator aplikasi.");
                 return false;
             }
+
+            // Mode ringan: cukup pastikan sheet TERPROTEKSI, tanpa unprotect/protect.
+            // Dipakai untuk Summary & A. CKPN - INDV agar gerbang tidak menjalankan
+            // rangkaian unprotect/protect yang membuat layar sesaat tampak abu-abu.
+            // Password tetap terjaga karena kedua sheet ini dibuka/dikunci oleh
+            // modulnya sendiri (RefreshSummary / CKPNIndividu) dengan password
+            // tertanam — mismatch password akan ketahuan di sana.
+            if (!verifikasiPassword)
+                return true;
 
             // Kasus b: sheet diproteksi — verifikasi password dengan try-unprotect
             //   Jika Unprotect berhasil  → password cocok → protect ulang → return true
@@ -125,7 +159,7 @@ namespace CKPNLibrary
             try
             {
                 // Coba buka proteksi dengan password yang diketahui
-                wsMaster.Unprotect(PasswordMaster);
+                ws.Unprotect(PasswordMaster);
 
                 // Sampai di sini = berhasil, password cocok
                 passwordCocok = true;
@@ -143,7 +177,7 @@ namespace CKPNLibrary
                 {
                     try
                     {
-                        wsMaster.Protect(
+                        ws.Protect(
                             Password:             PasswordMaster,
                             DrawingObjects:       true,
                             Contents:             true,
@@ -157,7 +191,8 @@ namespace CKPNLibrary
             if (!passwordCocok)
             {
                 TampilkanError(
-                    "Proteksi sheet 'Master' tidak valid.\n\n" +
+                    "Proteksi sheet '" + namaSheet + "' tidak valid.\n\n" +
+                    "Sheet terproteksi dengan password yang berbeda.\n\n" +
                     "Hubungi administrator aplikasi.");
                 return false;
             }
@@ -170,7 +205,7 @@ namespace CKPNLibrary
         private const string PasswordWorkbook = "HaiiWhatt??";
         // ----------------------------------------------------------------
         // Cek 4: Workbook harus dalam kondisi "Protect Workbook" (structure)
-        // dengan password yang benar. Logika sama seperti CekProteksiMaster.
+        // dengan password yang benar. Logika sama seperti CekProteksiSheet.
         // ----------------------------------------------------------------
         private static bool CekProteksiWorkbook(Excel.Workbook wb)
         {

@@ -198,6 +198,19 @@ namespace CKPNLibrary
         {
             try
             {
+                // Konfirmasi PALING AWAL — sebelum pengecekan proteksi. Verifikasi
+                // proteksi (unprotect/protect beruntun) sesaat membuat layar tampak
+                // abu-abu; dengan konfirmasi di depan, dialog muncul segera setelah
+                // klik saat layar masih segar.
+                var jawab = System.Windows.Forms.MessageBox.Show(
+                    "Jalankan Refresh Summary sekarang?\n\n" +
+                    "Proses akan membuka file sumber lalu memperbarui CKPN, PPKA, " +
+                    "dan ABA di sheet Summary.",
+                    "Konfirmasi Refresh Summary",
+                    System.Windows.Forms.MessageBoxButtons.YesNo,
+                    System.Windows.Forms.MessageBoxIcon.Question);
+                if (jawab != System.Windows.Forms.DialogResult.Yes) return;
+ 
                 var app = (Excel.Application)ExcelDnaUtil.Application;
                 if (!Protection.CekProteksi(app)) return;
                 new RefreshSummary(app).Refresh(filePath, sheetKCList);

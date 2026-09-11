@@ -53,6 +53,10 @@ namespace CKPNLibrary.Modules
         private const string SH_LOG  = "Audit Log";
         private const string FMT_NUM = "#,##0;(#,##0);-";
 
+        // Password proteksi sheet (Summary & Audit Log). Sama dengan Protection.cs.
+        // Sheet dibuka proteksinya di awal, lalu dikunci ulang di blok finally.
+        private const string PW_SHEET = "HaiiWhatt??";
+
         // ---- Konstanta ABA (KC0500) ----
         private const string ABA_SHEET     = "KC0500";
         private const string ABA_COL_EAD   = "T";   // nilai EAD
@@ -75,13 +79,23 @@ namespace CKPNLibrary.Modules
             _app = app ?? throw new ArgumentNullException("app");
         }
 
-        private void Langkah(string s) { _langkah = s; }
+        private void Langkah(string s)
+        {
+            _langkah = s;
+            // Tampilkan progres di status bar → memberi umpan balik selama proses
+            // berjalan (mengurangi kesan layar "hang"/error) sekaligus membantu
+            // jendela tetap ter-repaint.
+            try { _app.StatusBar = "Refresh Summary: " + s + " ..."; } catch { }
+        }
 
         // ================================================================
         // ENTRY POINT
         // ================================================================
         public void Refresh(string filePath, string sheetKCList)
         {
+            // Catatan: konfirmasi Yes/No dilakukan di CKPNFunctions.RefreshSummaryCmd
+            // SEBELUM Protection.CekProteksi, supaya dialog muncul segera setelah klik
+            // (tidak di atas layar abu-abu akibat proses verifikasi proteksi).
             try
             {
                 RefreshInti(filePath, sheetKCList);
@@ -98,6 +112,13 @@ namespace CKPNLibrary.Modules
                     "sheet Summary terproteksi, sel target ter-merge, atau\n" +
                     "file sumber terbuka dalam Protected View.",
                     ex);
+            }
+            finally
+            {
+                // Jaring pengaman: pulihkan status bar & kursor apa pun yang terjadi
+                // (mis. bila error terjadi sebelum blok finally di RefreshInti).
+                try { _app.StatusBar = false; } catch { }
+                try { _app.Cursor    = Excel.XlMousePointer.xlDefault; } catch { }
             }
         }
 
@@ -128,7 +149,14 @@ namespace CKPNLibrary.Modules
             Excel.XlCalculation prevCalc = Excel.XlCalculation.xlCalculationAutomatic;
             try { prevCalc = _app.Calculation; } catch { }
 
+            // Sheet yang akan ditulisi. Referensi & status proteksinya diingat
+            // agar bisa dikunci ulang di blok finally, apa pun yang terjadi.
+            Excel.Worksheet wsLog = CariSheet(wb, SH_LOG);
+            bool sumTerproteksi = false;
+            bool logTerproteksi = false;
+
             Excel.Workbook wbSrc = null;
+            string laporan = null;
 
             try
             {
@@ -137,6 +165,15 @@ namespace CKPNLibrary.Modules
                 try { _app.EnableEvents   = false; } catch { }
                 try { _app.DisplayAlerts  = false; } catch { }
                 try { _app.Calculation = Excel.XlCalculation.xlCalculationManual; } catch { }
+                try { _app.Cursor      = Excel.XlMousePointer.xlWait; } catch { }
+
+                // ---------- 0b. Buka proteksi sheet yang akan ditulisi ----------
+                // Dilakukan SETELAH state di-set dan di DALAM try, supaya finally
+                // dijamin mengunci ulang meski terjadi error di tengah proses.
+                Langkah("Membuka proteksi sheet Summary (bila terproteksi)");
+                sumTerproteksi = BukaProteksiSheet(wsSum);
+                Langkah("Membuka proteksi sheet Audit Log (bila terproteksi)");
+                logTerproteksi = BukaProteksiSheet(wsLog);
 
                 // ---------- 1. Formula link internal (kolom B) ----------
                 Langkah("Menulis formula link internal ke Summary B6:B8 dan B13:B15");
@@ -211,18 +248,16 @@ namespace CKPNLibrary.Modules
                 ((Excel.Range)wsSum.Range["C13"]).Value2 = totalIndv;
                 ((Excel.Range)wsSum.Range["C14"]).Value2 = totalKol;
 
-                // ---------- 6. Audit Log: jenis tak dikenal ----------
-                Langkah("Menulis peringatan Jenis CKPN tak dikenal ke Audit Log");
-                try { TulisJenisTakDikenal(takDikenal); } catch { /* abaikan error logging */ }
+                // ---------- 6. (dinonaktifkan) ----------
+                // Peringatan "Jenis CKPN tak dikenal" tidak lagi ditulis ke Audit Log.
+                // Deteksi ini memicu false-positive dari baris header/non-data pada
+                // kolom Jenis, sehingga peringatannya sengaja tidak ditampilkan.
 
                 // ---------- 7. Laporan ringkas ----------
                 Langkah("Menyusun laporan ringkas");
                 var lap = new StringBuilder();
                 lap.AppendLine("CKPN per Jenis:").Append(lapOK);
                 if (lapSkip.Length > 0) lap.AppendLine().AppendLine("Dilewati:").Append(lapSkip);
-                if (takDikenal.Count > 0)
-                    lap.AppendLine().AppendLine("Peringatan: " + takDikenal.Count +
-                                                " baris Jenis tak dikenali (lihat Audit Log).");
                 lap.AppendLine();
                 lap.AppendLine("TOTAL Individual : " + totalIndv.ToString("#,##0"));
                 lap.AppendLine("TOTAL Kolektif   : " + totalKol.ToString("#,##0"));
@@ -233,10 +268,9 @@ namespace CKPNLibrary.Modules
                 lap.AppendLine("  - Dijamin LPS (<=2M) : " + abaDijamin.ToString("#,##0"));
                 lap.AppendLine("  - Di atas plafon     : " + abaDiAtasPlafon.ToString("#,##0"));
 
-                System.Windows.Forms.MessageBox.Show(
-                    lap.ToString(), "Refresh CKPN & PPKA",
-                    System.Windows.Forms.MessageBoxButtons.OK,
-                    System.Windows.Forms.MessageBoxIcon.Information);
+                // Simpan laporan; dialog DITAMPILKAN setelah state layar dipulihkan
+                // (lihat setelah blok finally) agar tidak muncul di atas layar abu-abu.
+                laporan = lap.ToString();
 
                 Langkah("Selesai");
             }
@@ -246,12 +280,30 @@ namespace CKPNLibrary.Modules
                 // pada salah satu baris akan menimpa exception aslinya dan
                 // menyembunyikan penyebab sebenarnya.
                 if (wbSrc != null) { try { wbSrc.Close(false); } catch { } }
+
+                // Kunci ulang HANYA sheet yang tadinya memang terproteksi, supaya
+                // status proteksi awal terjaga. Dilakukan selagi EnableEvents masih
+                // false agar tidak memicu event apa pun.
+                if (sumTerproteksi) { try { KunciProteksiSheet(wsSum); } catch { } }
+                if (logTerproteksi) { try { KunciProteksiSheet(wsLog); } catch { } }
+
                 try { _app.Calculation    = prevCalc;   } catch { }
                 try { _app.CutCopyMode    = (Excel.XlCutCopyMode)0; } catch { }
                 try { _app.DisplayAlerts  = prevAlerts; } catch { }
                 try { _app.EnableEvents   = prevEvents; } catch { }
                 try { _app.ScreenUpdating = prevScreen; } catch { }
+                try { _app.Cursor         = Excel.XlMousePointer.xlDefault; } catch { }
+                try { _app.StatusBar      = false; } catch { }
             }
+
+            // Laporan ditampilkan SETELAH state layar dipulihkan (ScreenUpdating aktif
+            // kembali), supaya dialog muncul di atas tampilan normal — bukan di atas
+            // layar abu-abu yang terkesan error.
+            if (laporan != null)
+                System.Windows.Forms.MessageBox.Show(
+                    laporan, "Refresh CKPN & PPKA",
+                    System.Windows.Forms.MessageBoxButtons.OK,
+                    System.Windows.Forms.MessageBoxIcon.Information);
         }
 
         // ================================================================
@@ -276,14 +328,10 @@ namespace CKPNLibrary.Modules
                 masalah.Add("Sheet '" + SH_LOG + "' tidak ditemukan " +
                             "(tujuan penulisan rincian ABA).");
 
-            // (b) Sheet Summary tidak boleh terproteksi saat ditulis.
-            try
-            {
-                if (wsSum.ProtectContents)
-                    masalah.Add("Sheet '" + SH_SUM + "' dalam kondisi terproteksi. " +
-                                "Buka proteksi sheet Summary (Review > Unprotect Sheet).");
-            }
-            catch { }
+            // (b) Proteksi sheet Summary TIDAK lagi menggagalkan praterbang.
+            //     Sheet yang terproteksi kini dibuka otomatis di awal RefreshInti
+            //     (dengan password tertanam) lalu dikunci ulang di blok finally.
+            //     Jadi kondisi terproteksi adalah kondisi normal — bukan masalah.
 
             // (c) Sel target tidak boleh ter-merge. Menulis ke sebagian sel
             //     yang ter-merge ditolak Excel dengan error 1004.
@@ -845,6 +893,60 @@ namespace CKPNLibrary.Modules
                     "Hapus baris lama di Audit Log, lalu jalankan ulang.");
 
             return hasil;
+        }
+
+        // ================================================================
+        // PROTEKSI SHEET — buka di awal, kunci ulang di finally
+        // ================================================================
+
+        /// <summary>
+        /// Membuka proteksi sheet bila sedang terproteksi.
+        /// Return true bila sheet TADINYA terproteksi (perlu dikunci ulang nanti).
+        /// Melempar error yang jelas bila password tidak cocok, supaya penyebabnya
+        /// tidak tersamar menjadi error 1004 generik saat penulisan sel.
+        /// </summary>
+        private bool BukaProteksiSheet(Excel.Worksheet ws)
+        {
+            if (ws == null) return false;
+
+            bool terproteksi;
+            try { terproteksi = ws.ProtectContents; }
+            catch { return false; }
+
+            if (!terproteksi) return false;   // memang tidak terproteksi → tidak perlu apa-apa
+
+            try
+            {
+                ws.Unprotect(PW_SHEET);
+            }
+            catch
+            {
+                throw new InvalidOperationException(
+                    "Gagal membuka proteksi sheet '" + ws.Name + "'.\n\n" +
+                    "Sheet terproteksi dengan password yang BERBEDA dari yang tertanam\n" +
+                    "di aplikasi. Kunci ulang sheet dengan password yang benar, atau\n" +
+                    "buka proteksinya manual sebelum menjalankan Refresh.");
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Mengunci ulang sheet dengan proteksi standar (password tertanam).
+        /// Dipanggil di finally untuk sheet yang tadinya terproteksi.
+        /// </summary>
+        private void KunciProteksiSheet(Excel.Worksheet ws)
+        {
+            if (ws == null) return;
+            try
+            {
+                ws.Protect(
+                    Password:          PW_SHEET,
+                    DrawingObjects:    true,
+                    Contents:          true,
+                    Scenarios:         true,
+                    UserInterfaceOnly: false);
+            }
+            catch { /* abaikan; mis. sheet sudah terproteksi */ }
         }
 
         private static Excel.Worksheet CariSheet(Excel.Workbook wb, string name)

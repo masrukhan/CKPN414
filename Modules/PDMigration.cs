@@ -568,9 +568,17 @@ namespace CKPNLibrary.Modules
                             h1Arr = ExcelHelper.BacaKolomDouble(ws, spec.ColHariAF, dataStart, lastRow);
                             break;
                         case SheetMode.Tunggakan1:
+                        {
+                            // KC1100 (ijarah): OS/EAD staging = tunggakan pokok (AL) + ujroh (AM).
+                            // Ujroh digabung ke Nom1 agar cabang osVal (Tunggakan1) tetap = n1Arr[i].
+                            // Konsisten dengan EAD di CKPN Individu & PD Net Flow.
                             h1Arr = ExcelHelper.BacaKolomDouble(ws, spec.ColHariPokok, dataStart, lastRow);
                             n1Arr = ExcelHelper.BacaKolomDouble(ws, spec.ColNomPokok,  dataStart, lastRow);
+                            double[] ujrohArr = ExcelHelper.BacaKolomDouble(ws, spec.ColNomUjroh, dataStart, lastRow);
+                            int mUj = Math.Min(n1Arr.Length, ujrohArr.Length);
+                            for (int k = 0; k < mUj; k++) n1Arr[k] += ujrohArr[k];
                             break;
+                        }
                         default: // Tunggakan2
                             h1Arr = ExcelHelper.BacaKolomDouble(ws, spec.ColHariPokok, dataStart, lastRow);
                             n1Arr = ExcelHelper.BacaKolomDouble(ws, spec.ColNomPokok,  dataStart, lastRow);
@@ -751,8 +759,15 @@ namespace CKPNLibrary.Modules
                             n1Arr = ExcelHelper.BacaKolomDouble(ws, spec.ColOS,        dataStart5, lastRow);
                             break;
                         case SheetMode.Tunggakan1:
+                        {
+                            // KC1100 (ijarah): ranking OS = pokok (AL) + ujroh (AM) agar Top-N
+                            // konsisten dengan CKPN Individu & PD Net Flow (kini pokok+ujroh).
                             n1Arr = ExcelHelper.BacaKolomDouble(ws, spec.ColNomPokok,  dataStart5, lastRow);
+                            double[] ujrohArr = ExcelHelper.BacaKolomDouble(ws, spec.ColNomUjroh, dataStart5, lastRow);
+                            int mUj = Math.Min(n1Arr.Length, ujrohArr.Length);
+                            for (int k = 0; k < mUj; k++) n1Arr[k] += ujrohArr[k];
                             break;
+                        }
                         default: // KC1000
                             n1Arr = ExcelHelper.BacaKolomDouble(ws, spec.ColNomPokok,  dataStart5, lastRow);
                             n2Arr = ExcelHelper.BacaKolomDouble(ws, spec.ColNomBasil,  dataStart5, lastRow);

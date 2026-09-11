@@ -21,13 +21,21 @@ namespace CKPNLibrary.Models
         /// <summary>Nama sheet KC sumber data (mis. "KC0600").</summary>
         public string SheetKC { get; set; }
 
-        public KontrakData(string noKontrak, double os, double jaminan, int kualitas, string sheetKC)
+        /// <summary>
+        /// Hari tunggakan kontrak — dipakai kriteria penurunan nilai 7–30 hari.
+        /// Diisi dari baris pertama; diperbarui ke nilai MAKSIMUM bila kontrak
+        /// yang sama muncul di beberapa baris (tunggakan terlama yang dipakai).
+        /// </summary>
+        public double HariTunggakan { get; set; }
+
+        public KontrakData(string noKontrak, double os, double jaminan, int kualitas, string sheetKC, double hariTunggakan = 0)
         {
-            NoKontrak = noKontrak;
-            OS        = os;
-            Jaminan   = jaminan;
-            Kualitas  = kualitas;
-            SheetKC   = sheetKC;
+            NoKontrak     = noKontrak;
+            OS            = os;
+            Jaminan       = jaminan;
+            Kualitas      = kualitas;
+            SheetKC       = sheetKC;
+            HariTunggakan = hariTunggakan;
         }
     }
 }

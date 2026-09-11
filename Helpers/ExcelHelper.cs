@@ -157,7 +157,7 @@ namespace CKPNLibrary.Helpers
             double[] jamArr   = BacaKolomDouble(ws, spec.ColJaminan,  dataStart, lastRow);
             double[] kualArr  = BacaKolomDouble(ws, spec.ColKualitas, dataStart, lastRow);
 
-            double[] hariPokok = null, nomPokok = null, hariBasil = null, nomBasil = null;
+            double[] hariPokok = null, nomPokok = null, nomUjroh = null, hariBasil = null, nomBasil = null;
             double[] osArr = null, hariAF = null;
 
             switch (spec.Mode)
@@ -167,8 +167,12 @@ namespace CKPNLibrary.Helpers
                     hariAF = BacaKolomDouble(ws, spec.ColHariAF, dataStart, lastRow);
                     break;
                 case SheetMode.Tunggakan1:
+                    // KC1100 (ijarah): pokok (AL) + ujroh/imbalan (AM).
+                    // hariPokok (AK) dibaca demi konsistensi, tapi tidak dipakai
+                    // untuk osVal karena OS = seluruh tunggakan tanpa syarat hari.
                     hariPokok = BacaKolomDouble(ws, spec.ColHariPokok, dataStart, lastRow);
                     nomPokok  = BacaKolomDouble(ws, spec.ColNomPokok,  dataStart, lastRow);
+                    nomUjroh  = BacaKolomDouble(ws, spec.ColNomUjroh,  dataStart, lastRow);   // BARU: AM
                     break;
                 case SheetMode.Tunggakan2:
                     hariPokok = BacaKolomDouble(ws, spec.ColHariPokok, dataStart, lastRow);
@@ -189,23 +193,28 @@ namespace CKPNLibrary.Helpers
                 int    kualitas = kualArr.Length > i ? (int)kualArr[i] : 0;
 
                 double osVal;
+                double hariVal;      // hari tunggakan untuk kriteria penurunan nilai 7–30 hari
                 bool   masuk;
 
                 switch (spec.Mode)
                 {
                     case SheetMode.AF:
-                        masuk = true;
-                        osVal = osArr[i];
+                        masuk   = true;
+                        osVal   = osArr[i];
+                        hariVal = hariAF[i];
                         break;
 
                     case SheetMode.Tunggakan1:
-                        // KC1100 — LOGIKA BARU:
+                        // KC1100 — LOGIKA BARU (pokok + ujroh):
                         // Filter: baris masuk jika nama debitur (kolom D) tidak kosong.
                         // Baris tanpa nama = baris agunan/subtotal → di-skip.
-                        // OS = seluruh nomPokok (AL), tidak peduli hari tunggakan.
-                        // Alasan: ada debitur dengan hari tunggakan = 0 tapi nominal > 0.
-                        masuk = !string.IsNullOrEmpty(nama);
-                        osVal = nomPokok[i];
+                        // OS/EAD = tunggakan pokok (AL) + tunggakan ujroh (AM),
+                        //          tidak peduli hari tunggakan.
+                        // Alasan: ujroh adalah kewajiban debitur yang ikut membentuk
+                        //         EAD; hari tunggakan gabungan ada di AK.
+                        masuk   = !string.IsNullOrEmpty(nama);
+                        osVal   = nomPokok[i] + nomUjroh[i];   // BARU: pokok (AL) + ujroh (AM)
+                        hariVal = hariPokok[i];                // AK (aging gabungan pokok & ujroh)
                         break;
 
                     case SheetMode.Tunggakan2:
@@ -214,8 +223,9 @@ namespace CKPNLibrary.Helpers
                         // Baris tanpa nama = baris agunan/subtotal → di-skip.
                         // OS = nomPokok (AL) + nomBasil (AN), tidak peduli hari tunggakan.
                         // Alasan: ada debitur dengan hari tunggakan = 0 tapi nominal > 0.
-                        masuk = !string.IsNullOrEmpty(nama);
-                        osVal = nomPokok[i] + nomBasil[i];
+                        masuk   = !string.IsNullOrEmpty(nama);
+                        osVal   = nomPokok[i] + nomBasil[i];
+                        hariVal = Math.Max(hariPokok[i], hariBasil[i]);   // aging terlama (pokok vs basil)
                         break;
 
                     default:
@@ -229,7 +239,7 @@ namespace CKPNLibrary.Helpers
                 else if (string.IsNullOrEmpty(dictCIF[cif].Nama) && !string.IsNullOrEmpty(nama))
                     dictCIF[cif].Nama = nama;
 
-                dictCIF[cif].TambahKontrak(noKontrak, osVal, jaminan, kualitas, spec.SheetName);
+                dictCIF[cif].TambahKontrak(noKontrak, osVal, jaminan, kualitas, spec.SheetName, hariVal);
             }
 
             return dictCIF;

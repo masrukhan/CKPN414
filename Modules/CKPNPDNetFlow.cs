@@ -211,9 +211,20 @@ namespace CKPNLibrary.Modules
                     h1Arr = ExcelHelper.BacaKolomDouble(ws, spec.ColHariAF, dataStart, lastRow);
                     break;
                 case SheetMode.Tunggakan1:
+                {
+                    // KC1100 (ijarah): hari tunggakan gabungan ada di AK (ColHariPokok),
+                    // nominal = tunggakan pokok (AL) + tunggakan ujroh/imbalan (AM).
+                    // Karena aging pokok & ujroh menyatu di satu kolom (AK), keduanya
+                    // selalu jatuh di bucket hari yang sama → cukup dijumlah ke Nom1.
+                    // Dengan begitu SumBucket & HitungOS tidak perlu diubah, dan ujroh
+                    // ikut terhitung di bucket PD Net Flow serta EAD (OS + WO).
                     h1Arr = ExcelHelper.BacaKolomDouble(ws, spec.ColHariPokok, dataStart, lastRow);
                     n1Arr = ExcelHelper.BacaKolomDouble(ws, spec.ColNomPokok,  dataStart, lastRow);
+                    double[] ujrohArr = ExcelHelper.BacaKolomDouble(ws, spec.ColNomUjroh, dataStart, lastRow);
+                    int mUj = Math.Min(n1Arr.Length, ujrohArr.Length);
+                    for (int k = 0; k < mUj; k++) n1Arr[k] += ujrohArr[k];
                     break;
+                }
                 default: // Tunggakan2
                     h1Arr = ExcelHelper.BacaKolomDouble(ws, spec.ColHariPokok, dataStart, lastRow);
                     n1Arr = ExcelHelper.BacaKolomDouble(ws, spec.ColNomPokok,  dataStart, lastRow);

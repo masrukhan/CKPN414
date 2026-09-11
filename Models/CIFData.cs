@@ -37,21 +37,23 @@ namespace CKPNLibrary.Models
 
         /// <summary>
         /// Tambahkan atau perbarui kontrak.
-        /// — Baris pertama kontrak: catat OS, jaminan awal, kualitas; tambahkan ke TotalOS.
-        /// — Baris berikutnya kontrak yang sama: akumulasi jaminan saja (OS tidak ditambah lagi).
+        /// — Baris pertama kontrak: catat OS, jaminan awal, kualitas, hari tunggakan; tambahkan ke TotalOS.
+        /// — Baris berikutnya kontrak yang sama: akumulasi jaminan; hari tunggakan ambil yang terbesar.
         /// </summary>
-        public void TambahKontrak(string noKontrak, double os, double jaminan, int kualitas, string sheetKC)
+        public void TambahKontrak(string noKontrak, double os, double jaminan, int kualitas, string sheetKC, double hariTunggakan = 0)
         {
             if (!Kontrak.ContainsKey(noKontrak))
             {
                 // Baris pertama kontrak ini
                 TotalOS += os;
-                Kontrak[noKontrak] = new KontrakData(noKontrak, os, jaminan, kualitas, sheetKC);
+                Kontrak[noKontrak] = new KontrakData(noKontrak, os, jaminan, kualitas, sheetKC, hariTunggakan);
             }
             else
             {
-                // Baris berikutnya: akumulasi jaminan saja
+                // Baris berikutnya: akumulasi jaminan; hari tunggakan pakai yang terlama
                 Kontrak[noKontrak].Jaminan += jaminan;
+                if (hariTunggakan > Kontrak[noKontrak].HariTunggakan)
+                    Kontrak[noKontrak].HariTunggakan = hariTunggakan;
             }
         }
     }

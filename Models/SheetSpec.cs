@@ -11,7 +11,9 @@ namespace CKPNLibrary.Models
 
         /// <summary>
         /// KC1100 (LOGIKA BARU): masuk jika ada nama debitur (kolom D tidak kosong).
-        /// OS = jumlah seluruh AL (tunggakan pokok) tanpa syarat hari.
+        /// OS/EAD = tunggakan pokok (AL) + tunggakan ujroh/imbalan (AM) tanpa syarat hari.
+        /// Hari tunggakan gabungan pokok & ujroh ada di AK (ColHariPokok) →
+        /// dipakai sebagai basis bucket PD Net Flow.
         /// Baris tanpa nama = baris agunan, di-skip.
         /// </summary>
         Tunggakan1,
@@ -51,6 +53,10 @@ namespace CKPNLibrary.Models
         // Khusus Tunggakan2 saja: hari & nominal basil
         public string ColHariBasil    { get; set; }   // mis. "AM"
         public string ColNomBasil     { get; set; }   // mis. "AN"
+
+        // Khusus Tunggakan1 (KC1100 ijarah): nominal tunggakan ujroh/imbalan.
+        // Aging-nya menyatu dengan pokok di ColHariPokok (AK) — tidak butuh kolom hari sendiri.
+        public string ColNomUjroh     { get; set; }   // mis. "AM"
 
         // Header row sumber (baris data mulai di HEADER_ROW + 1)
         public int HeaderRow          { get; set; } = 4;
@@ -105,8 +111,10 @@ namespace CKPNLibrary.Models
 
                 case "KC1100":
                     // Filter: baris dengan nama debitur (kolom D tidak kosong)
-                    // OS: jumlah AL (pokok) — semua, tanpa syarat hari
-                    // ColHariPokok tetap ada untuk PD Net Flow (bucket hari)
+                    // OS/EAD: tunggakan pokok (AL) + tunggakan ujroh/imbalan (AM) — semua, tanpa syarat hari
+                    // ColHariPokok (AK) = hari tunggakan gabungan pokok & ujroh → basis bucket PD Net Flow
+                    // CATATAN: di sini "AM" = NOMINAL ujroh. Berbeda peran dgn KC1000 (Tunggakan2)
+                    //          yang memakai AM sebagai ColHariBasil (hari tunggakan basil).
                     // PERBAIKAN: ColKualitas = AF (bukan AE)
                     return new SheetSpec
                     {
@@ -114,8 +122,9 @@ namespace CKPNLibrary.Models
                         Mode        = SheetMode.Tunggakan1,
                         ColCIF      = "C", ColNama = "D", ColNoRek = "J",
                         ColJaminan  = "AY",
-                        ColKualitas = "AF",   
-                        ColHariPokok= "AK", ColNomPokok = "AL"
+                        ColKualitas = "AF",
+                        ColHariPokok= "AK", ColNomPokok = "AL",
+                        ColNomUjroh = "AM"
                     };
 
                 default:
