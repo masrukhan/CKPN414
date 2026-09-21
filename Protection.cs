@@ -53,6 +53,9 @@ namespace CKPNLibrary
                 if (!CekProteksiSheet(wb, "Master"))                     return false;  // verifikasi password penuh
                 if (!CekProteksiSheet(wb, "Summary", false))             return false;  // cukup cek terproteksi
                 if (!CekProteksiSheet(wb, "A. CKPN - INDV", false))      return false;  // cukup cek terproteksi
+                if (!CekProteksiSheet(wb, "B1.PD-Net Flow", false))      return false;  // cukup cek terproteksi
+                if (!CekProteksiSheet(wb, "B2.PD-Migration", false))     return false;  // cukup cek terproteksi
+                if (!CekProteksiSheet(wb, "B3.LGD-ER", false))           return false;  // cukup cek terproteksi
                 if (!CekProteksiWorkbook(wb))  return false;
                 return true;
             }

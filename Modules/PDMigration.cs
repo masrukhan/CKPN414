@@ -58,6 +58,10 @@ namespace CKPNLibrary.Modules
         // Layout KC2900: baris data mulai 3, kolom H=NoRek, I=TglHB, L=BakiDebet
         private const int    WoStartRow  = 3;
 
+        // Password proteksi sheet hasil "B2.PD-Migration".
+        // Sheet dibuka di awal perhitungan, lalu dikunci ulang di finally.
+        private const string PW_SHEET = "HaiiWhatt??";
+
         public PDMigration(Excel.Application app)
         {
             _app = app ?? throw new ArgumentNullException("app");
@@ -67,7 +71,121 @@ namespace CKPNLibrary.Modules
         // Entry point — dipanggil dari CKPNFunctions
         // Parameter dikirim dari VBA sebagai string
         // ----------------------------------------------------------------
+        // ================================================================
+        // Entry point SATU triwulan (kompatibel dengan pemanggilan lama).
+        // Memanggil inti HitungSatu lalu menampilkan ringkasannya.
+        // ================================================================
         public void Hitung(
+            string triwulan, string pathAwal, string pathAkhir,
+            string tglAwalStr, string tglAkhirStr,
+            int topN, string sheetKCList)
+        {
+            // Buka proteksi sheet hasil bila terkunci; kunci ulang di finally.
+            var wsTarget = CariSheet(_app.ActiveWorkbook, SheetTarget);
+            bool terproteksi = false;
+            RingkasTriwulan r;
+            try
+            {
+                terproteksi = BukaProteksiSheet(wsTarget);
+                r = HitungSatu(triwulan, pathAwal, pathAkhir,
+                               tglAwalStr, tglAkhirStr, topN, sheetKCList);
+            }
+            finally
+            {
+                if (terproteksi) KunciProteksiSheet(wsTarget);
+            }
+
+            System.Windows.Forms.MessageBox.Show(
+                FormatDetail(r), "PD Migration",
+                System.Windows.Forms.MessageBoxButtons.OK,
+                System.Windows.Forms.MessageBoxIcon.Information);
+        }
+
+        // ================================================================
+        // Entry point SEMUA triwulan ("Run All Triwulan") — loop I..IV.
+        //
+        // Setiap parameter "…Gab" berisi 4 nilai dipisah '|' dengan urutan
+        // Triwulan I, II, III, IV:
+        //   pathAwalGab  : path file awal  tiap triwulan
+        //   pathAkhirGab : path file akhir tiap triwulan
+        //   tglAwalGab   : label tgl awal  "yyyyMMdd" (opsional, hanya Audit Log)
+        //   tglAkhirGab  : label tgl akhir "yyyyMMdd" (opsional)
+        // topN & sheetKCList sama untuk seluruh triwulan.
+        //
+        // Staging (state PD Migration) dibersihkan & ditulis ulang tiap triwulan;
+        // hasil matriks ditulis ke baseRow masing-masing triwulan sehingga
+        // keempatnya terisi. Audit Log mencatat satu baris per triwulan. Pesan
+        // ringkas ditampilkan SEKALI di akhir untuk seluruh triwulan.
+        // ================================================================
+        public void HitungSemua(
+            string pathAwalGab, string pathAkhirGab,
+            string tglAwalGab,  string tglAkhirGab,
+            int topN, string sheetKCList)
+        {
+            string[] triwulanUrut = { "Triwulan I", "Triwulan II", "Triwulan III", "Triwulan IV" };
+
+            string[] awal  = SplitPipe(pathAwalGab);
+            string[] akhir = SplitPipe(pathAkhirGab);
+            string[] tglAw = SplitPipe(tglAwalGab);
+            string[] tglAk = SplitPipe(tglAkhirGab);
+
+            if (awal.Length < 4 || akhir.Length < 4)
+                throw new ArgumentException(
+                    "Run All Triwulan membutuhkan 4 pasang file (awal & akhir) untuk " +
+                    "Triwulan I s.d. IV, dipisah '|'.\n" +
+                    "Diterima: awal=" + awal.Length + ", akhir=" + akhir.Length + ".");
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("PD Migration - Run All Triwulan: selesai.");
+            sb.AppendLine("Lingkup KC: " + sheetKCList + "  |  Top-N: " + topN);
+            sb.AppendLine();
+
+            // Buka proteksi sheet hasil SEKALI untuk seluruh loop; kunci ulang di finally.
+            var wsTarget = CariSheet(_app.ActiveWorkbook, SheetTarget);
+            bool terproteksi = false;
+            try
+            {
+                terproteksi = BukaProteksiSheet(wsTarget);
+
+                for (int i = 0; i < 4; i++)
+                {
+                    string tw = triwulanUrut[i];
+                    string ta = i < tglAw.Length ? tglAw[i] : "";
+                    string tk = i < tglAk.Length ? tglAk[i] : "";
+
+                    // Setiap triwulan diproses penuh (staging dibersihkan di dalamnya).
+                    RingkasTriwulan r = HitungSatu(tw, awal[i], akhir[i], ta, tk, topN, sheetKCList);
+
+                    // Ringkas: satu baris per triwulan.
+                    sb.AppendLine(FormatRingkas(r));
+                }
+            }
+            finally
+            {
+                if (terproteksi) KunciProteksiSheet(wsTarget);
+            }
+
+            System.Windows.Forms.MessageBox.Show(
+                sb.ToString(), "PD Migration - Run All Triwulan",
+                System.Windows.Forms.MessageBoxButtons.OK,
+                System.Windows.Forms.MessageBoxIcon.Information);
+        }
+
+        private static string[] SplitPipe(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return new string[0];
+            // StringSplitOptions.None: pertahankan posisi (mis. tanggal kosong)
+            // agar indeks awal[i]/akhir[i]/tglAw[i] tetap sejajar per triwulan.
+            return s.Split(new[] { '|' }, StringSplitOptions.None);
+        }
+
+        // ================================================================
+        // Inti perhitungan SATU triwulan. Mengembalikan ringkasan sebagai
+        // objek RingkasTriwulan (TIDAK menampilkan MessageBox) supaya
+        // pemanggil bisa memformatnya: detail untuk satu triwulan, atau
+        // ringkas satu-baris untuk Run All (loop Triwulan I..IV).
+        // ================================================================
+        private RingkasTriwulan HitungSatu(
             string triwulan,      // "Triwulan I" / "II" / "III" / "IV"
             string pathAwal,      // path file periode awal
             string pathAkhir,     // path file periode akhir
@@ -278,21 +396,71 @@ namespace CKPNLibrary.Modules
                           daftarWO, totalSaldoAwal, matriks,
                           topN, topNInfo, sheetKCList, diagWO, stat);
 
-            // ---- Pesan selesai ----
-            System.Windows.Forms.MessageBox.Show(
+            // ---- Ringkasan (dikembalikan; MessageBox ditampilkan oleh pemanggil) ----
+            return new RingkasTriwulan
+            {
+                Triwulan       = triwulan,
+                BaseRow        = baseRow,
+                TopNDiminta    = topN,
+                CifTerpakai    = topNInfo.DaftarCIF.Count,
+                RekSkip        = topNInfo.JumlahRekSkip,
+                OSTopN         = topNInfo.OSTopN,
+                OSBruto        = topNInfo.OSBruto,
+                BarisAwal      = lastB - 2,
+                BarisAkhir     = lastG - 2,
+                RekBertahan    = stat.RekBertahan,
+                RekWO          = stat.RekWO,
+                NominalWO      = stat.NominalWO,
+                RekLainnya     = stat.RekLainnya,
+                NominalLainnya = stat.NominalLainnya
+            };
+        }
+
+        // ================================================================
+        // Ringkasan hasil satu triwulan + pembentuk pesan
+        // ================================================================
+        private class RingkasTriwulan
+        {
+            public string Triwulan;
+            public int    BaseRow;
+            public int    TopNDiminta;
+            public int    CifTerpakai;
+            public int    RekSkip;
+            public double OSTopN;
+            public double OSBruto;
+            public int    BarisAwal;
+            public int    BarisAkhir;
+            public int    RekBertahan;
+            public int    RekWO;
+            public double NominalWO;
+            public int    RekLainnya;
+            public double NominalLainnya;
+        }
+
+        // Pesan DETAIL — untuk perhitungan satu triwulan.
+        private static string FormatDetail(RingkasTriwulan r)
+        {
+            return
                 "Selesai.\n" +
-                triwulan + " -> B2.PD-Migration baris " + baseRow + ":" + (baseRow + 4) + "\n\n" +
-                "Top-N        : " + topN + " diminta, " + topNInfo.DaftarCIF.Count + " CIF terpakai\n" +
-                "Rek Individu : " + topNInfo.JumlahRekSkip + " rekening\n" +
-                "OS Individu  : " + topNInfo.OSTopN.ToString("N0") + "\n" +
-                "OS Bruto     : " + topNInfo.OSBruto.ToString("N0") + "\n\n" +
-                "Baris Awal   : " + (lastB - 2) + "\n" +
-                "Baris Akhir  : " + (lastG - 2) + "\n\n" +
-                "Rek Bertahan : " + stat.RekBertahan + "\n" +
-                "Rek WO       : " + stat.RekWO + " (" + stat.NominalWO.ToString("N0") + ")\n" +
-                "Rek Lainnya  : " + stat.RekLainnya + " (" + stat.NominalLainnya.ToString("N0") + ")",
-                "PD Migration", System.Windows.Forms.MessageBoxButtons.OK,
-                System.Windows.Forms.MessageBoxIcon.Information);
+                r.Triwulan + " -> B2.PD-Migration baris " + r.BaseRow + ":" + (r.BaseRow + 4) + "\n\n" +
+                "Top-N        : " + r.TopNDiminta + " diminta, " + r.CifTerpakai + " CIF terpakai\n" +
+                "Rek Individu : " + r.RekSkip + " rekening\n" +
+                "OS Individu  : " + r.OSTopN.ToString("N0") + "\n" +
+                "OS Bruto     : " + r.OSBruto.ToString("N0") + "\n\n" +
+                "Baris Awal   : " + r.BarisAwal + "\n" +
+                "Baris Akhir  : " + r.BarisAkhir + "\n\n" +
+                "Rek Bertahan : " + r.RekBertahan + "\n" +
+                "Rek WO       : " + r.RekWO + " (" + r.NominalWO.ToString("N0") + ")\n" +
+                "Rek Lainnya  : " + r.RekLainnya + " (" + r.NominalLainnya.ToString("N0") + ")";
+        }
+
+        // Pesan RINGKAS satu baris — untuk Run All Triwulan.
+        private static string FormatRingkas(RingkasTriwulan r)
+        {
+            return r.Triwulan + " (baris " + r.BaseRow + ":" + (r.BaseRow + 4) + ") -> " +
+                   "Bertahan " + r.RekBertahan +
+                   ", WO " + r.RekWO +
+                   ", Lainnya " + r.RekLainnya;
         }
 
         // ================================================================
@@ -1094,6 +1262,60 @@ namespace CKPNLibrary.Modules
             if (val is long   l) return l;
             double r;
             return double.TryParse(val.ToString(), out r) ? r : 0;
+        }
+
+        // ================================================================
+        // PROTEKSI SHEET — buka di awal, kunci ulang di finally
+        // ================================================================
+
+        /// <summary>
+        /// Membuka proteksi sheet bila sedang terproteksi.
+        /// Return true bila sheet TADINYA terproteksi (perlu dikunci ulang nanti).
+        /// Melempar error yang jelas bila password tidak cocok, supaya penyebabnya
+        /// tidak tersamar menjadi error 1004 generik saat penulisan sel.
+        /// </summary>
+        private bool BukaProteksiSheet(Excel.Worksheet ws)
+        {
+            if (ws == null) return false;
+
+            bool terproteksi;
+            try { terproteksi = ws.ProtectContents; }
+            catch { return false; }
+
+            if (!terproteksi) return false;   // memang tidak terkunci → tidak perlu apa-apa
+
+            try
+            {
+                ws.Unprotect(PW_SHEET);
+            }
+            catch
+            {
+                throw new InvalidOperationException(
+                    "Gagal membuka proteksi sheet '" + ws.Name + "'.\n\n" +
+                    "Sheet terproteksi dengan password yang BERBEDA dari yang tertanam\n" +
+                    "di aplikasi. Kunci ulang sheet dengan password yang benar, atau\n" +
+                    "buka proteksinya manual sebelum menjalankan perhitungan.");
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Mengunci ulang sheet dengan proteksi standar (password tertanam).
+        /// Dipanggil di finally untuk sheet yang tadinya terproteksi.
+        /// </summary>
+        private void KunciProteksiSheet(Excel.Worksheet ws)
+        {
+            if (ws == null) return;
+            try
+            {
+                ws.Protect(
+                    Password:          PW_SHEET,
+                    DrawingObjects:    true,
+                    Contents:          true,
+                    Scenarios:         true,
+                    UserInterfaceOnly: false);
+            }
+            catch { /* abaikan; mis. sheet sudah terproteksi dgn password lain */ }
         }
 
         private static Excel.Worksheet CariSheet(Excel.Workbook wb, string name)

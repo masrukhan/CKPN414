@@ -33,6 +33,10 @@ namespace CKPNLibrary.Modules
         private const string WoCol      = "L";
         private const int    WoStartRow = 3;
 
+        // Password proteksi sheet hasil "B1.PD-Net Flow".
+        // Sheet dibuka di awal perhitungan, lalu dikunci ulang di finally.
+        private const string PW_SHEET = "HaiiWhatt??";
+
         public CKPNPDNetFlow(Excel.Application app)
         {
             _app = app ?? throw new ArgumentNullException("app");
@@ -59,6 +63,13 @@ namespace CKPNLibrary.Modules
 
             if (specs.Count == 0)
                 throw new InvalidOperationException("Tidak ada sheet KC valid di sheetKCList.");
+
+            // Buka proteksi sheet hasil bila terkunci; kunci ulang di finally.
+            bool terproteksi = false;
+            string msg = null;
+            try
+            {
+            terproteksi = BukaProteksiSheet(wsTarget);
 
             int logRow = NextAuditLogRow(wsLog);
             TulisAuditLogHeader(wsLog, specs);
@@ -162,8 +173,14 @@ namespace CKPNLibrary.Modules
                               status, osPerSheet, totalOS, woSum, totalEAD, topN, osIndividu, osNonIndividu);
             }
 
-            string msg = "Selesai. Bulan terisi: " + okCount + ". Dilewati: " + skipCount + ".";
+            msg = "Selesai. Bulan terisi: " + okCount + ". Dilewati: " + skipCount + ".";
             if (errLines.Length > 0) msg += "\n\nCatatan:\n" + errLines.ToString();
+            }
+            finally
+            {
+                if (terproteksi) KunciProteksiSheet(wsTarget);
+            }
+
             MessageBox.Show(msg, "PD Net Flow", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
@@ -498,6 +515,60 @@ namespace CKPNLibrary.Modules
                     b.IndexOf("DETAIL", StringComparison.OrdinalIgnoreCase) >= 0) return r;
             }
             return 100001;
+        }
+
+        // ================================================================
+        // PROTEKSI SHEET — buka di awal, kunci ulang di finally
+        // ================================================================
+
+        /// <summary>
+        /// Membuka proteksi sheet bila sedang terproteksi.
+        /// Return true bila sheet TADINYA terproteksi (perlu dikunci ulang nanti).
+        /// Melempar error yang jelas bila password tidak cocok, supaya penyebabnya
+        /// tidak tersamar menjadi error 1004 generik saat penulisan sel.
+        /// </summary>
+        private bool BukaProteksiSheet(Excel.Worksheet ws)
+        {
+            if (ws == null) return false;
+
+            bool terproteksi;
+            try { terproteksi = ws.ProtectContents; }
+            catch { return false; }
+
+            if (!terproteksi) return false;   // memang tidak terkunci → tidak perlu apa-apa
+
+            try
+            {
+                ws.Unprotect(PW_SHEET);
+            }
+            catch
+            {
+                throw new InvalidOperationException(
+                    "Gagal membuka proteksi sheet '" + ws.Name + "'.\n\n" +
+                    "Sheet terproteksi dengan password yang BERBEDA dari yang tertanam\n" +
+                    "di aplikasi. Kunci ulang sheet dengan password yang benar, atau\n" +
+                    "buka proteksinya manual sebelum menjalankan perhitungan.");
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Mengunci ulang sheet dengan proteksi standar (password tertanam).
+        /// Dipanggil di finally untuk sheet yang tadinya terproteksi.
+        /// </summary>
+        private void KunciProteksiSheet(Excel.Worksheet ws)
+        {
+            if (ws == null) return;
+            try
+            {
+                ws.Protect(
+                    Password:          PW_SHEET,
+                    DrawingObjects:    true,
+                    Contents:          true,
+                    Scenarios:         true,
+                    UserInterfaceOnly: false);
+            }
+            catch { /* abaikan; mis. sheet sudah terproteksi dgn password lain */ }
         }
 
         // ----------------------------------------------------------------

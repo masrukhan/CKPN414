@@ -70,6 +70,32 @@ namespace CKPNLibrary
             catch (Exception ex) { TampilError("PD Migration", ex); }
         }
 
+        // ----------------------------------------------------------------
+        // Run All Triwulan: hitung PD Migration Triwulan I..IV sekaligus.
+        // Dipanggil VBA saat Master!C52 = "Run All Triwulan".
+        //
+        // Tiap parameter "…Gab" berisi 4 nilai dipisah '|' urut Triwulan I,II,III,IV:
+        //   pathAwalGab | pathAkhirGab : path file awal & akhir tiap triwulan
+        //   tglAwalGab  | tglAkhirGab  : label "yyyyMMdd" (opsional, hanya Audit Log)
+        // topN & sheetKCList sama untuk seluruh triwulan.
+        // ----------------------------------------------------------------
+        [ExcelCommand(Name = "CKPN_HitungPDMigrationSemua")]
+        public static void HitungPDMigrationSemua(
+            string pathAwalGab, string pathAkhirGab,
+            string tglAwalGab, string tglAkhirGab,
+            double topNDbl, string sheetKCList)
+        {
+            try
+            {
+                var app = (Excel.Application)ExcelDnaUtil.Application;
+                if (!Protection.CekProteksi(app)) return;
+                new PDMigration(app).HitungSemua(
+                    pathAwalGab, pathAkhirGab, tglAwalGab, tglAkhirGab,
+                    (int)topNDbl, sheetKCList);
+            }
+            catch (Exception ex) { TampilError("PD Migration - Run All Triwulan", ex); }
+        }
+
         [ExcelCommand(Name = "CKPN_HitungLGD")]
         public static void HitungLGD(
             double currYearDbl, string filePathsStr, string sheetKCList)
@@ -210,25 +236,12 @@ namespace CKPNLibrary
                     System.Windows.Forms.MessageBoxButtons.YesNo,
                     System.Windows.Forms.MessageBoxIcon.Question);
                 if (jawab != System.Windows.Forms.DialogResult.Yes) return;
- 
+
                 var app = (Excel.Application)ExcelDnaUtil.Application;
                 if (!Protection.CekProteksi(app)) return;
                 new RefreshSummary(app).Refresh(filePath, sheetKCList);
             }
             catch (Exception ex) { TampilError("Refresh Summary", ex); }
         }
-
-         [ExcelCommand(Name = "CKPN_RefreshDataOverview")]
-        public static void RefreshDataOverview()
-        {
-            try
-            {
-                var app = (Excel.Application)ExcelDnaUtil.Application;
-                if (!ProtectionDashboard.CekProteksi(app)) return;
-                new DataOverviewBuilder(app).Hitung();
-            }
-            catch (Exception ex) { TampilError("Data Overview CKPN", ex); }
-        }
-
     }
 }

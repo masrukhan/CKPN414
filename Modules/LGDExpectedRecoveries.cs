@@ -36,6 +36,10 @@ namespace CKPNLibrary.Modules
         private const string SheetKC2900 = "KC2900";
         private const int    KC2900Start = 3;
 
+        // Password proteksi sheet hasil "B3.LGD-ER".
+        // Sheet dibuka di awal penulisan, lalu dikunci ulang di finally.
+        private const string PW_SHEET = "HaiiWhatt??";
+
         public LGDExpectedRecoveries(Excel.Application app)
         {
             _app = app ?? throw new ArgumentNullException("app");
@@ -164,6 +168,15 @@ namespace CKPNLibrary.Modules
                 }
             }
 
+            // Buka proteksi sheet hasil bila terkunci; kunci ulang di finally.
+            // Bagian pembacaan file & RefKCBuilder di atas tidak menyentuh wsL,
+            // jadi proteksi cukup dibuka tepat sebelum penulisan output dimulai.
+            bool terproteksi = false;
+            string pesan = null;
+            try
+            {
+            terproteksi = BukaProteksiSheet(wsL);
+
             // ---- Reset sheet output ----
             int lastUsed = CariLastRow(wsL, "C", 4);
             if (lastUsed < 200) lastUsed = 200;
@@ -218,8 +231,8 @@ namespace CKPNLibrary.Modules
             catch { /* abaikan error logging — jangan gagalkan proses utama */ }
 
             // ---- Pesan selesai ----
-            string pesan = "Selesai.\nTotal rekening: " + accountMeta.Count +
-                           " dalam " + cohortRek.Count + " cohort.";
+            pesan = "Selesai.\nTotal rekening: " + accountMeta.Count +
+                    " dalam " + cohortRek.Count + " cohort.";
 
             if (statRefKC.TotalTanpaKC > 0)
             {
@@ -230,6 +243,11 @@ namespace CKPNLibrary.Modules
                          "\nJenis instrumen: " + statRefKC.RingkasProdukTanpaKC() +
                          "\nRincian per tahun ada di sheet 'Audit Log' " +
                          "(baris \"LGD ER - Referensi KC\").";
+            }
+            }
+            finally
+            {
+                if (terproteksi) KunciProteksiSheet(wsL);
             }
 
             System.Windows.Forms.MessageBox.Show(
@@ -1064,6 +1082,60 @@ namespace CKPNLibrary.Modules
                 wsLog.Cells[nextRow, 1], wsLog.Cells[nextRow, 23]];
             ringkasanRng.Interior.Color = CLR_GREEN_LIGHT;
             ringkasanRng.Font.Bold      = true;
+        }
+
+        // ================================================================
+        // PROTEKSI SHEET — buka di awal, kunci ulang di finally
+        // ================================================================
+
+        /// <summary>
+        /// Membuka proteksi sheet bila sedang terproteksi.
+        /// Return true bila sheet TADINYA terproteksi (perlu dikunci ulang nanti).
+        /// Melempar error yang jelas bila password tidak cocok, supaya penyebabnya
+        /// tidak tersamar menjadi error 1004 generik saat penulisan sel.
+        /// </summary>
+        private bool BukaProteksiSheet(Excel.Worksheet ws)
+        {
+            if (ws == null) return false;
+
+            bool terproteksi;
+            try { terproteksi = ws.ProtectContents; }
+            catch { return false; }
+
+            if (!terproteksi) return false;   // memang tidak terkunci → tidak perlu apa-apa
+
+            try
+            {
+                ws.Unprotect(PW_SHEET);
+            }
+            catch
+            {
+                throw new InvalidOperationException(
+                    "Gagal membuka proteksi sheet '" + ws.Name + "'.\n\n" +
+                    "Sheet terproteksi dengan password yang BERBEDA dari yang tertanam\n" +
+                    "di aplikasi. Kunci ulang sheet dengan password yang benar, atau\n" +
+                    "buka proteksinya manual sebelum menjalankan perhitungan.");
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Mengunci ulang sheet dengan proteksi standar (password tertanam).
+        /// Dipanggil di finally untuk sheet yang tadinya terproteksi.
+        /// </summary>
+        private void KunciProteksiSheet(Excel.Worksheet ws)
+        {
+            if (ws == null) return;
+            try
+            {
+                ws.Protect(
+                    Password:          PW_SHEET,
+                    DrawingObjects:    true,
+                    Contents:          true,
+                    Scenarios:         true,
+                    UserInterfaceOnly: false);
+            }
+            catch { /* abaikan; mis. sheet sudah terproteksi dgn password lain */ }
         }
 
         private static Excel.Worksheet CariSheet(Excel.Workbook wb, string name)
