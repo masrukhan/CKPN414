@@ -314,8 +314,12 @@ namespace CKPNLibrary.Modules
                 throw new InvalidOperationException("Tidak ada sheet KC valid.");
 
             Excel.Workbook srcWb = null;
+            bool kolTerproteksi = false;
             try
             {
+                // Buka proteksi sheet kolektif bila terkunci; dikunci ulang di finally.
+                kolTerproteksi = BukaProteksiSheet(wsKol);
+
                 srcWb = _app.Workbooks.Open(filePath, UpdateLinks: 0, ReadOnly: true);
 
                 var allData = BacaSemueSheet(srcWb, specs);
@@ -330,6 +334,7 @@ namespace CKPNLibrary.Modules
             finally
             {
                 if (srcWb != null) try { srcWb.Close(false); } catch { }
+                if (kolTerproteksi) KunciProteksiSheet(wsKol);
             }
         }
 

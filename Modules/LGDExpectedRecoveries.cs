@@ -1129,11 +1129,16 @@ namespace CKPNLibrary.Modules
             try
             {
                 ws.Protect(
-                    Password:          PW_SHEET,
-                    DrawingObjects:    true,
-                    Contents:          true,
-                    Scenarios:         true,
-                    UserInterfaceOnly: false);
+                    Password:               PW_SHEET,
+                    DrawingObjects:         true,
+                    Contents:               true,
+                    Scenarios:              true,
+                    UserInterfaceOnly:      false,
+                    // Izinkan user mengatur lebar/format kolom & baris meski sheet
+                    // terproteksi — hasil LGD kadang panjang sehingga kolom perlu
+                    // dilebarkan. Isi sel tetap terkunci (tidak bisa diedit).
+                    AllowFormattingColumns: true,
+                    AllowFormattingRows:    true);
             }
             catch { /* abaikan; mis. sheet sudah terproteksi dgn password lain */ }
         }

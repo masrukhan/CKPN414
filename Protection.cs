@@ -17,6 +17,7 @@ namespace CKPNLibrary
             "Master",
             "Summary",
             "A. CKPN - INDV",
+            "B. CKPN - KOL INDV",
             "B1.PD-Net Flow",
             "B2.PD-Migration",
             "B3.LGD-ER",
@@ -53,6 +54,7 @@ namespace CKPNLibrary
                 if (!CekProteksiSheet(wb, "Master"))                     return false;  // verifikasi password penuh
                 if (!CekProteksiSheet(wb, "Summary", false))             return false;  // cukup cek terproteksi
                 if (!CekProteksiSheet(wb, "A. CKPN - INDV", false))      return false;  // cukup cek terproteksi
+                if (!CekProteksiSheet(wb, "B. CKPN - KOL INDV", false))  return false;  // cukup cek terproteksi
                 if (!CekProteksiSheet(wb, "B1.PD-Net Flow", false))      return false;  // cukup cek terproteksi
                 if (!CekProteksiSheet(wb, "B2.PD-Migration", false))     return false;  // cukup cek terproteksi
                 if (!CekProteksiSheet(wb, "B3.LGD-ER", false))           return false;  // cukup cek terproteksi

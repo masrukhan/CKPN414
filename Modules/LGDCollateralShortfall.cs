@@ -485,11 +485,11 @@ namespace CKPNLibrary.Modules
         {
             ((Excel.Range)ws.Cells[totalRow, "B"]).Value2 = "Total";
             ((Excel.Range)ws.Cells[totalRow, "C"]).Formula =
-                "=SUM(C" + ROW_FIRST + ":C" + lastOut + ")";
+                "=IFERROR(SUM(C" + ROW_FIRST + ":C" + lastOut + "),0)";
             ((Excel.Range)ws.Cells[totalRow, "G"]).Formula =
-                "=SUM(G" + ROW_FIRST + ":G" + lastOut + ")";
+                "=IFERROR(SUM(G" + ROW_FIRST + ":G" + lastOut + "),0)";
             ((Excel.Range)ws.Cells[totalRow, "H"]).Formula =
-                "=SUM(H" + ROW_FIRST + ":H" + lastOut + ")";
+                "=IFERROR(SUM(H" + ROW_FIRST + ":H" + lastOut + "),0)";
 
             // Format angka data
             ((Excel.Range)ws.Range["C" + ROW_FIRST, "D" + lastOut]).NumberFormat = FMT_NUM;
@@ -521,8 +521,10 @@ namespace CKPNLibrary.Modules
 
             // Kolom C: Collateral Shortfall
             ((Excel.Range)ws.Cells[sumStart - 1, "C"]).Value2 = "Collateral Shortfall";
-            ((Excel.Range)ws.Cells[sumStart,     "C"]).Formula = "=C" + totalRow;
-            ((Excel.Range)ws.Cells[sumStart + 1, "C"]).Formula = "=G" + totalRow;
+            ((Excel.Range)ws.Cells[sumStart,     "C"]).Formula =
+                "=INDEX($C:$C,MATCH(\"Total\",$B:$B,0))";   // C9 — Total WO
+            ((Excel.Range)ws.Cells[sumStart + 1, "C"]).Formula =
+                "=INDEX($G:$G,MATCH(\"Total\",$B:$B,0))";   // C10 — Total Recovery
             ((Excel.Range)ws.Cells[sumStart + 2, "C"]).Formula =
                 "=IFERROR(1-C" + (sumStart + 1) + "/C" + sumStart + ",0)";
 
