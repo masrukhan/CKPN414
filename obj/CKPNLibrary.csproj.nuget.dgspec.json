@@ -5,7 +5,7 @@
   },
   "projects": {
     "F:\\LAPORAN BULANAN\\CKPN\\CKPNLibrary_ExcelDNA\\CKPNLibrary.csproj": {
-      "version": "1.0.0",
+      "version": "1.1.0",
       "restore": {
         "projectUniqueName": "F:\\LAPORAN BULANAN\\CKPN\\CKPNLibrary_ExcelDNA\\CKPNLibrary.csproj",
         "projectName": "CKPNLibrary",
@@ -53,6 +53,10 @@
             "Microsoft.Office.Interop.Excel": {
               "target": "Package",
               "version": "[15.0.4795.1000, )"
+            },
+            "Microsoft.Web.WebView2": {
+              "target": "Package",
+              "version": "[1.0.2903.40, )"
             }
           },
           "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.300\\RuntimeIdentifierGraph.json"

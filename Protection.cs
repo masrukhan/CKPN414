@@ -6,7 +6,7 @@ namespace CKPNLibrary
 {
     internal static class Protection
     {
-        private static readonly string[] NamaFileDiizinkan = new[]
+        internal static readonly string[] NamaFileDiizinkan = new[]
         {
             "Aplikasi_CKPN_414.xlsm",
             "Aplikasi_CKPN_414.xlsb",

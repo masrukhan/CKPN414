@@ -11,17 +11,52 @@
     <PlatformTarget>AnyCPU</PlatformTarget>
     <Optimize>true</Optimize>
     <DebugType>none</DebugType>
+    <!-- Versi add-in: ditampilkan di Panel CKPN (tab ping / info) -->
+    <Version>1.1.0</Version>
+
+    <!-- Versi WebView2 SDK. Dipakai di dua tempat: PackageReference dan
+         path WebView2Loader.dll native di folder NuGet. Satu properti supaya
+         saat upgrade versi keduanya tidak lupa disamakan. -->
+    <WebView2Version>1.0.2903.40</WebView2Version>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="ExcelDna.AddIn"                 Version="1.8.0" />
     <PackageReference Include="Microsoft.Office.Interop.Excel" Version="15.0.4795.1000" />
+    <!-- WebView2 (Edge/Chromium) untuk Panel CKPN di task pane -->
+    <PackageReference Include="Microsoft.Web.WebView2"         Version="$(WebView2Version)" />
   </ItemGroup>
 
   <ItemGroup>
     <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Drawing" />
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <!-- JavaScriptSerializer untuk pesan JSON panel <-> C#.
+         Bagian dari .NET Framework, jadi tidak ada DLL tambahan yang perlu di-pack. -->
+    <Reference Include="System.Web.Extensions" />
+  </ItemGroup>
+
+  <!-- ============================================================
+       Aset web panel (HTML/CSS/JS) di-embed ke dalam DLL.
+       Nama resource: "web/<path relatif>", mis. "web/index.html".
+       Dilayani ke WebView2 lewat PanelAssets (tanpa file di disk).
+       ============================================================ -->
+  <ItemGroup>
+    <EmbeddedResource Include="Panel\web\**\*" LogicalName="web/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <!-- ============================================================
+       WebView2Loader.dll adalah DLL NATIVE (bukan .NET), sehingga tidak
+       bisa di-pack Excel-DNA seperti DLL managed. Solusinya: embed kedua
+       versi (x86 & x64) sebagai resource, lalu NativeLoader mengekstrak
+       versi yang sesuai ke %LOCALAPPDATA% saat panel pertama kali dibuka.
+       ============================================================ -->
+  <ItemGroup>
+    <EmbeddedResource Include="$(NuGetPackageRoot)microsoft.web.webview2\$(WebView2Version)\runtimes\win-x86\native\WebView2Loader.dll"
+                      LogicalName="native/x86/WebView2Loader.dll" />
+    <EmbeddedResource Include="$(NuGetPackageRoot)microsoft.web.webview2\$(WebView2Version)\runtimes\win-x64\native\WebView2Loader.dll"
+                      LogicalName="native/x64/WebView2Loader.dll" />
   </ItemGroup>
 
 </Project>

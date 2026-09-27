@@ -16,6 +16,7 @@
     <Import Project="$(NuGetPackageRoot)exceldna.addin\1.8.0\build\ExcelDna.AddIn.props" Condition="Exists('$(NuGetPackageRoot)exceldna.addin\1.8.0\build\ExcelDna.AddIn.props')" />
   </ImportGroup>
   <PropertyGroup Condition=" '$(ExcludeRestorePackageImports)' != 'true' ">
+    <PkgMicrosoft_Web_WebView2 Condition=" '$(PkgMicrosoft_Web_WebView2)' == '' ">C:\Users\Administrator\.nuget\packages\microsoft.web.webview2\1.0.2903.40</PkgMicrosoft_Web_WebView2>
     <PkgExcelDna_AddIn Condition=" '$(PkgExcelDna_AddIn)' == '' ">C:\Users\Administrator\.nuget\packages\exceldna.addin\1.8.0</PkgExcelDna_AddIn>
   </PropertyGroup>
 </Project>

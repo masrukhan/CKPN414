@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Panel hanya memuat file dari dirinya sendiri (https://ckpn.panel/).
+     Tidak ada CDN / internet: panel harus jalan di PC kantor yang offline. -->
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'">
+<title>Panel CKPN</title>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<header class="kepala">
+  <div class="identitas">
+    <div class="logo" aria-hidden="true">414</div>
+    <div>
+      <div class="judul">Panel CKPN</div>
+      <div class="subjudul">PSAK 414</div>
+    </div>
+    <span id="lencana-versi" class="lencana">v—</span>
+  </div>
+  <nav class="tab" role="tablist" aria-label="Menu panel">
+    <button role="tab" data-tab="jalankan" aria-selected="true">Jalankan</button>
+    <button role="tab" data-tab="periode"  aria-selected="false">Periode</button>
+    <button role="tab" data-tab="riwayat"  aria-selected="false">Riwayat</button>
+    <button role="tab" data-tab="analisis" aria-selected="false">Analisis</button>
+  </nav>
+</header>
+
+<main>
+  <!-- ================= Jalankan ================= -->
+  <section id="tab-jalankan" class="isi-tab" role="tabpanel">
+    <div class="kartu">
+      <div class="label-kecil">Workbook aplikasi</div>
+      <div id="wb-status" class="nilai-besar">Memeriksa…</div>
+      <dl id="wb-detail" class="detail" hidden>
+        <dt>Bulan laporan</dt><dd id="wb-bulan">—</dd>
+        <dt>Top-N</dt><dd id="wb-topn">—</dd>
+        <dt>Kode segmen dicentang</dt><dd id="wb-kc">—</dd>
+        <dt>File individu</dt><dd id="wb-file" class="path">—</dd>
+      </dl>
+      <button id="btn-muat-ulang" class="tombol-sekunder" type="button">Baca ulang Master</button>
+    </div>
+
+    <div class="kartu info">
+      Menjalankan perhitungan dari panel tersedia mulai <b>Tahap 2</b>.
+      Untuk saat ini gunakan tombol di sheet Master seperti biasa.
+    </div>
+  </section>
+
+  <!-- ================= Periode / Riwayat / Analisis ================= -->
+  <section id="tab-periode" class="isi-tab" role="tabpanel" hidden>
+    <div class="kartu info">Periode kerja, cakupan kode segmen, dan konsolidasi vs PPKA — <b>Tahap 3</b> (database SQLite).</div>
+  </section>
+  <section id="tab-riwayat" class="isi-tab" role="tabpanel" hidden>
+    <div class="kartu info">Riwayat CKPN per periode — <b>Tahap 3</b>.</div>
+  </section>
+  <section id="tab-analisis" class="isi-tab" role="tabpanel" hidden>
+    <div class="kartu info">Sankey PD Migration &amp; Net Flow — <b>Tahap 4</b>.</div>
+  </section>
+
+  <!-- ================= Diagnostik (selalu tampil di bawah) ================= -->
+  <details class="kartu diagnostik" id="diag">
+    <summary>Diagnostik koneksi</summary>
+    <dl class="detail">
+      <dt>Jembatan C#</dt><dd id="d-jembatan">—</dd>
+      <dt>Excel</dt><dd id="d-excel">—</dd>
+      <dt>WebView2</dt><dd id="d-webview">—</dd>
+      <dt>User</dt><dd id="d-user">—</dd>
+      <dt>Folder library</dt><dd id="d-library" class="path">—</dd>
+      <dt>Database</dt><dd id="d-db">—</dd>
+    </dl>
+    <div class="baris-tombol">
+      <button type="button" class="tombol-sekunder" data-folder="library">Buka folder library</button>
+      <button type="button" class="tombol-sekunder" data-folder="lokal">Buka folder log</button>
+    </div>
+  </details>
+</main>
+
+<script src="js/app.js"></script>
+</body>
+</html>
