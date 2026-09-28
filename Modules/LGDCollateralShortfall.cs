@@ -151,8 +151,10 @@ namespace CKPNLibrary.Modules
             int totRekSemua = 0, totRekMacet = 0;
             double totBakiMacet = 0;
 
+            int urutPer = 0;
             foreach (var periode in periodes)
             {
+                Pemberitahu.Progres("LGD Collateral Shortfall", ++urutPer, periodes.Count, periode.Label);
                 var dictY       = new Dictionary<string, RekMacet>(StringComparer.OrdinalIgnoreCase);
                 var dictAllRekY = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -210,6 +212,7 @@ namespace CKPNLibrary.Modules
 
             // ---- Tulis baris detail ----
             int outRow = ROW_FIRST;
+            CKPNLibrary.Data.Penyesuaian.MulaiLgdCs();   // Tahap 3a
 
             foreach (string noRek in sortedKeys)
             {
@@ -243,14 +246,26 @@ namespace CKPNLibrary.Modules
 
                 string sumberPrefill = agnLast > 0 ? "AGN" : "OS";
 
+                // Penyesuaian tersimpan: catat baris sistem; lewati bila dikecualikan
+                // (debitur yang sebelumnya dihapus user karena bukan eksekusi agunan)
+                if (!CKPNLibrary.Data.Penyesuaian.CatatBarisLgdCs(noRek,
+                        info.BakiDebetAwal, info.NilaiAgunanAwal,
+                        info.ThnPertamaMacet, thnEksekusi, info.Nama))
+                    continue;
+
                 // Tulis baris
                 TulisBaris(ws, outRow, noRek,
                            info.BakiDebetAwal, info.NilaiAgunanAwal,
                            info.ThnPertamaMacet, thnEksekusi,
                            bakiLast, agnLast, haircutAgn, sumberPrefill,
                            info.Nama);
+                CKPNLibrary.Data.Penyesuaian.TerapkanLgdCs(ws, outRow, noRek);   // agunan (D) / realisasi (G)
                 outRow++;
             }
+
+            // Baris manual tersimpan: debitur yang tidak masuk daftar hasil sistem
+            outRow = CKPNLibrary.Data.Penyesuaian.TambahBarisManualLgdCs(ws, outRow);
+            CKPNLibrary.Data.Penyesuaian.SelesaiLgdCs();
 
             int lastOut = outRow - 1;
 
@@ -284,14 +299,11 @@ namespace CKPNLibrary.Modules
             hlRow.Interior.Color = CLR_YELLOW_SOFT;
             hlRow.Font.Bold = true;
 
-            System.Windows.Forms.MessageBox.Show(
+            Pemberitahu.Info("LGD Collateral Shortfall",
                 "Perhitungan LGD Collateral Shortfall (MACET) selesai.\n" +
                 "Ruang lingkup KC       : " + sheetKCList + "\n" +
                 "File referensi terbaca : " + periodes.Count + "\n" +
-                "Rekening macet selesai : " + (lastOut - ROW_FIRST + 1),
-                "LGD Collateral Shortfall",
-                System.Windows.Forms.MessageBoxButtons.OK,
-                System.Windows.Forms.MessageBoxIcon.Information);
+                "Rekening macet selesai : " + (lastOut - ROW_FIRST + 1));
         }
 
         // ================================================================

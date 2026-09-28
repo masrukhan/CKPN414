@@ -35,6 +35,15 @@ namespace CKPNLibrary
         // ----------------------------------------------------------------
         public static bool CekProteksi(Excel.Application app)
         {
+            // Tolak perintah dari tombol VBA selama Panel CKPN menjalankan
+            // perhitungan, agar dua proses tidak menulis sheet yang sama.
+            if (CKPNLibrary.Panel.CKPNPipeline.TolakPanggilanLuar())
+            {
+                TampilkanError("Perhitungan sedang berjalan dari Panel CKPN.\n\n" +
+                               "Tunggu sampai selesai atau batalkan dari panel, lalu coba lagi.");
+                return false;
+            }
+
             var wb = app.ActiveWorkbook;
             if (wb == null) { TampilkanError("Tidak ada workbook yang aktif."); return false; }
 

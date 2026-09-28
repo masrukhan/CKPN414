@@ -13,3 +13,4 @@ F:\LAPORAN BULANAN\CKPN\CKPNLibrary_ExcelDNA\bin\Release\net48\runtimes\win-arm6
 F:\LAPORAN BULANAN\CKPN\CKPNLibrary_ExcelDNA\bin\Release\net48\Microsoft.Web.WebView2.Core.dll
 F:\LAPORAN BULANAN\CKPN\CKPNLibrary_ExcelDNA\bin\Release\net48\Microsoft.Web.WebView2.WinForms.dll
 F:\LAPORAN BULANAN\CKPN\CKPNLibrary_ExcelDNA\bin\Release\net48\Microsoft.Web.WebView2.Wpf.dll
+F:\LAPORAN BULANAN\CKPN\CKPNLibrary_ExcelDNA\bin\Release\net48\System.Data.SQLite.dll

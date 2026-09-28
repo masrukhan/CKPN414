@@ -31,27 +31,110 @@
 <main>
   <!-- ================= Jalankan ================= -->
   <section id="tab-jalankan" class="isi-tab" role="tabpanel">
+
+    <!-- Ringkasan periode & ruang lingkup -->
     <div class="kartu">
-      <div class="label-kecil">Workbook aplikasi</div>
-      <div id="wb-status" class="nilai-besar">Memeriksa…</div>
-      <dl id="wb-detail" class="detail" hidden>
-        <dt>Bulan laporan</dt><dd id="wb-bulan">—</dd>
-        <dt>Top-N</dt><dd id="wb-topn">—</dd>
-        <dt>Kode segmen dicentang</dt><dd id="wb-kc">—</dd>
-        <dt>File individu</dt><dd id="wb-file" class="path">—</dd>
-      </dl>
-      <button id="btn-muat-ulang" class="tombol-sekunder" type="button">Baca ulang Master</button>
+      <div class="baris-antara">
+        <div class="label-kecil">Periode laporan</div>
+        <button id="btn-periksa" class="tautan" type="button">Periksa ulang Master</button>
+      </div>
+      <div id="periode" class="nilai-besar">Memeriksa…</div>
+      <div id="kc-chip" class="chip-baris"></div>
+      <div id="wb-nama" class="teks-kecil"></div>
     </div>
 
-    <div class="kartu info">
-      Menjalankan perhitungan dari panel tersedia mulai <b>Tahap 2</b>.
-      Untuk saat ini gunakan tombol di sheet Master seperti biasa.
+    <!-- Pilihan langkah -->
+    <div class="kartu" id="kartu-langkah">
+      <div class="baris-antara">
+        <div class="judul-kartu">Langkah perhitungan</div>
+        <label class="teks-kecil pilih-semua"><input type="checkbox" id="cek-semua" checked> Semua</label>
+      </div>
+      <ul id="daftar-langkah" class="daftar-langkah"></ul>
+      <label class="opsi"><input type="checkbox" id="cek-penyesuaian" checked>
+        <span>Terapkan penyesuaian tersimpan <span class="teks-kecil">(agunan &amp; biaya Individu, perubahan LGD CS)</span></span></label>
+      <button id="btn-jalankan" class="tombol-utama" type="button" disabled>Jalankan</button>
+      <p class="teks-kecil catatan">Tombol perhitungan di sheet Master tetap bisa dipakai. Selama panel menghitung, tombol tersebut ditolak agar proses tidak berjalan ganda.</p>
+    </div>
+
+    <!-- Konfirmasi (pengganti MsgBox Ya/Tidak di makro) -->
+    <div class="kartu konfirmasi" id="kartu-konfirmasi" hidden>
+      <div class="judul-kartu">Konfirmasi</div>
+      <p class="teks-kecil">Sheet berikut akan dihapus isinya dan ditulis ulang:</p>
+      <ul id="daftar-sheet" class="daftar-sheet"></ul>
+      <p class="teks-kecil">File sumber dibuka read-only, kecuali LGD ER yang dapat melengkapi kolom referensi KC (M) pada KC2900 bila belum terisi.</p>
+      <div class="baris-tombol">
+        <button id="btn-ya" class="tombol-utama" type="button">Ya, jalankan</button>
+        <button id="btn-tidak" class="tombol-sekunder" type="button">Batal</button>
+      </div>
+    </div>
+
+    <!-- Progres -->
+    <div class="kartu" id="kartu-progres" hidden>
+      <div class="baris-antara">
+        <div>
+          <div class="judul-kartu" id="progres-judul">Sedang menghitung…</div>
+          <div class="teks-kecil" id="progres-sub">—</div>
+        </div>
+        <div class="persen" id="progres-persen">0%</div>
+      </div>
+      <div class="bar" role="progressbar" aria-label="Progres keseluruhan" aria-valuemin="0" aria-valuemax="100">
+        <div class="isi-bar" id="progres-bar"></div>
+      </div>
+      <ol id="progres-langkah" class="progres-langkah"></ol>
+      <button id="btn-batal" class="tombol-sekunder lebar" type="button">Batalkan setelah langkah ini</button>
+    </div>
+
+    <!-- Hasil -->
+    <div class="kartu" id="kartu-hasil" hidden>
+      <div id="hasil-status" class="status-hasil"></div>
+      <div id="hasil-review"></div>
+      <div id="hasil-pesan" class="daftar-pesan"></div>
+      <button id="btn-ke-simpan" class="tombol-utama" type="button">Review selesai — simpan grup ke staging</button>
+      <button id="btn-tutup-hasil" class="tombol-sekunder lebar" type="button">Tutup</button>
+    </div>
+
+    <!-- Simpan grup ke staging -->
+    <div class="kartu" id="kartu-simpan" hidden>
+      <div class="baris-antara">
+        <div class="judul-kartu">Simpan grup ke staging</div>
+        <button id="btn-simpan-periksa" class="tautan" type="button">Periksa ulang</button>
+      </div>
+      <div id="simpan-info" class="teks-kecil">Memeriksa sheet…</div>
+      <div id="simpan-peringatan"></div>
+      <div id="simpan-perubahan"></div>
+      <label class="label-isian" for="simpan-catatan">Catatan (opsional)</label>
+      <textarea id="simpan-catatan" rows="2" placeholder="Mis. agunan debitur X disesuaikan hasil appraisal"></textarea>
+      <label class="opsi"><input type="checkbox" id="cek-refresh" checked>
+        <span>Jalankan Refresh Summary sebelum menyimpan</span></label>
+      <div class="baris-tombol">
+        <button id="btn-simpan" class="tombol-utama" type="button" disabled>Simpan</button>
+        <button id="btn-simpan-batal" class="tombol-sekunder" type="button">Kembali</button>
+      </div>
+      <div id="simpan-hasil"></div>
     </div>
   </section>
 
   <!-- ================= Periode / Riwayat / Analisis ================= -->
   <section id="tab-periode" class="isi-tab" role="tabpanel" hidden>
-    <div class="kartu info">Periode kerja, cakupan kode segmen, dan konsolidasi vs PPKA — <b>Tahap 3</b> (database SQLite).</div>
+    <div class="kartu">
+      <div class="baris-antara">
+        <label class="judul-kartu" for="pilih-periode">Periode</label>
+        <select id="pilih-periode" class="pilih"></select>
+      </div>
+      <div id="staging-isi" class="teks-kecil">Memuat…</div>
+      <button id="btn-simpan-dari-periode" class="tombol-sekunder lebar" type="button">Simpan grup yang sedang dihitung</button>
+    </div>
+
+    <div class="kartu">
+      <div class="baris-antara">
+        <div class="judul-kartu">Penyesuaian tersimpan</div>
+        <button id="btn-muat-penyesuaian" class="tautan" type="button">Muat ulang</button>
+      </div>
+      <p class="teks-kecil">Diterapkan otomatis setiap CKPN Individu / LGD CS dihitung, termasuk dari tombol di Master.</p>
+      <div id="penyesuaian-isi" class="teks-kecil">—</div>
+    </div>
+
+    <div class="kartu info">Susunan grup tahunan, jalankan semua grup, dan konsolidasi vs PPKA — <b>Tahap 3b</b>.</div>
   </section>
   <section id="tab-riwayat" class="isi-tab" role="tabpanel" hidden>
     <div class="kartu info">Riwayat CKPN per periode — <b>Tahap 3</b>.</div>
@@ -60,7 +143,7 @@
     <div class="kartu info">Sankey PD Migration &amp; Net Flow — <b>Tahap 4</b>.</div>
   </section>
 
-  <!-- ================= Diagnostik (selalu tampil di bawah) ================= -->
+  <!-- ================= Diagnostik ================= -->
   <details class="kartu diagnostik" id="diag">
     <summary>Diagnostik koneksi</summary>
     <dl class="detail">
@@ -69,11 +152,12 @@
       <dt>WebView2</dt><dd id="d-webview">—</dd>
       <dt>User</dt><dd id="d-user">—</dd>
       <dt>Folder library</dt><dd id="d-library" class="path">—</dd>
+      <dt>File log</dt><dd id="d-log" class="path">—</dd>
       <dt>Database</dt><dd id="d-db">—</dd>
     </dl>
     <div class="baris-tombol">
       <button type="button" class="tombol-sekunder" data-folder="library">Buka folder library</button>
-      <button type="button" class="tombol-sekunder" data-folder="lokal">Buka folder log</button>
+      <button type="button" class="tombol-sekunder" data-folder="logs">Buka folder log</button>
     </div>
   </details>
 </main>

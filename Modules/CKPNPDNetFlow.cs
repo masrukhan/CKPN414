@@ -85,6 +85,7 @@ namespace CKPNLibrary.Modules
                 string filePath     = filePaths[mIdx].Trim();
                 string bulanLabel   = mIdx < bulanLabels.Length ? bulanLabels[mIdx] : "";
                 string refDateStr   = mIdx < refDates.Length    ? refDates[mIdx]    : "";
+                Pemberitahu.Progres("PD Net Flow", mIdx + 1, filePaths.Length, bulanLabel);
 
                 double totalOS = 0, woSum = 0, totalEAD = 0, osIndividu = 0, osNonIndividu = 0;
                 var    osPerSheet = new double[specs.Count];
@@ -181,7 +182,7 @@ namespace CKPNLibrary.Modules
                 if (terproteksi) KunciProteksiSheet(wsTarget);
             }
 
-            MessageBox.Show(msg, "PD Net Flow", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            Pemberitahu.Info("PD Net Flow", msg);
         }
 
         // ================================================================

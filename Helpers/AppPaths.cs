@@ -55,8 +55,40 @@ namespace CKPNLibrary.Helpers
         public static string FolderBackup { get { return Path.Combine(FolderLibrary, "backup"); } }
         public static string FolderLogs   { get { return Path.Combine(FolderLibrary, "logs");   } }
 
-        /// <summary>Lokasi database SQLite (dipakai mulai Tahap 3).</summary>
+        /// <summary>Lokasi database SQLite (staging & penyesuaian).</summary>
         public static string FileDatabase { get { return Path.Combine(FolderData, "ckpn.db"); } }
+
+        /// <summary>Snapshot .xlsx hasil tiap grup yang disimpan: library\staging\yyyy-MM\.</summary>
+        public static string FolderStaging { get { return Path.Combine(FolderLibrary, "staging"); } }
+
+        /// <summary>
+        /// Daftar user Windows yang boleh MENULIS ke database (satu nama per baris).
+        /// File kosong / tidak ada = semua user boleh (panel menampilkan peringatan).
+        /// </summary>
+        public static string FilePengirim { get { return Path.Combine(FolderConfig, "pengirim.txt"); } }
+
+        /// <summary>
+        /// Data dasar hasil hitung sistem terakhir di PC ini (per user), dipakai
+        /// untuk mendeteksi edit manual saat "Simpan grup". Disimpan lokal — bukan
+        /// di database bersama — karena setiap anggota tim menghitung di PC-nya
+        /// sendiri dan tidak boleh saling menimpa.
+        /// </summary>
+        public static string FolderDasar { get { return Path.Combine(FolderLokal, "dasar"); } }
+
+        /// <summary>
+        /// File log panel & pipeline: library\logs\panel_{user}.log.
+        /// Satu file per user Windows supaya dua anggota tim yang membuka
+        /// aplikasi dari shared drive tidak saling mengunci file log.
+        /// </summary>
+        public static string FileLog
+        {
+            get
+            {
+                string user = Environment.UserName;
+                foreach (char c in Path.GetInvalidFileNameChars()) user = user.Replace(c, '_');
+                return Path.Combine(FolderLogs, "panel_" + user + ".log");
+            }
+        }
 
         // ---------------- Folder lokal per user ----------------
 
@@ -97,6 +129,8 @@ namespace CKPNLibrary.Helpers
             BuatAman(FolderConfig);
             BuatAman(FolderBackup);
             BuatAman(FolderLogs);
+            BuatAman(FolderStaging);
+            BuatAman(FolderDasar);
         }
 
         private static void BuatAman(string folder)

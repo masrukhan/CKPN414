@@ -59,3 +59,98 @@ main { padding: 14px 16px 24px; display: flex; flex-direction: column; gap: 12px
 .diagnostik[open] summary { margin-bottom: 10px; }
 .ok  { color: var(--sukses); font-weight: 600; }
 .err { color: var(--galat);  font-weight: 600; }
+
+/* ================= Tahap 2: Jalankan ================= */
+.baris-antara { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.judul-kartu { font-weight: 600; font-size: 14px; }
+.teks-kecil { font-size: 12px; color: var(--teks-2); }
+.catatan { margin: 10px 0 0; line-height: 1.5; }
+.tautan { background: none; border: none; padding: 4px 0; color: var(--aksen); font: inherit; font-size: 12px; cursor: pointer; }
+.tautan:hover { text-decoration: underline; }
+.chip-baris { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.chip { font-size: 12px; padding: 2px 8px; border-radius: 6px; background: #EEF0EE; color: #3A413E; font-family: var(--mono); }
+.pilih-semua { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+
+.daftar-langkah { list-style: none; margin: 8px 0 12px; padding: 0; }
+.daftar-langkah li { border-top: 1px solid #EFEDE6; padding: 8px 0; }
+.daftar-langkah label { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+.daftar-langkah input { margin-top: 3px; width: 16px; height: 16px; accent-color: var(--aksen); }
+.daftar-langkah .nama { font-weight: 500; }
+.daftar-langkah .ringkas { font-size: 12px; color: var(--teks-2); }
+.daftar-langkah .masalah { font-size: 12px; color: var(--galat); margin-top: 2px; }
+.daftar-langkah li.tidak-siap .nama { color: #6B726F; }
+
+.tombol-utama { width: 100%; height: 42px; border-radius: 8px; border: none; background: var(--aksen);
+  color: #fff; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+.tombol-utama:hover { background: var(--aksen-2); }
+.tombol-utama:disabled { background: #B8C4C1; cursor: not-allowed; }
+.tombol-utama:focus-visible { outline: 2px solid var(--aksen-2); outline-offset: 2px; }
+.baris-tombol .tombol-utama { width: auto; flex: 1; }
+.tombol-sekunder.lebar { width: 100%; height: 40px; margin-top: 10px; }
+
+.konfirmasi { border-color: #E8C98E; background: #FFFBF2; }
+.daftar-sheet { margin: 6px 0 8px; padding-left: 18px; font-family: var(--mono); font-size: 12px; }
+
+.persen { font-family: var(--mono); font-size: 20px; color: var(--aksen); }
+.bar { height: 8px; border-radius: 999px; background: #E6E4DC; overflow: hidden; margin: 10px 0 6px; }
+.isi-bar { height: 8px; width: 0; background: var(--aksen); border-radius: 999px; transition: width .3s; }
+.progres-langkah { list-style: none; margin: 6px 0 0; padding: 0; }
+.progres-langkah li { display: flex; gap: 10px; align-items: flex-start; padding: 7px 0; border-top: 1px solid #EFEDE6; }
+.progres-langkah .ikon { width: 20px; height: 20px; flex-shrink: 0; }
+.progres-langkah .isi { flex: 1; min-width: 0; }
+.progres-langkah .baris-nama { display: flex; justify-content: space-between; gap: 8px; }
+.progres-langkah .durasi { font-family: var(--mono); font-size: 12px; color: var(--teks-2); }
+.progres-langkah .detail-langkah { font-size: 12px; color: var(--teks-2); }
+.progres-langkah li.menunggu .nama { color: #6B726F; }
+.progres-langkah li.berjalan .nama { font-weight: 600; }
+.progres-langkah li.gagal .detail-langkah { color: var(--galat); }
+@keyframes putar { to { transform: rotate(360deg); } }
+.ikon-putar { animation: putar 1s linear infinite; transform-origin: 50% 50%; }
+
+.status-hasil { font-weight: 600; font-size: 15px; margin-bottom: 8px; }
+.status-hasil.ok { color: var(--sukses); }
+.status-hasil.err { color: var(--galat); }
+.status-hasil.batal { color: var(--peringatan); }
+.daftar-pesan { display: flex; flex-direction: column; gap: 8px; }
+.pesan-modul { border: 1px solid var(--garis); border-radius: 8px; padding: 8px 10px; background: #FAFAF7; }
+.pesan-modul.peringatan { background: var(--peringatan-bg); border-color: #E8C98E; }
+.pesan-modul .judul-pesan { font-weight: 600; font-size: 12px; margin-bottom: 4px; }
+.pesan-modul pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-family: var(--mono); font-size: 11px; line-height: 1.5; }
+
+/* ================= Tahap 3a: review, simpan, staging ================= */
+.opsi { display: flex; gap: 8px; align-items: flex-start; margin: 4px 0 12px; cursor: pointer; }
+.opsi input { margin-top: 3px; width: 16px; height: 16px; accent-color: var(--aksen); flex-shrink: 0; }
+.label-isian { display: block; font-size: 12px; font-weight: 500; margin: 10px 0 4px; }
+textarea, .isian { width: 100%; font: inherit; font-size: 13px; padding: 7px 9px; border: 1px solid #C9C6BC; border-radius: 8px; resize: vertical; background: #fff; }
+.pilih { height: 32px; border: 1px solid #C9C6BC; border-radius: 8px; padding: 0 8px; font: inherit; font-size: 13px; background: #fff; }
+#btn-ke-simpan { margin-top: 12px; }
+
+.blok-review { border-top: 1px solid #EFEDE6; padding-top: 8px; margin-top: 8px; }
+.blok-review h4 { margin: 0 0 4px; font-size: 13px; }
+.angka-review { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.angka-review span { font-size: 12px; padding: 2px 8px; border-radius: 6px; background: #EEF0EE; }
+.angka-review span.perhatian { background: var(--peringatan-bg); color: var(--peringatan); }
+.daftar-klik { list-style: none; margin: 0; padding: 0; max-height: 180px; overflow: auto; }
+.daftar-klik li { font-size: 12px; padding: 3px 0; border-bottom: 1px dashed #EFEDE6; display: flex; justify-content: space-between; gap: 8px; }
+.daftar-klik button { background: none; border: none; color: var(--aksen); font: inherit; font-size: 12px; cursor: pointer; padding: 0; text-align: left; }
+.daftar-klik button:hover { text-decoration: underline; }
+
+.peringatan-box { background: var(--peringatan-bg); color: var(--peringatan); border-radius: 8px; padding: 8px 10px; font-size: 12px; margin: 8px 0; line-height: 1.5; }
+.perubahan-grup { margin-top: 10px; }
+.perubahan-grup h4 { margin: 0 0 4px; font-size: 13px; }
+.perubahan-item { border: 1px solid #EFEDE6; border-radius: 8px; padding: 6px 8px; margin-bottom: 6px; font-size: 12px; }
+.perubahan-item .kunci { font-family: var(--mono); font-weight: 600; }
+.perubahan-item .aksi { font-size: 11px; padding: 1px 6px; border-radius: 4px; background: #EEF0EE; margin-left: 6px; }
+.perubahan-item .aksi.hapus-baris { background: #F8E2DD; color: var(--galat); }
+.perubahan-item .isian { margin-top: 6px; }
+.hasil-simpan { margin-top: 10px; }
+
+.tabel-staging { width: 100%; border-collapse: collapse; font-size: 12px; margin: 8px 0; }
+.tabel-staging th { text-align: left; font-weight: 500; color: var(--teks-2); border-bottom: 1px solid var(--garis); padding: 5px 4px; }
+.tabel-staging td { border-bottom: 1px solid #EFEDE6; padding: 5px 4px; vertical-align: top; }
+.tabel-staging td.angka { text-align: right; font-family: var(--mono); }
+.tabel-staging tr.lama td { color: #8A908D; }
+.lencana-aktif { font-size: 10px; padding: 1px 6px; border-radius: 4px; background: #E7F2EC; color: var(--sukses); }
+.item-penyesuaian { display: flex; justify-content: space-between; gap: 8px; padding: 5px 0; border-bottom: 1px dashed #EFEDE6; }
+.item-penyesuaian .kunci { font-family: var(--mono); }
+.item-penyesuaian button { background: none; border: none; color: var(--galat); font: inherit; font-size: 12px; cursor: pointer; flex-shrink: 0; }

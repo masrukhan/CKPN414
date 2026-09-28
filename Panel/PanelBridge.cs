@@ -1,9 +1,10 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Reflection;
 using System.Web.Script.Serialization;
+using CKPNLibrary.Data;
 using CKPNLibrary.Helpers;
 using ExcelDna.Integration;
 using Excel = Microsoft.Office.Interop.Excel;
@@ -20,15 +21,16 @@ namespace CKPNLibrary.Panel
     ///   { "type": "reply", "id": 7, "ok": true,  "data": { ... } }
     ///   { "type": "reply", "id": 7, "ok": false, "error": "pesan" }
     ///
-    /// Format event dorong C# → JS (mulai Tahap 2, untuk progres perhitungan):
-    ///   { "type": "event", "name": "progress", "data": { ... } }
+    /// Format event dorong C# → JS (progres perhitungan):
+    ///   { "type": "event", "name": "langkahMulai", "data": { ... } }
+    ///   Nama event: runMulai, langkahMulai, progresDetail, pesanModul,
+    ///               langkahSelesai, runSelesai
     ///
     /// Aturan threading:
     ///   Pesan tiba di thread UI Excel, tetapi BUKAN dalam konteks makro.
     ///   Setiap perintah yang menyentuh object model Excel dijalankan lewat
     ///   ExcelAsyncUtil.QueueAsMacro — Excel mengeksekusinya saat aman
-    ///   (mis. tidak sedang mode edit sel), sehingga tidak ada error COM
-    ///   "application is busy".
+    ///   (mis. tidak sedang mode edit sel).
     /// </summary>
     internal static class PanelBridge
     {
@@ -49,7 +51,7 @@ namespace CKPNLibrary.Panel
 
                 switch (cmd)
                 {
-                    // ---- Perintah tanpa Excel: langsung dijawab ----
+                    // ---- Tanpa Excel: langsung dijawab ----
                     case "ping":
                         Balas(host, id, InfoLingkungan());
                         break;
@@ -59,9 +61,77 @@ namespace CKPNLibrary.Panel
                         Balas(host, id, null);
                         break;
 
-                    // ---- Perintah yang membaca Excel: lewat QueueAsMacro ----
+                    case "statusRun":
+                        Balas(host, id, CKPNPipeline.Status());
+                        break;
+
+                    case "batal":
+                        CKPNPipeline.MintaBatal();
+                        Balas(host, id, null);
+                        break;
+
+                    // ---- Membaca / menulis Excel: lewat QueueAsMacro ----
                     case "infoWorkbook":
                         JalankanDiExcel(host, id, InfoWorkbook);
+                        break;
+
+                    case "siapkanRun":
+                        JalankanDiExcel(host, id, SiapkanRun);
+                        break;
+
+                    case "jalankan":
+                        var ids = DaftarString(Ambil(args, "langkah"));
+                        bool terapkan = !(Ambil(args, "terapkanPenyesuaian") is bool) || (bool)Ambil(args, "terapkanPenyesuaian");
+                        JalankanDiExcel(host, id, app =>
+                        {
+                            string tolak = CKPNPipeline.Mulai(app, ids, terapkan);
+                            if (tolak != null) throw new InvalidOperationException(tolak);
+                            return new Dictionary<string, object> { { "diterima", true } };
+                        });
+                        break;
+
+                    // ---- Tahap 3a: review, simpan grup, staging, penyesuaian ----
+                    case "reviewInfo":
+                        Balas(host, id, Penyesuaian.InfoReview());
+                        break;
+
+                    case "lompatKe":
+                        string sheet = Convert.ToString(Ambil(args, "sheet") ?? "");
+                        string sel   = Convert.ToString(Ambil(args, "sel") ?? "A1");
+                        JalankanDiExcel(host, id, app => { LompatKe(app, sheet, sel); return null; });
+                        break;
+
+                    case "periksaSimpan":
+                        JalankanDiExcel(host, id, app => StagingGrup.Periksa(app));
+                        break;
+
+                    case "simpanGrup":
+                        var alasan = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                        var aMap = Ambil(args, "alasan") as Dictionary<string, object>;
+                        if (aMap != null) foreach (var kv in aMap) alasan[kv.Key] = Convert.ToString(kv.Value);
+                        string catatan = Convert.ToString(Ambil(args, "catatan") ?? "");
+                        bool refresh = !(Ambil(args, "refreshSummary") is bool) || (bool)Ambil(args, "refreshSummary");
+                        JalankanDiExcel(host, id, app => StagingGrup.Simpan(app, alasan, catatan, refresh));
+                        break;
+
+                    case "daftarStaging":
+                        Balas(host, id, DataPanel.DaftarStaging(Convert.ToString(Ambil(args, "tanggal") ?? "")));
+                        break;
+
+                    case "bukaSnapshot":
+                        DataPanel.BukaSnapshot(Convert.ToInt64(Ambil(args, "runId")));
+                        Balas(host, id, null);
+                        break;
+
+                    case "daftarPenyesuaian":
+                        Balas(host, id, DataPanel.DaftarPenyesuaian());
+                        break;
+
+                    case "hapusPenyesuaian":
+                        DataPanel.HapusPenyesuaian(Convert.ToString(Ambil(args, "modul") ?? ""),
+                                                   Convert.ToString(Ambil(args, "kunci") ?? ""),
+                                                   Convert.ToString(Ambil(args, "alasan") ?? ""));
+                        Balas(host, id, null);
                         break;
 
                     default:
@@ -94,7 +164,7 @@ namespace CKPNLibrary.Panel
             }));
         }
 
-        /// <summary>Dorong event ke SEMUA panel yang terbuka (dipakai Tahap 2).</summary>
+        /// <summary>Dorong event ke SEMUA panel yang terbuka.</summary>
         public static void Siarkan(string nama, object data)
         {
             string json = _json.Serialize(new Dictionary<string, object>
@@ -123,9 +193,7 @@ namespace CKPNLibrary.Panel
         }
 
         // ================================================================
-        // Perintah: ping — informasi lingkungan (tanpa Excel COM)
-        // Dipakai panel untuk memastikan jembatan JS <-> C# berfungsi dan
-        // menampilkan lokasi library/database untuk troubleshooting.
+        // ping — informasi lingkungan (tanpa Excel COM)
         // ================================================================
         private static object InfoLingkungan()
         {
@@ -142,19 +210,19 @@ namespace CKPNLibrary.Panel
                 { "xllPath",       ExcelDnaUtil.XllPath },
                 { "folderLibrary", AppPaths.FolderLibrary },
                 { "folderData",    AppPaths.FolderData },
+                { "fileLog",       CatatanLog.LokasiAktif },
                 { "databaseAda",   File.Exists(AppPaths.FileDatabase) },
+                { "fileDatabase",  AppPaths.FileDatabase },
                 { "user",          Environment.UserName },
                 { "komputer",      Environment.MachineName }
             };
         }
 
         // ================================================================
-        // Perintah: infoWorkbook — membaca workbook aplikasi CKPN
+        // infoWorkbook — ringkasan workbook aplikasi CKPN
         // ================================================================
         private static object InfoWorkbook(Excel.Application app)
         {
-            // Cari workbook aplikasi berdasarkan NAMA FILE, bukan ActiveWorkbook.
-            // Panel bisa diklik saat workbook lain (mis. file sumber) sedang aktif.
             Excel.Workbook wb = CariWorkbookAplikasi(app);
             if (wb == null)
             {
@@ -165,23 +233,68 @@ namespace CKPNLibrary.Panel
                 };
             }
 
-            Excel.Worksheet master = null;
-            foreach (Excel.Worksheet sh in wb.Worksheets)
-                if (sh.Name.Equals("Master", StringComparison.OrdinalIgnoreCase)) { master = sh; break; }
-
             var info = new Dictionary<string, object>
             {
-                { "ditemukan", true },
-                { "namaFile",  wb.Name },
-                { "folder",    wb.Path }
+                { "ditemukan", true }, { "namaFile", wb.Name }, { "folder", wb.Path }
             };
+            Excel.Worksheet master = ParameterMaster.CariSheet(wb, "Master");
             if (master == null) { info["pesan"] = "Sheet Master tidak ditemukan."; return info; }
 
-            info["bulanLaporan"]   = FormatTanggal(((Excel.Range)master.Range["C4"]).Value2);
-            info["fileIndividu"]   = Convert.ToString(((Excel.Range)master.Range["D14"]).Value2 ?? "");
-            info["topN"]           = Convert.ToString(((Excel.Range)master.Range["C10"]).Value2 ?? "");
-            info["kcDicentang"]    = BacaKCDicentang(master);
+            info["kcDicentang"] = ParameterMaster.BacaKCDicentang(master);
             return info;
+        }
+
+        // ================================================================
+        // siapkanRun — baca Master & validasi setiap langkah
+        // ================================================================
+        private static object SiapkanRun(Excel.Application app)
+        {
+            Excel.Workbook wb = CariWorkbookAplikasi(app);
+            if (wb == null)
+                throw new InvalidOperationException("Workbook aplikasi CKPN tidak sedang terbuka.");
+
+            ParameterCKPN p = ParameterMaster.Baca(wb);
+            var langkah = new List<object>();
+            foreach (var l in CKPNPipeline.SemuaLangkah)
+            {
+                List<string> err;
+                p.Error.TryGetValue(l.Id, out err);
+                string ringkas;
+                p.Ringkas.TryGetValue(l.Id, out ringkas);
+                langkah.Add(new Dictionary<string, object>
+                {
+                    { "id", l.Id }, { "nama", l.Nama }, { "sheet", l.SheetDitulis },
+                    { "siap", err == null }, { "error", err ?? new List<string>() },
+                    { "ringkas", ringkas ?? "" }
+                });
+            }
+
+            return new Dictionary<string, object>
+            {
+                { "namaFile", wb.Name },
+                { "periode",  p.BulanLaporan },
+                { "kc",       p.KC },
+                { "langkah",  langkah },
+                { "berjalan", CKPNPipeline.SedangBerjalan }
+            };
+        }
+
+        // ================================================================
+        // lompatKe — aktifkan sheet & pilih sel (dari daftar review panel)
+        // ================================================================
+        private static readonly string[] SheetBolehDituju = { "A. CKPN - INDV", "B4.LGD-CS MACET", "Summary", "Master" };
+
+        private static void LompatKe(Excel.Application app, string namaSheet, string sel)
+        {
+            if (Array.IndexOf(SheetBolehDituju, namaSheet) < 0)
+                throw new InvalidOperationException("Sheet tidak diizinkan: " + namaSheet);
+            Excel.Workbook wb = CariWorkbookAplikasi(app);
+            if (wb == null) throw new InvalidOperationException("Workbook aplikasi CKPN tidak sedang terbuka.");
+            Excel.Worksheet ws = ParameterMaster.CariSheet(wb, namaSheet);
+            if (ws == null) throw new InvalidOperationException("Sheet '" + namaSheet + "' tidak ditemukan.");
+            wb.Activate();
+            ws.Activate();
+            ((Excel.Range)ws.Range[sel]).Select();
         }
 
         /// <summary>
@@ -196,56 +309,38 @@ namespace CKPNLibrary.Panel
             return null;
         }
 
-        // Checkbox KC0600..KC1100 di Master adalah Form Control lama
-        // (Worksheet.CheckBoxes). Tidak ada tipe interop yang kuat untuknya,
-        // jadi properti Value dibaca lewat late binding (reflection COM).
-        // Nilai xlOn = 1.
-        private static readonly string[] DaftarKC = { "KC0600", "KC0700", "KC0800", "KC0900", "KC1000", "KC1100" };
-
-        private static List<string> BacaKCDicentang(Excel.Worksheet master)
-        {
-            var hasil = new List<string>();
-            foreach (string kc in DaftarKC)
-            {
-                try
-                {
-                    object chk = master.CheckBoxes(kc);
-                    object val = chk.GetType().InvokeMember("Value", BindingFlags.GetProperty, null, chk, null);
-                    if (Convert.ToInt32(val) == 1) hasil.Add(kc);
-                }
-                catch { /* checkbox tidak ada → dianggap tidak dicentang */ }
-            }
-            return hasil;
-        }
-
-        private static string FormatTanggal(object v)
-        {
-            if (v is double) return DateTime.FromOADate((double)v).ToString("dd MMMM yyyy", new System.Globalization.CultureInfo("id-ID"));
-            return Convert.ToString(v ?? "");
-        }
-
         // ================================================================
-        // Perintah: bukaFolder — buka Windows Explorer
+        // bukaFolder — buka Windows Explorer (hanya folder yang dikenal add-in)
         // ================================================================
         private static void BukaFolder(string jenis)
         {
             string path;
             switch (jenis)
             {
-                case "data": path = AppPaths.FolderData;   break;
-                case "logs": path = AppPaths.FolderLogs;   break;
+                case "data":  path = AppPaths.FolderData;  break;
+                case "logs":  path = Path.GetDirectoryName(CatatanLog.LokasiAktif); break;
                 case "lokal": path = AppPaths.FolderLokal; break;
-                default:     path = AppPaths.FolderLibrary; break;
+                default:      path = AppPaths.FolderLibrary; break;
             }
-            // Hanya folder yang dikenal add-in yang boleh dibuka — panel tidak
-            // bisa meminta path sembarang.
-            if (Directory.Exists(path)) Process.Start("explorer.exe", "\"" + path + "\"");
+            if (!string.IsNullOrEmpty(path) && Directory.Exists(path))
+                Process.Start("explorer.exe", "\"" + path + "\"");
         }
 
+        // ================================================================
         private static object Ambil(Dictionary<string, object> d, string k)
         {
             object v;
             return d != null && d.TryGetValue(k, out v) ? v : null;
+        }
+
+        // Array JSON dideserialisasi JavaScriptSerializer menjadi ArrayList / object[]
+        private static List<string> DaftarString(object v)
+        {
+            var hasil = new List<string>();
+            var e = v as IEnumerable;
+            if (e == null || v is string) return hasil;
+            foreach (var x in e) if (x != null) hasil.Add(Convert.ToString(x));
+            return hasil;
         }
     }
 }

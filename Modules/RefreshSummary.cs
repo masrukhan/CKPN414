@@ -300,10 +300,7 @@ namespace CKPNLibrary.Modules
             // kembali), supaya dialog muncul di atas tampilan normal — bukan di atas
             // layar abu-abu yang terkesan error.
             if (laporan != null)
-                System.Windows.Forms.MessageBox.Show(
-                    laporan, "Refresh CKPN & PPKA",
-                    System.Windows.Forms.MessageBoxButtons.OK,
-                    System.Windows.Forms.MessageBoxIcon.Information);
+                CKPNLibrary.Helpers.Pemberitahu.Info("Refresh CKPN & PPKA", laporan);
         }
 
         // ================================================================

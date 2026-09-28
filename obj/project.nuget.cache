@@ -1,13 +1,15 @@
 {
   "version": 2,
-  "dgSpecHash": "mYxyoek64sM=",
+  "dgSpecHash": "SPbToO1VJn0=",
   "success": true,
   "projectFilePath": "F:\\LAPORAN BULANAN\\CKPN\\CKPNLibrary_ExcelDNA\\CKPNLibrary.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\Administrator\\.nuget\\packages\\exceldna.addin\\1.8.0\\exceldna.addin.1.8.0.nupkg.sha512",
     "C:\\Users\\Administrator\\.nuget\\packages\\exceldna.integration\\1.8.0\\exceldna.integration.1.8.0.nupkg.sha512",
     "C:\\Users\\Administrator\\.nuget\\packages\\microsoft.office.interop.excel\\15.0.4795.1000\\microsoft.office.interop.excel.15.0.4795.1000.nupkg.sha512",
-    "C:\\Users\\Administrator\\.nuget\\packages\\microsoft.web.webview2\\1.0.2903.40\\microsoft.web.webview2.1.0.2903.40.nupkg.sha512"
+    "C:\\Users\\Administrator\\.nuget\\packages\\microsoft.web.webview2\\1.0.2903.40\\microsoft.web.webview2.1.0.2903.40.nupkg.sha512",
+    "C:\\Users\\Administrator\\.nuget\\packages\\stub.system.data.sqlite.core.netframework\\1.0.119\\stub.system.data.sqlite.core.netframework.1.0.119.nupkg.sha512",
+    "C:\\Users\\Administrator\\.nuget\\packages\\system.data.sqlite.core\\1.0.119\\system.data.sqlite.core.1.0.119.nupkg.sha512"
   ],
   "logs": []
 }

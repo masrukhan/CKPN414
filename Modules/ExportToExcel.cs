@@ -192,11 +192,7 @@ namespace CKPNLibrary.Modules
                     pesanOK += "\n\nSheet tidak ditemukan (dilewati):\n  " +
                                string.Join("\n  ", sheetTidakAda);
 
-                System.Windows.Forms.MessageBox.Show(
-                    pesanOK,
-                    "Export CKPN — Selesai",
-                    System.Windows.Forms.MessageBoxButtons.OK,
-                    System.Windows.Forms.MessageBoxIcon.Information);
+                CKPNLibrary.Helpers.Pemberitahu.Info("Export CKPN — Selesai", pesanOK);
             }
             catch (Exception ex)
             {

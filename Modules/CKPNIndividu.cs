@@ -68,6 +68,9 @@ namespace CKPNLibrary.Modules
                 // Flag kriteria tambahan: tunggakan > 7 s.d. 30 hari (Master!F13).
                 bool flag7Hari = CekFlag7Hari();
 
+                // Penyesuaian tersimpan: nilai agunan (I) & biaya penjualan (J) — Tahap 3a
+                CKPNLibrary.Data.Penyesuaian.MulaiIndividu();
+
                 int baris = 5;
                 for (int rCif = 0; rCif < topN; rCif++)
                 {
@@ -77,12 +80,16 @@ namespace CKPNLibrary.Modules
                         baris++;
                         string adaPN = TentukanPN(kontrak, dictRestru, flagNPF, flagKol2, flagRestru, flag7Hari);
                         TulisBaris(wsOut, baris, rCif + 1, cifData.CIF, cifData.Nama, kontrak, adaPN);
+                        CKPNLibrary.Data.Penyesuaian.TerapkanIndividu(wsOut, baris, kontrak.NoKontrak, kontrak.Jaminan);
                     }
                 }
 
                 int totalRows = baris - 5;
                 if (totalRows > 0)
                     StyleHelper.StyleTabelCKPN(wsOut, totalRows);
+
+                // Setelah styling, agar warna penanda penyesuaian tidak tertimpa
+                CKPNLibrary.Data.Penyesuaian.SelesaiIndividu(wsOut);
 
                 // Atur kunci sel SEBELUM sheet dikunci ulang di finally:
                 //   I & J bebas diedit user, K terkunci + formula disembunyikan.

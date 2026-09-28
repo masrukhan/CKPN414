@@ -219,16 +219,10 @@ namespace CKPNLibrary.Panel
             _pesan.BringToFront();
         }
 
+        /// <summary>Diteruskan ke CatatanLog (library\logs\panel_{user}.log).</summary>
         internal static void CatatLog(string baris)
         {
-            try
-            {
-                string folder = AppPaths.FolderLokal;
-                Directory.CreateDirectory(folder);
-                File.AppendAllText(Path.Combine(folder, "panel.log"),
-                    DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + baris + Environment.NewLine);
-            }
-            catch { }
+            CatatanLog.Tulis(baris);
         }
 
         protected override void Dispose(bool disposing)

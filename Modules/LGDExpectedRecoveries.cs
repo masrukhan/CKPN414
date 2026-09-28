@@ -92,16 +92,12 @@ namespace CKPNLibrary.Modules
             {
                 // Kolom M belum terisi — bangun otomatis
                 // Tampilkan info ke user bahwa proses tambahan sedang berjalan
-                System.Windows.Forms.MessageBox.Show(
+                Pemberitahu.Info("Auto-Build Referensi KC",
                     "Kolom referensi KC (M) di KC2900 belum terisi." +
                     "Sistem akan membangun tabel referensi KC secara otomatis" +
                     "sebelum melanjutkan perhitungan LGD Expected Recoveries." +
                     "File sumber akan dibuka READ-WRITE dan disimpan." +
-                    "Proses ini hanya perlu dilakukan sekali per set file.",
-                    "Auto-Build Referensi KC",
-                    System.Windows.Forms.MessageBoxButtons.OK,
-                    System.Windows.Forms.MessageBoxIcon.Information);
-
+                    "Proses ini hanya perlu dilakukan sekali per set file.");
                 refBuilder.BangunRefKC(filePaths, wsLog);
             }
 
@@ -118,8 +114,10 @@ namespace CKPNLibrary.Modules
             var bakiPerTahun = new Dictionary<int, double>();
             var pathPerTahun = new Dictionary<int, string>();
 
+            int urutFile = 0;
             foreach (var kv in filePaths)
             {
+                Pemberitahu.Progres("LGD Expected Recoveries", ++urutFile, filePaths.Count, "File tahun " + kv.Key);
                 pathPerTahun[kv.Key] = kv.Value;
                 Excel.Workbook srcWb = null;
                 try
@@ -250,12 +248,7 @@ namespace CKPNLibrary.Modules
                 if (terproteksi) KunciProteksiSheet(wsL);
             }
 
-            System.Windows.Forms.MessageBox.Show(
-                pesan, "LGD Expected Recoveries",
-                System.Windows.Forms.MessageBoxButtons.OK,
-                statRefKC.TotalTanpaKC > 0
-                    ? System.Windows.Forms.MessageBoxIcon.Warning
-                    : System.Windows.Forms.MessageBoxIcon.Information);
+            Pemberitahu.Info("LGD Expected Recoveries", pesan, statRefKC.TotalTanpaKC > 0);
         }
 
         // ================================================================

@@ -95,10 +95,7 @@ namespace CKPNLibrary.Modules
                 if (terproteksi) KunciProteksiSheet(wsTarget);
             }
 
-            System.Windows.Forms.MessageBox.Show(
-                FormatDetail(r), "PD Migration",
-                System.Windows.Forms.MessageBoxButtons.OK,
-                System.Windows.Forms.MessageBoxIcon.Information);
+            Pemberitahu.Info("PD Migration", FormatDetail(r));
         }
 
         // ================================================================
@@ -152,6 +149,7 @@ namespace CKPNLibrary.Modules
                     string tw = triwulanUrut[i];
                     string ta = i < tglAw.Length ? tglAw[i] : "";
                     string tk = i < tglAk.Length ? tglAk[i] : "";
+                    Pemberitahu.Progres("PD Migration", i + 1, 4, tw);
 
                     // Setiap triwulan diproses penuh (staging dibersihkan di dalamnya).
                     RingkasTriwulan r = HitungSatu(tw, awal[i], akhir[i], ta, tk, topN, sheetKCList);
@@ -165,10 +163,7 @@ namespace CKPNLibrary.Modules
                 if (terproteksi) KunciProteksiSheet(wsTarget);
             }
 
-            System.Windows.Forms.MessageBox.Show(
-                sb.ToString(), "PD Migration - Run All Triwulan",
-                System.Windows.Forms.MessageBoxButtons.OK,
-                System.Windows.Forms.MessageBoxIcon.Information);
+            Pemberitahu.Info("PD Migration - Run All Triwulan", sb.ToString());
         }
 
         private static string[] SplitPipe(string s)
