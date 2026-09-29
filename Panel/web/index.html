@@ -21,16 +21,100 @@
     <span id="lencana-versi" class="lencana">v—</span>
   </div>
   <nav class="tab" role="tablist" aria-label="Menu panel">
-    <button role="tab" data-tab="jalankan" aria-selected="true">Jalankan</button>
-    <button role="tab" data-tab="periode"  aria-selected="false">Periode</button>
+    <button role="tab" data-tab="overview" aria-selected="true">Overview</button>
+    <button role="tab" data-tab="jalankan" aria-selected="false" title="Jalankan manual: pilih langkah sendiri">Manual</button>
+    <button role="tab" data-tab="periode"  aria-selected="false" title="Jalankan per grup sesuai susunan tahunan, konsolidasi, dan data">Per grup</button>
     <button role="tab" data-tab="riwayat"  aria-selected="false">Riwayat</button>
     <button role="tab" data-tab="analisis" aria-selected="false">Analisis</button>
   </nav>
 </header>
 
 <main>
-  <!-- ================= Jalankan ================= -->
-  <section id="tab-jalankan" class="isi-tab" role="tabpanel">
+  <!-- ================= Area proses (progres, hasil, simpan) — tampil di semua tab ================= -->
+  <section id="area-proses" class="isi-tab area-proses" aria-live="polite">
+    <!-- Progres -->
+    <div class="kartu" id="kartu-progres" hidden>
+      <div class="baris-antara">
+        <div>
+          <div class="judul-kartu" id="progres-judul">Sedang menghitung…</div>
+          <div class="teks-kecil" id="progres-sub">—</div>
+        </div>
+        <div class="persen" id="progres-persen">0%</div>
+      </div>
+      <div class="bar" role="progressbar" aria-label="Progres keseluruhan" aria-valuemin="0" aria-valuemax="100">
+        <div class="isi-bar" id="progres-bar"></div>
+      </div>
+      <ol id="progres-langkah" class="progres-langkah"></ol>
+      <button id="btn-batal" class="tombol-sekunder lebar" type="button">Batalkan setelah langkah ini</button>
+    </div>
+
+    <!-- Hasil -->
+    <div class="kartu" id="kartu-hasil" hidden>
+      <div id="hasil-status" class="status-hasil"></div>
+      <div id="hasil-review"></div>
+      <div id="hasil-pesan" class="daftar-pesan"></div>
+      <button id="btn-ke-simpan" class="tombol-utama" type="button">Review selesai — simpan grup ke staging</button>
+      <button id="btn-tutup-hasil" class="tombol-sekunder lebar" type="button">Tutup</button>
+    </div>
+
+    <!-- Simpan grup ke staging -->
+    <div class="kartu" id="kartu-simpan" hidden>
+      <div class="baris-antara">
+        <div class="judul-kartu">Simpan grup ke staging</div>
+        <button id="btn-simpan-periksa" class="tautan" type="button">Periksa ulang</button>
+      </div>
+      <div id="simpan-info" class="teks-kecil">Memeriksa sheet…</div>
+      <div id="simpan-peringatan"></div>
+      <div id="simpan-perubahan"></div>
+      <label class="label-isian" for="simpan-catatan">Catatan (opsional)</label>
+      <textarea id="simpan-catatan" rows="2" placeholder="Mis. agunan debitur X disesuaikan hasil appraisal"></textarea>
+      <div class="baris-antara kotak-refresh">
+        <span class="teks-kecil">Sudah edit Individu / LGD CS? Hitung ulang Summary untuk melihat totalnya.</span>
+        <button id="btn-refresh-summary" class="tombol-sekunder" type="button">Hitung ulang Summary</button>
+      </div>
+      <div id="refresh-hasil"></div>
+      <label class="opsi"><input type="checkbox" id="cek-refresh" checked>
+        <span>Jalankan Refresh Summary sebelum menyimpan</span></label>
+      <div class="baris-tombol">
+        <button id="btn-simpan" class="tombol-utama" type="button" disabled>Simpan</button>
+        <button id="btn-simpan-batal" class="tombol-sekunder" type="button">Kembali</button>
+      </div>
+      <div id="simpan-hasil"></div>
+    </div>
+  </section>
+
+  <!-- ================= Overview Data ================= -->
+  <section id="tab-overview" class="isi-tab" role="tabpanel">
+    <div class="kartu">
+      <div class="baris-antara">
+        <div class="judul-kartu">Overview data</div>
+        <button id="btn-ov-muat" class="tombol-sekunder" type="button">Muat data</button>
+      </div>
+      <div id="ov-info" class="teks-kecil">Dibaca dari file template di Master!D14 untuk periode Master!C4.</div>
+      <div class="baris-antara jarak-atas">
+        <span id="ov-satuan-ket" class="teks-kecil">Angka dalam juta Rp</span>
+        <select id="ov-satuan" class="pilih" aria-label="Satuan angka">
+          <option value="juta">Juta Rp</option>
+          <option value="penuh">Rp penuh</option>
+        </select>
+      </div>
+    </div>
+    <div class="kartu">
+      <div class="judul-kartu">Ringkasan</div>
+      <div id="ov-keuangan" class="angka-grup angka-ov"></div>
+      <div id="ov-rekon" class="teks-kecil jarak-atas"></div>
+    </div>
+    <div class="kartu">
+      <div class="judul-kartu">Outstanding, EAD &amp; NPF per KC</div>
+      <div id="ov-tabel" class="teks-kecil">Tekan Muat data.</div>
+      <div id="ov-log"></div>
+    </div>
+  </section>
+
+  <!-- ================= Jalankan manual ================= -->
+  <section id="tab-jalankan" class="isi-tab" role="tabpanel" hidden>
+    <div class="kartu info teks-kecil">Jalankan manual: centang langkah yang ingin dihitung untuk KC yang dicentang di Master.
+      Untuk menghitung sesuai susunan grup tahunan, gunakan tab <b>Per grup</b>.</div>
 
     <!-- Ringkasan periode & ruang lingkup -->
     <div class="kartu">
@@ -68,76 +152,146 @@
       </div>
     </div>
 
-    <!-- Progres -->
-    <div class="kartu" id="kartu-progres" hidden>
-      <div class="baris-antara">
-        <div>
-          <div class="judul-kartu" id="progres-judul">Sedang menghitung…</div>
-          <div class="teks-kecil" id="progres-sub">—</div>
-        </div>
-        <div class="persen" id="progres-persen">0%</div>
-      </div>
-      <div class="bar" role="progressbar" aria-label="Progres keseluruhan" aria-valuemin="0" aria-valuemax="100">
-        <div class="isi-bar" id="progres-bar"></div>
-      </div>
-      <ol id="progres-langkah" class="progres-langkah"></ol>
-      <button id="btn-batal" class="tombol-sekunder lebar" type="button">Batalkan setelah langkah ini</button>
-    </div>
-
-    <!-- Hasil -->
-    <div class="kartu" id="kartu-hasil" hidden>
-      <div id="hasil-status" class="status-hasil"></div>
-      <div id="hasil-review"></div>
-      <div id="hasil-pesan" class="daftar-pesan"></div>
-      <button id="btn-ke-simpan" class="tombol-utama" type="button">Review selesai — simpan grup ke staging</button>
-      <button id="btn-tutup-hasil" class="tombol-sekunder lebar" type="button">Tutup</button>
-    </div>
-
-    <!-- Simpan grup ke staging -->
-    <div class="kartu" id="kartu-simpan" hidden>
-      <div class="baris-antara">
-        <div class="judul-kartu">Simpan grup ke staging</div>
-        <button id="btn-simpan-periksa" class="tautan" type="button">Periksa ulang</button>
-      </div>
-      <div id="simpan-info" class="teks-kecil">Memeriksa sheet…</div>
-      <div id="simpan-peringatan"></div>
-      <div id="simpan-perubahan"></div>
-      <label class="label-isian" for="simpan-catatan">Catatan (opsional)</label>
-      <textarea id="simpan-catatan" rows="2" placeholder="Mis. agunan debitur X disesuaikan hasil appraisal"></textarea>
-      <label class="opsi"><input type="checkbox" id="cek-refresh" checked>
-        <span>Jalankan Refresh Summary sebelum menyimpan</span></label>
-      <div class="baris-tombol">
-        <button id="btn-simpan" class="tombol-utama" type="button" disabled>Simpan</button>
-        <button id="btn-simpan-batal" class="tombol-sekunder" type="button">Kembali</button>
-      </div>
-      <div id="simpan-hasil"></div>
-    </div>
   </section>
 
   <!-- ================= Periode / Riwayat / Analisis ================= -->
   <section id="tab-periode" class="isi-tab" role="tabpanel" hidden>
+    <!-- Alur periode -->
     <div class="kartu">
       <div class="baris-antara">
-        <label class="judul-kartu" for="pilih-periode">Periode</label>
+        <label class="label-kecil" for="pilih-periode">Periode</label>
         <select id="pilih-periode" class="pilih"></select>
       </div>
-      <div id="staging-isi" class="teks-kecil">Memuat…</div>
-      <button id="btn-simpan-dari-periode" class="tombol-sekunder lebar" type="button">Simpan grup yang sedang dihitung</button>
+      <ol id="periode-alur" class="alur" aria-label="Tahapan periode"></ol>
+      <div id="periode-info" class="teks-kecil">Memuat…</div>
     </div>
 
+    <!-- Grup segmen -->
     <div class="kartu">
       <div class="baris-antara">
-        <div class="judul-kartu">Penyesuaian tersimpan</div>
-        <button id="btn-muat-penyesuaian" class="tautan" type="button">Muat ulang</button>
+        <div class="judul-kartu">Grup segmen</div>
+        <button id="btn-atur-susunan" class="tautan" type="button">Atur susunan grup</button>
       </div>
-      <p class="teks-kecil">Diterapkan otomatis setiap CKPN Individu / LGD CS dihitung, termasuk dari tombol di Master.</p>
-      <div id="penyesuaian-isi" class="teks-kecil">—</div>
+      <div id="grup-isi"></div>
     </div>
 
-    <div class="kartu info">Susunan grup tahunan, jalankan semua grup, dan konsolidasi vs PPKA — <b>Tahap 3b</b>.</div>
+    <!-- Susunan grup (editor) -->
+    <div class="kartu" id="kartu-susunan" hidden>
+      <div class="judul-kartu" id="susunan-judul">Susunan grup</div>
+      <p class="teks-kecil">Beri nama grup untuk setiap kode segmen. Kode dengan nama grup yang sama dihitung bersama (PD &amp; LGD gabungan). Berlaku untuk seluruh periode di tahun ini.</p>
+      <div id="susunan-isi" class="susunan-isi"></div>
+      <div class="baris-tombol">
+        <button id="btn-susunan-perkc" class="tombol-sekunder" type="button">Satu grup per kode</button>
+      </div>
+      <fieldset class="pilih-metode">
+        <legend class="label-isian">Metode konsolidasi tahun ini (satu untuk semua grup)</legend>
+        <label class="opsi"><input type="radio" name="susunan-metode" value="nf"> <span>PD Net Flow + LGD weighted</span></label>
+        <label class="opsi"><input type="radio" name="susunan-metode" value="mig"> <span>PD Migration + LGD weighted</span></label>
+        <p class="teks-kecil">Tidak dapat diganti setelah ada periode tahun ini yang dikunci (Final), kecuali kunci periode tersebut dibuka.</p>
+      </fieldset>
+      <label class="label-isian" for="susunan-dasar">Dasar kebijakan / SOP (wajib)</label>
+      <input id="susunan-dasar" class="isian" type="text" placeholder="Mis. POL-CKPN-001 rev. 2026">
+      <div class="baris-tombol jarak-atas">
+        <button id="btn-susunan-simpan" class="tombol-utama" type="button">Simpan susunan</button>
+        <button id="btn-susunan-batal" class="tombol-sekunder" type="button">Batal</button>
+      </div>
+      <div id="susunan-hasil"></div>
+    </div>
+
+    <!-- Konsolidasi -->
+    <div class="kartu" id="kartu-konsolidasi">
+      <div class="judul-kartu">Konsolidasi vs PPKA OJK</div>
+      <div id="konsolidasi-isi" class="teks-kecil">—</div>
+    </div>
+
+    <!-- Data penyesuaian (Tahap 3d) -->
+    <div class="kartu">
+      <div class="baris-antara">
+        <div class="judul-kartu">Data penyesuaian</div>
+        <button id="btn-muat-penyesuaian" class="tautan" type="button">Muat ulang</button>
+      </div>
+      <p class="teks-kecil">Nilai yang diterapkan otomatis setiap CKPN Individu / LGD CS dihitung (termasuk dari tombol di Master).
+        Perubahan di sini berlaku pada perhitungan berikutnya.</p>
+      <div class="segmen" role="group" aria-label="Jenis penyesuaian">
+        <button type="button" data-pny="individu" aria-pressed="true">CKPN Individu</button>
+        <button type="button" data-pny="lgdcs" aria-pressed="false">LGD CS</button>
+      </div>
+      <div class="baris-antara jarak-atas">
+        <input id="pny-cari" class="isian" type="search" placeholder="Cari no. kontrak / rekening / nama" aria-label="Cari penyesuaian">
+        <button id="btn-pny-tambah" class="tombol-sekunder" type="button">+ Tambah</button>
+      </div>
+      <div id="penyesuaian-isi" class="daftar-pny teks-kecil">—</div>
+    </div>
+
+    <!-- Editor penyesuaian -->
+    <div class="kartu" id="kartu-pny-editor" hidden>
+      <div class="judul-kartu" id="pe-judul">Penyesuaian</div>
+      <label class="label-isian" for="pe-kunci" id="pe-label-kunci">No. kontrak</label>
+      <input id="pe-kunci" class="isian" type="text" autocomplete="off">
+      <div id="pe-grup-nama">
+        <label class="label-isian" for="pe-nama">Nama debitur</label>
+        <input id="pe-nama" class="isian" type="text">
+      </div>
+      <div id="pe-grup-ind">
+        <div class="dua-kolom">
+          <div><label class="label-isian" for="pe-jaminan">Nilai agunan (I)</label>
+            <input id="pe-jaminan" class="isian angka" type="text" inputmode="numeric"></div>
+          <div><label class="label-isian" for="pe-biaya">Biaya penjualan (J)</label>
+            <input id="pe-biaya" class="isian angka" type="text" inputmode="numeric"></div>
+        </div>
+        <div id="pe-sistem" class="teks-kecil jarak-atas"></div>
+      </div>
+      <div id="pe-grup-cs">
+        <label class="label-isian" for="pe-jenis">Jenis</label>
+        <select id="pe-jenis" class="isian">
+          <option value="ubah">Ubah nilai agunan / realisasi</option>
+          <option value="hapus">Kecualikan dari LGD CS</option>
+          <option value="tambah">Baris manual</option>
+        </select>
+        <div id="pe-ket-jenis" class="teks-kecil jarak-atas"></div>
+        <div id="pe-grup-pokok">
+          <label class="label-isian" for="pe-pokok">Pokok awal (C)</label>
+          <input id="pe-pokok" class="isian angka" type="text" inputmode="numeric">
+        </div>
+        <div id="pe-grup-nilai" class="dua-kolom">
+          <div><label class="label-isian" for="pe-agunan">Nilai agunan (D)</label>
+            <input id="pe-agunan" class="isian angka" type="text" inputmode="numeric"></div>
+          <div><label class="label-isian" for="pe-recovery">Realisasi (G)</label>
+            <input id="pe-recovery" class="isian angka" type="text" inputmode="numeric" placeholder="kosong = rumus"></div>
+        </div>
+        <div id="pe-grup-tahun" class="dua-kolom">
+          <div><label class="label-isian" for="pe-thn-serah">Tahun diserahkan (E)</label>
+            <input id="pe-thn-serah" class="isian" type="text" inputmode="numeric" maxlength="4"></div>
+          <div><label class="label-isian" for="pe-thn-eks">Tahun eksekusi (F)</label>
+            <input id="pe-thn-eks" class="isian" type="text" inputmode="numeric" maxlength="4"></div>
+        </div>
+      </div>
+      <label class="label-isian" for="pe-alasan">Alasan (opsional)</label>
+      <input id="pe-alasan" class="isian" type="text" placeholder="Mis. hasil appraisal ulang Sep 2026">
+      <div class="baris-tombol jarak-atas">
+        <button id="btn-pe-simpan" class="tombol-utama" type="button">Simpan</button>
+        <button id="btn-pe-batal" class="tombol-sekunder" type="button">Tutup</button>
+      </div>
+      <div class="baris-antara jarak-atas">
+        <button id="btn-pe-riwayat" class="tautan" type="button">Lihat riwayat perubahan</button>
+        <button id="btn-pe-hapus" class="tautan hapus" type="button">Hapus penyesuaian</button>
+      </div>
+      <div id="pe-hasil"></div>
+      <div id="pe-riwayat" class="teks-kecil"></div>
+    </div>
+
+    <!-- Kelola database (Tahap 3d) -->
+    <details class="kartu" id="db-kelola">
+      <summary class="judul-kartu">Kelola database (simulasi)</summary>
+      <p class="teks-kecil">Hapus data periode atau kosongkan database, misalnya setelah simulasi untuk memilih metode.
+        Setiap penghapusan didahului salinan arsip di library\backup.</p>
+      <div id="db-isi" class="teks-kecil">—</div>
+      <div id="db-form" class="form-bahaya" hidden></div>
+    </details>
   </section>
+
   <section id="tab-riwayat" class="isi-tab" role="tabpanel" hidden>
-    <div class="kartu info">Riwayat CKPN per periode — <b>Tahap 3</b>.</div>
+    <div class="kartu info">Riwayat CKPN antarperiode — <b>Tahap 4</b>.</div>
   </section>
   <section id="tab-analisis" class="isi-tab" role="tabpanel" hidden>
     <div class="kartu info">Sankey PD Migration &amp; Net Flow — <b>Tahap 4</b>.</div>

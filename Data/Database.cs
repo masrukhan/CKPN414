@@ -25,7 +25,7 @@ namespace CKPNLibrary.Data
     /// </summary>
     internal static class Database
     {
-        public const int VersiSkema = 1;
+        public const int VersiSkema = 4;
         private static bool _skemaSiap;
         private static readonly object _kunci = new object();
 
@@ -41,6 +41,15 @@ namespace CKPNLibrary.Data
             string path = AppPaths.FileDatabase;
             if (!tulis && !File.Exists(path))
                 throw new FileNotFoundException("Database belum ada. Simpan grup pertama akan membuatnya.", path);
+
+            // Skema lama (mis. dibuat Tahap 3a) diperbarui otomatis oleh PENGIRIM saat
+            // pertama kali dibaca, supaya kolom/tabel baru tersedia untuk semua fitur baca.
+            if (!tulis && !_skemaSiap)
+            {
+                string tidakPerlu;
+                if (BolehMenulis(out tidakPerlu))
+                    using (Buka(true)) { }
+            }
 
             if (tulis) Directory.CreateDirectory(Path.GetDirectoryName(path));
 
@@ -142,6 +151,25 @@ namespace CKPNLibrary.Data
             }
         }
 
+        /// <summary>
+        /// Salinan arsip sebelum penghapusan data (Tahap 3d). Nama diawali "arsip_" sehingga
+        /// tidak ikut dirotasi oleh Cadangkan(). Melempar error bila gagal — penghapusan
+        /// tidak boleh berjalan tanpa arsip.
+        /// </summary>
+        public static string Arsipkan(string label)
+        {
+            string db = AppPaths.FileDatabase;
+            if (!File.Exists(db)) throw new FileNotFoundException("Database belum ada.", db);
+            Directory.CreateDirectory(AppPaths.FolderBackup);
+            var aman = new System.Text.StringBuilder();
+            foreach (char c in label ?? "")
+                aman.Append(char.IsLetterOrDigit(c) || c == '-' ? c : '-');
+            string tujuan = Path.Combine(AppPaths.FolderBackup,
+                "arsip_" + aman + "_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".db");
+            File.Copy(db, tujuan, false);
+            return tujuan;
+        }
+
         // ================================================================
         // Skema
         // ================================================================
@@ -168,8 +196,40 @@ namespace CKPNLibrary.Data
                     }
                     CatatanLog.Tulis("Database: skema v1 dibuat di " + AppPaths.FileDatabase);
                 }
-                // Migrasi versi berikutnya (Tahap 3b dst.) ditambahkan di sini:
-                // if (versi < 2) { ... }
+                // ---- v2 (Tahap 3b): susunan grup, hapus versi, keputusan metode, kunci periode ----
+                if (versi < 2)
+                {
+                    using (var tx = con.BeginTransaction())
+                    {
+                        foreach (var sql in SkemaV2) Exec(con, sql);
+                        Exec(con, "INSERT OR REPLACE INTO meta(kunci,nilai) VALUES('versi_skema','2')");
+                        tx.Commit();
+                    }
+                    CatatanLog.Tulis("Database: migrasi ke skema v2 selesai");
+                }
+                // ---- v3 (Tahap 3c): metode konsolidasi per tahun + jurnal CKPN ----
+                if (versi < 3)
+                {
+                    using (var tx = con.BeginTransaction())
+                    {
+                        foreach (var sql in SkemaV3) Exec(con, sql);
+                        Exec(con, "INSERT OR REPLACE INTO meta(kunci,nilai) VALUES('versi_skema','3')");
+                        tx.Commit();
+                    }
+                    CatatanLog.Tulis("Database: migrasi ke skema v3 selesai");
+                }
+                // ---- v4 (Tahap 4): data analisis PD per kiriman (bahan sankey) ----
+                if (versi < 4)
+                {
+                    using (var tx = con.BeginTransaction())
+                    {
+                        foreach (var sql in SkemaV4) Exec(con, sql);
+                        Exec(con, "INSERT OR REPLACE INTO meta(kunci,nilai) VALUES('versi_skema','4')");
+                        tx.Commit();
+                    }
+                    CatatanLog.Tulis("Database: migrasi ke skema v4 selesai");
+                }
+                // Migrasi versi berikutnya ditambahkan di sini: if (versi < 5) { ... }
 
                 _skemaSiap = true;
             }
@@ -278,6 +338,108 @@ namespace CKPNLibrary.Data
                 sesudah   TEXT,
                 alasan    TEXT)"
         };
+
+        private static readonly string[] SkemaV2 =
+        {
+            // Susunan grup segmen per tahun (ditetapkan setahun sekali sesuai SOP)
+            @"CREATE TABLE IF NOT EXISTS susunan_grup (
+                id        INTEGER PRIMARY KEY,
+                tahun     INTEGER NOT NULL,
+                urut      INTEGER NOT NULL,
+                nama      TEXT NOT NULL,
+                kode_kc   TEXT NOT NULL,
+                dasar     TEXT,
+                pengguna  TEXT,
+                waktu     TEXT,
+                UNIQUE(tahun, kode_kc))",
+
+            // Hapus versi kiriman = tandai (tidak dihapus fisik) supaya jejak audit tetap ada
+            "ALTER TABLE run_grup ADD COLUMN dihapus INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE run_grup ADD COLUMN alasan_hapus TEXT",
+            "ALTER TABLE run_grup ADD COLUMN pengguna_hapus TEXT",
+            "ALTER TABLE run_grup ADD COLUMN waktu_hapus TEXT",
+
+            // Kunci periode setelah konsolidasi
+            "ALTER TABLE periode ADD COLUMN dikunci_oleh TEXT",
+            "ALTER TABLE periode ADD COLUMN dikunci_waktu TEXT",
+            "ALTER TABLE periode ADD COLUMN catatan_kunci TEXT",
+
+            // Metode terpilih per grup saat konsolidasi vs PPKA
+            @"CREATE TABLE IF NOT EXISTS keputusan_metode (
+                periode_id  INTEGER NOT NULL REFERENCES periode(id),
+                kode_kc     TEXT NOT NULL,
+                nama_grup   TEXT,
+                run_id      INTEGER REFERENCES run_grup(id),
+                metode      TEXT NOT NULL CHECK (metode IN ('nf','mig')),
+                ckpn_nf     REAL,
+                ckpn_mig    REAL,
+                ppka        REAL,
+                pengguna    TEXT,
+                waktu       TEXT,
+                PRIMARY KEY (periode_id, kode_kc))",
+
+            // Jejak aktivitas periode (hapus versi, kunci, buka kunci, susunan)
+            @"CREATE TABLE IF NOT EXISTS log_aktivitas (
+                id        INTEGER PRIMARY KEY,
+                waktu     TEXT NOT NULL,
+                pengguna  TEXT,
+                periode   TEXT,
+                aksi      TEXT NOT NULL,
+                detail    TEXT)"
+        };
+
+        private static readonly string[] SkemaV3 =
+        {
+            // Pengaturan konsolidasi per tahun, ditetapkan bersama susunan grup:
+            //   metode         : 'nf' | 'mig' — SATU metode untuk semua grup sepanjang tahun
+            //   kebijakan_saldo: 'ckpn' (saldo CKPN = hasil metode) | 'maks' (saldo = maks(CKPN, PPKA))
+            @"CREATE TABLE IF NOT EXISTS susunan_tahun (
+                tahun            INTEGER PRIMARY KEY,
+                metode           TEXT CHECK (metode IN ('nf','mig')),
+                kebijakan_saldo  TEXT NOT NULL DEFAULT 'ckpn' CHECK (kebijakan_saldo IN ('ckpn','maks')),
+                dasar            TEXT,
+                pengguna         TEXT,
+                waktu            TEXT)",
+
+            // Ringkasan konsolidasi yang ditetapkan saat periode dikunci
+            "ALTER TABLE periode ADD COLUMN metode TEXT",
+            "ALTER TABLE periode ADD COLUMN kebijakan_saldo TEXT",
+            "ALTER TABLE periode ADD COLUMN ckpn_total REAL",
+            "ALTER TABLE periode ADD COLUMN ppka_total REAL",
+
+            // Usulan jurnal CKPN per komponen (pembiayaan / ABA) saat periode dikunci
+            @"CREATE TABLE IF NOT EXISTS jurnal_ckpn (
+                periode_id    INTEGER NOT NULL REFERENCES periode(id),
+                komponen      TEXT NOT NULL,
+                jenis         TEXT NOT NULL,
+                ckpn          REAL,
+                ppka          REAL,
+                saldo_target  REAL,
+                saldo_awal    REAL,
+                nominal       REAL,
+                akun_debit    TEXT,
+                akun_kredit   TEXT,
+                keterangan    TEXT,
+                pengguna      TEXT,
+                waktu         TEXT,
+                PRIMARY KEY (periode_id, komponen))"
+        };
+
+        private static readonly string[] SkemaV4 =
+        {
+            // Saldo bucket net flow, matriks migrasi per triwulan, dan PD resmi per kiriman (JSON)
+            @"CREATE TABLE IF NOT EXISTS analisis_pd (
+                run_id  INTEGER NOT NULL REFERENCES run_grup(id) ON DELETE CASCADE,
+                jenis   TEXT NOT NULL,
+                data    TEXT NOT NULL,
+                PRIMARY KEY (run_id, jenis))"
+        };
+
+        public static void CatatAktivitas(SQLiteConnection con, string periode, string aksi, string detail)
+        {
+            Exec(con, "INSERT INTO log_aktivitas(waktu,pengguna,periode,aksi,detail) VALUES(@p0,@p1,@p2,@p3,@p4)",
+                 Sekarang(), Environment.UserName, periode ?? "", aksi, detail ?? "");
+        }
 
         // ================================================================
         // Util

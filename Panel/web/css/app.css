@@ -30,7 +30,7 @@ html, body { margin: 0; background: var(--latar); color: var(--teks);
 
 .tab { display: flex; gap: 2px; margin-top: 10px; }
 .tab button { background: none; border: none; border-bottom: 2px solid transparent;
-  padding: 9px 9px; font: inherit; font-size: 13px; color: var(--teks-2); cursor: pointer; }
+  padding: 9px 8px; font: inherit; font-size: 13px; color: var(--teks-2); cursor: pointer; }
 .tab button[aria-selected="true"] { color: var(--aksen); border-bottom-color: var(--aksen); font-weight: 600; }
 .tab button:focus-visible { outline: 2px solid var(--aksen); outline-offset: -2px; }
 
@@ -154,3 +154,128 @@ textarea, .isian { width: 100%; font: inherit; font-size: 13px; padding: 7px 9px
 .item-penyesuaian { display: flex; justify-content: space-between; gap: 8px; padding: 5px 0; border-bottom: 1px dashed #EFEDE6; }
 .item-penyesuaian .kunci { font-family: var(--mono); }
 .item-penyesuaian button { background: none; border: none; color: var(--galat); font: inherit; font-size: 12px; cursor: pointer; flex-shrink: 0; }
+
+/* ================= Tahap 3b: alur periode, grup, konsolidasi ================= */
+.jarak-atas { margin-top: 10px; }
+.kotak-refresh { background: #F6F8F7; border-radius: 8px; padding: 8px 10px; margin-top: 10px; }
+.kotak-refresh .tombol-sekunder { flex-shrink: 0; }
+
+.alur { list-style: none; margin: 10px 0 8px; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+.alur li { display: flex; flex-direction: column; gap: 5px; font-size: 11px; color: #6B726F; }
+.alur li .bar-alur { height: 6px; border-radius: 999px; background: var(--garis); }
+.alur li.selesai .bar-alur { background: var(--aksen); }
+.alur li.aktif .bar-alur { background: var(--aksen); opacity: .55; }
+.alur li.aktif, .alur li.selesai { color: var(--teks); }
+.alur li.aktif { font-weight: 600; }
+
+.kartu-grup { border: 1px solid var(--garis); border-radius: 10px; padding: 10px 12px; margin-top: 8px; }
+.kartu-grup.di-workbook { border-color: var(--aksen); box-shadow: inset 3px 0 0 var(--aksen); }
+.kartu-grup .kepala-grup { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.kartu-grup .nama-grup { font-weight: 600; font-size: 14px; }
+.status-grup { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #EEF0EE; color: #3A413E; white-space: nowrap; }
+.status-grup.tersimpan { background: #E7F2EC; color: var(--sukses); }
+.status-grup.dihitung, .status-grup.dihitung-ulang { background: var(--peringatan-bg); color: var(--peringatan); }
+.angka-grup { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin: 8px 0 4px; font-size: 11px; color: var(--teks-2); }
+.angka-grup b { display: block; font-family: var(--mono); font-size: 12px; font-weight: 500; color: var(--teks); }
+.aksi-grup { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.aksi-grup .tombol-utama, .aksi-grup .tombol-sekunder { width: auto; height: 34px; padding: 0 12px; font-size: 13px; }
+.versi-grup summary { cursor: pointer; font-size: 12px; color: var(--aksen); margin-top: 6px; }
+.baris-versi { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; padding: 5px 0; border-bottom: 1px dashed #EFEDE6; }
+.baris-versi.terhapus { color: #8A908D; text-decoration: line-through; }
+.baris-versi .aksi-versi { display: flex; gap: 8px; flex-shrink: 0; }
+.baris-versi button { background: none; border: none; font: inherit; font-size: 12px; cursor: pointer; padding: 0; color: var(--aksen); }
+.baris-versi button.hapus { color: var(--galat); }
+
+.tabel-konsolidasi { width: 100%; border-collapse: collapse; font-size: 12px; margin: 6px 0; }
+.tabel-konsolidasi th { text-align: right; font-weight: 500; color: var(--teks-2); border-bottom: 1px solid var(--garis); padding: 5px 3px; }
+.tabel-konsolidasi th:first-child, .tabel-konsolidasi td:first-child { text-align: left; }
+.tabel-konsolidasi td { border-bottom: 1px solid #EFEDE6; padding: 6px 3px; text-align: right; font-family: var(--mono); vertical-align: top; }
+.tabel-konsolidasi td:first-child { font-family: inherit; }
+.tabel-konsolidasi label { display: flex; gap: 4px; align-items: center; justify-content: flex-end; cursor: pointer; }
+.tabel-konsolidasi input { accent-color: var(--aksen); }
+.tabel-konsolidasi tr.total td { font-weight: 600; border-top: 2px solid var(--garis); }
+.saran { font-size: 10px; color: var(--sukses); font-family: inherit; }
+.kurang { color: var(--galat); }
+
+.susunan-isi { display: grid; grid-template-columns: max-content 1fr; gap: 6px 10px; align-items: center; margin: 8px 0; }
+.susunan-isi .kode { font-family: var(--mono); font-size: 12px; }
+
+/* ================= Tahap 3c: satu metode, jurnal, overview ================= */
+.pilih-metode { border: none; margin: 0; padding: 0; }
+.pilih-metode .opsi { margin: 2px 0; }
+.metode-baris { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+.chip-metode { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: #E7F2EC; color: var(--sukses); }
+.tabel-konsolidasi td.dipakai { font-weight: 600; color: var(--aksen); background: #EEF5F3; }
+.tabel-konsolidasi td.kurang { color: var(--galat); }
+
+.blok-jurnal { border-top: 1px solid var(--garis); margin-top: 12px; padding-top: 10px; }
+.blok-jurnal h4 { margin: 0; font-size: 13px; }
+.jenis-jurnal { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #EEF0EE; color: #3A413E; white-space: nowrap; }
+.jenis-jurnal.transisi { background: var(--peringatan-bg); color: var(--peringatan); }
+.jenis-jurnal.reguler { background: #E7F2EC; color: var(--sukses); }
+.jurnal-item { border: 1px solid var(--garis); border-radius: 10px; padding: 10px 12px; margin-top: 8px; }
+.detail-jurnal { margin: 6px 0 2px; align-items: center; }
+.detail-jurnal dd.angka, .isian.angka { font-family: var(--mono); text-align: right; }
+.detail-jurnal .isian { padding: 4px 8px; }
+.tabel-jurnal { width: 100%; border-collapse: collapse; font-size: 12px; margin: 8px 0 4px; }
+.tabel-jurnal td { padding: 4px 3px; border-bottom: 1px solid #EFEDE6; }
+.tabel-jurnal td.dk { width: 28px; color: var(--teks-2); }
+.tabel-jurnal tr.kredit td:nth-child(2) { padding-left: 16px; }
+.tabel-jurnal td.angka { text-align: right; font-family: var(--mono); white-space: nowrap; }
+
+.angka-ov { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.tabel-ov tr.baris-klik { cursor: pointer; }
+.tabel-ov tr.baris-klik:hover td { background: #F6F8F7; }
+.tabel-ov tr.baris-klik:focus-visible { outline: 2px solid var(--aksen); outline-offset: -2px; }
+.tabel-ov tr.rinci > td { background: #FAFAF7; padding: 4px 6px 8px; }
+.tabel-kualitas { width: 100%; border-collapse: collapse; font-size: 11px; }
+.tabel-kualitas th { text-align: right; font-weight: 500; color: var(--teks-2); padding: 3px; }
+.tabel-kualitas td { text-align: right; font-family: var(--mono); padding: 3px; border-bottom: 1px dashed #EFEDE6; }
+.tabel-kualitas th:first-child, .tabel-kualitas td:first-child { text-align: left; font-family: inherit; }
+.tabel-kualitas tr.total td { font-weight: 600; }
+
+/* ================= Tahap 3d: area proses, data penyesuaian, kelola database ================= */
+.area-proses { display: contents; }
+.info-box { background: #EEF5F3; color: #174F46; border-radius: 8px; padding: 8px 10px; font-size: 12px; margin: 8px 0; line-height: 1.5; word-break: break-word; }
+
+.segmen { display: inline-flex; border: 1px solid #C9C6BC; border-radius: 8px; overflow: hidden; margin-top: 6px; }
+.segmen button { background: #fff; border: none; padding: 6px 12px; font: inherit; font-size: 12px; cursor: pointer; color: var(--teks-2); }
+.segmen button + button { border-left: 1px solid #C9C6BC; }
+.segmen button[aria-pressed="true"] { background: var(--aksen); color: #fff; font-weight: 600; }
+.segmen button:focus-visible { outline: 2px solid var(--aksen-2); outline-offset: -2px; }
+#pny-cari { flex: 1; min-width: 0; }
+
+.daftar-pny { margin-top: 8px; max-height: 420px; overflow: auto; }
+.item-pny { display: block; width: 100%; text-align: left; background: #fff; border: none; border-bottom: 1px dashed #EFEDE6;
+  padding: 7px 4px; font: inherit; font-size: 12px; color: var(--teks); cursor: pointer; }
+.item-pny:hover { background: #F6F8F7; }
+.item-pny:focus-visible { outline: 2px solid var(--aksen); outline-offset: -2px; }
+.item-pny .kunci { font-family: var(--mono); font-weight: 600; }
+.jenis-cs { font-size: 11px; padding: 1px 6px; border-radius: 4px; background: #EEF0EE; }
+.jenis-cs.hapus { background: #F8E2DD; color: var(--galat); }
+.jenis-cs.tambah { background: #EFE7F6; color: #5B2E86; }
+
+.dua-kolom { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 10px; }
+.dua-kolom[hidden], #pe-grup-pokok[hidden], #pe-grup-nama[hidden], #pe-grup-ind[hidden], #pe-grup-cs[hidden] { display: none; }
+.isian[readonly] { background: #F4F3EE; color: var(--teks-2); }
+.tautan.hapus { color: var(--galat); }
+.baris-log { border-bottom: 1px dashed #EFEDE6; padding: 5px 0; }
+
+details.kartu > summary { cursor: pointer; }
+details.kartu[open] > summary { margin-bottom: 8px; }
+.form-bahaya { border: 1px solid #E7B9AE; background: #FDF6F4; border-radius: 10px; padding: 10px 12px; margin-top: 10px; }
+.form-bahaya[hidden] { display: none; }
+.tombol-utama.bahaya { background: var(--galat); }
+.tombol-utama.bahaya:hover { background: #7E2616; }
+.tombol-utama.bahaya:disabled { background: #D9B3AB; }
+.tombol-sekunder.bahaya { color: var(--galat); border-color: #E7B9AE; }
+.tabel-staging td .tautan { padding: 0; }
+
+.lencana-jurnal { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.jenis-jurnal.simulasi { background: #EEF0EE; color: #5B625F; font-style: italic; }
+.aturan-jurnal { margin-top: 8px; }
+.aturan-jurnal summary { cursor: pointer; font-size: 12px; color: var(--aksen); }
+.aturan-jurnal th { text-align: left; font-weight: 500; color: var(--teks-2); padding: 4px 3px; border-bottom: 1px solid var(--garis); font-size: 11px; }
+.aturan-jurnal td { font-size: 11px; vertical-align: top; }
+.gulir-x { overflow-x: auto; }
+.tabel-konsolidasi { font-size: 11px; }

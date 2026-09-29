@@ -260,8 +260,36 @@ namespace CKPNLibrary.Panel
             JadwalkanBerikut();
         }
 
+        /// <summary>
+        /// Hitung satu grup dari tab Periode: centang KC di Master diubah sesuai
+        /// grup, lalu seluruh langkah dijalankan (penyesuaian tersimpan diterapkan).
+        /// </summary>
+        public static string MulaiGrup(Excel.Application app, string kodeKC, bool terapkanPenyesuaian)
+        {
+            if (SedangBerjalan) return "Perhitungan lain sedang berjalan.";
+            Excel.Workbook wb = PanelBridge.CariWorkbookAplikasi(app);
+            if (wb == null) return "Workbook aplikasi CKPN tidak sedang terbuka.";
+            try { ParameterMaster.SetKCDicentang(wb, kodeKC.Split(',')); }
+            catch (Exception ex) { return "Tidak dapat mengubah centang KC di Master: " + PesanError(ex); }
+
+            var semua = new List<string>(IdLangkahHitung);
+            return Mulai(app, semua, terapkanPenyesuaian);
+        }
+
         private static void Akhiri(Excel.Application app, string status, string error)
         {
+            // Catat grup yang kini ada di workbook (dipakai tab Periode untuk status grup)
+            if (status == "selesai" && _wbApp != null && _param != null)
+            {
+                try
+                {
+                    DateTime tgl;
+                    if (ParameterMaster.BacaTanggalLaporan(_wbApp, out tgl))
+                        Data.Periode.CatatHitung(tgl.ToString("yyyy-MM-dd"), _param.KCList, Ids(_antrian));
+                }
+                catch (Exception ex) { CatatanLog.Tulis("Catat konteks hitung gagal: " + ex.Message); }
+            }
+
             var pesanModul = Pemberitahu.SelesaiModePanel();
             long durasi = _swTotal == null ? 0 : _swTotal.ElapsedMilliseconds;
 

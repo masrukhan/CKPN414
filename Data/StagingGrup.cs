@@ -40,7 +40,7 @@ namespace CKPNLibrary.Data
             { "B6",  "nf_individu"   }, { "B7",  "nf_kolektif"   }, { "B8",  "nf_total"  },
             { "B13", "mig_individu"  }, { "B14", "mig_kolektif"  }, { "B15", "mig_total" },
             { "C6",  "tpl_individu"  }, { "C7",  "tpl_kolektif"  }, { "C8",  "tpl_total" },
-            { "C18", "aba_dijamin"   }, { "C19", "aba_di_atas_plafon" },
+            { "C18", "aba_dijamin"   }, { "C19", "aba_di_atas_plafon" }, { "C26", "aba_ckpn" },
             { "H2",  "ppka_KC0500" }, { "H3", "ppka_KC0600" }, { "H4", "ppka_KC0700" }, { "H5", "ppka_KC0800" },
             { "H6",  "ppka_KC0900" }, { "H7", "ppka_KC1000" }, { "H8", "ppka_KC1100" }, { "H9", "ppka_total" }
         };
@@ -71,7 +71,7 @@ namespace CKPNLibrary.Data
             public bool   Hapus;      // true = hapus penyesuaian dari database
             public object Data;       // PenyesuaianIndividu / PenyesuaianLgdCs
             public string Sebelum, Sesudah, Keterangan;
-            public bool   PerluAlasan;
+            public bool   PerluAlasan;   // Tahap 3c: artinya "boleh diberi alasan" (opsional, tidak memblokir simpan)
         }
 
         internal class Rencana
@@ -105,17 +105,40 @@ namespace CKPNLibrary.Data
                 {
                     { "modul", p.Modul }, { "kunci", p.Kunci }, { "aksi", p.Aksi },
                     { "sebelum", p.Sebelum }, { "sesudah", p.Sesudah },
-                    { "keterangan", p.Keterangan }, { "perluAlasan", p.PerluAlasan }
+                    { "keterangan", p.Keterangan }, { "bisaAlasan", p.PerluAlasan }
                 });
             }
 
+            // Grup mana (menurut susunan tahunan) yang sedang disimpan, dan status periodenya
+            string namaGrup = null, statusPeriode = "Terbuka";
+            if (Database.Ada)
+            {
+                using (var con = Database.Buka(false))
+                {
+                    int sumber;
+                    var susunan = Periode.Susunan(con, r.Tanggal.Year, out sumber);
+                    if (susunan != null)
+                    {
+                        var g = susunan.Find(x => x.KodeKC == r.KodeKC);
+                        if (g != null) namaGrup = g.Nama;
+                        else r.Peringatan.Add("Kombinasi KC " + r.KodeKC + " tidak sesuai susunan grup tahun " + sumber +
+                                              ". Hasil tetap bisa disimpan, tetapi tidak ikut konsolidasi.");
+                    }
+                    object st = Database.Scalar(con, "SELECT status FROM periode WHERE tanggal=@p0", r.TanggalStr);
+                    if (st != null) statusPeriode = Convert.ToString(st);
+                }
+            }
+            if (statusPeriode == "Final")
+                r.Peringatan.Add("Periode ini sudah dikunci (Final). Buka kunci di tab Periode sebelum menyimpan.");
+
             return new Dictionary<string, object>
             {
+                { "namaGrup", namaGrup }, { "statusPeriode", statusPeriode },
                 { "periode", r.BulanLaporan }, { "tanggal", r.TanggalStr },
                 { "kodeKC", r.KodeKC }, { "versi", r.VersiBerikut },
                 { "jumlahIndividu", r.Indv.Count }, { "jumlahLgdCs", r.Cs.Count },
                 { "perubahan", daftar }, { "peringatan", r.Peringatan },
-                { "bolehMenulis", boleh }, { "infoPengirim", alasanTulis },
+                { "bolehMenulis", boleh && statusPeriode != "Final" }, { "infoPengirim", alasanTulis },
                 { "berjalan", CKPNPipeline.SedangBerjalan }
             };
         }
@@ -123,7 +146,8 @@ namespace CKPNLibrary.Data
         // ================================================================
         // 2. Simpan
         // ================================================================
-        /// <param name="alasan">no. rekening LGD CS yang dihapus → alasan (wajib)</param>
+        /// <param name="alasan">no. rekening LGD CS yang dihapus → alasan (opsional sejak Tahap 3c;
+        /// yang menyaring perhitungan bulan berikutnya adalah catatan pengecualiannya, bukan alasannya)</param>
         public static Dictionary<string, object> Simpan(Excel.Application app, Dictionary<string, string> alasan,
                                                         string catatan, bool refreshSummary)
         {
@@ -165,11 +189,12 @@ namespace CKPNLibrary.Data
                     if (!p.PerluAlasan) continue;
                     string a;
                     if (alasan == null || !alasan.TryGetValue(p.Kunci, out a) || string.IsNullOrWhiteSpace(a))
-                        throw new InvalidOperationException("Alasan penghapusan LGD CS untuk rekening " + p.Kunci + " belum diisi.");
+                        continue;   // tanpa alasan tetap disimpan sebagai pengecualian (alasan diisi catatan simpan)
                     ((PenyesuaianLgdCs)p.Data).Alasan = a.Trim();
                     p.Keterangan = a.Trim();
                 }
                 var ringkasan = BacaRingkasan(wb);
+                string analisisJson = AnalisisPD.BacaWorkbookJson(wb);   // Tahap 4: bahan sankey
                 ParameterCKPN param = ParameterMaster.Baca(wb);
 
                 // ---- c. Tulis database dalam satu transaksi ----
@@ -182,6 +207,7 @@ namespace CKPNLibrary.Data
                     string now = Database.Sekarang();
                     Database.Exec(con, "INSERT OR IGNORE INTO periode(tanggal, status, dibuat) VALUES(@p0,'Terbuka',@p1)", r.TanggalStr, now);
                     long periodeId = Convert.ToInt64(Database.Scalar(con, "SELECT id FROM periode WHERE tanggal=@p0", r.TanggalStr));
+                    Periode.PastikanTerbuka(con, r.TanggalStr);
 
                     versi = Convert.ToInt32(Database.Scalar(con,
                         "SELECT COALESCE(MAX(versi),0)+1 FROM run_grup WHERE periode_id=@p0 AND kode_kc=@p1", periodeId, r.KodeKC));
@@ -198,6 +224,7 @@ namespace CKPNLibrary.Data
 
                     foreach (var kv in ringkasan)
                         Database.Exec(con, "INSERT INTO ringkasan(run_id,kunci,nilai) VALUES(@p0,@p1,@p2)", runId, kv.Key, kv.Value);
+                    AnalisisPD.SimpanRun(con, runId, analisisJson);
 
                     var disesuaikan = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     foreach (var p in r.Perubahan) if (p.Modul == "individu" && !p.Hapus) disesuaikan.Add(p.Kunci);
@@ -219,6 +246,7 @@ namespace CKPNLibrary.Data
                     TerapkanPerubahan(con, r, catatan);
                     tx.Commit();
                 }
+                Periode.CatatSimpan(r.TanggalStr, r.KodeKC, versi);
 
                 // ---- d. Snapshot .xlsx ----
                 string snapshot = null, pesanSnapshot = null;
@@ -262,6 +290,51 @@ namespace CKPNLibrary.Data
             {
                 try { app.ScreenUpdating = su; app.Cursor = Excel.XlMousePointer.xlDefault; } catch { }
             }
+        }
+
+        // ================================================================
+        // 3. Hitung ulang Summary saja (setelah edit Individu / LGD CS),
+        //    untuk melihat total sebelum menyimpan.
+        // ================================================================
+        public static Dictionary<string, object> RefreshSaja(Excel.Application app)
+        {
+            if (CKPNPipeline.SedangBerjalan)
+                throw new InvalidOperationException("Perhitungan sedang berjalan. Tunggu sampai selesai.");
+            Excel.Workbook wb = PanelBridge.CariWorkbookAplikasi(app);
+            if (wb == null) throw new InvalidOperationException("Workbook aplikasi CKPN tidak sedang terbuka.");
+            ParameterCKPN p = ParameterMaster.Baca(wb);
+            if (!p.Siap("summary"))
+                throw new InvalidOperationException(string.Join("; ", p.Error["summary"].ToArray()));
+
+            CKPNPipeline.MatikanGhostingSekali();
+            List<Dictionary<string, object>> pesan;
+            bool su = true;
+            try { su = app.ScreenUpdating; } catch { }
+            try
+            {
+                try { app.ScreenUpdating = false; app.Cursor = Excel.XlMousePointer.xlWait; } catch { }
+                wb.Activate();
+                Pemberitahu.MulaiModePanel();
+                try { new RefreshSummary(app).Refresh(p.Summary.FilePath, p.KCList); }
+                finally { pesan = Pemberitahu.SelesaiModePanel(); }
+                try { app.Calculate(); } catch { }
+            }
+            finally
+            {
+                try { app.ScreenUpdating = su; app.Cursor = Excel.XlMousePointer.xlDefault; } catch { }
+            }
+
+            var rg = BacaRingkasan(wb);
+            double ppkaGrup = 0, v;
+            foreach (var kc in p.KC) if (rg.TryGetValue("ppka_" + kc, out v)) ppkaGrup += v;
+            return new Dictionary<string, object>
+            {
+                { "kodeKC", p.KCList },
+                { "nfTotal",  rg.TryGetValue("nf_total", out v)  ? (object)v : null },
+                { "migTotal", rg.TryGetValue("mig_total", out v) ? (object)v : null },
+                { "ppkaGrup", ppkaGrup },
+                { "pesan", pesan }
+            };
         }
 
         // ================================================================
@@ -324,6 +397,8 @@ namespace CKPNLibrary.Data
             if (!diterapkan)
                 r.Peringatan.Add("CKPN Individu dihitung TANPA penyesuaian tersimpan — hanya edit baru yang dicatat; penyesuaian lama tidak dihapus.");
 
+            var lewati = DiubahDiPanel("individu", dasar, r);
+
             var sistem = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
             foreach (var d in AmbilDaftar(dasar, "baris"))
                 sistem[Convert.ToString(d["Kontrak"])] = Convert.ToDouble(d["JaminanSistem"]);
@@ -332,6 +407,7 @@ namespace CKPNLibrary.Data
             {
                 double sys;
                 if (!sistem.TryGetValue(b.Kontrak, out sys)) continue;   // tidak dari run terakhir → abaikan
+                if (lewati.Contains(b.Kontrak)) continue;                // diubah di panel setelah dihitung
 
                 bool beda = Math.Abs(b.Jaminan - sys) > Toleransi || Math.Abs(b.Biaya) > Toleransi;
                 PenyesuaianIndividu lama;
@@ -391,11 +467,13 @@ namespace CKPNLibrary.Data
             if (!diterapkan)
                 r.Peringatan.Add("LGD CS dihitung TANPA penyesuaian tersimpan — hanya edit baru yang dicatat; penyesuaian lama tidak dihapus.");
             var dasar = DasarCs();
+            var lewati = DiubahDiPanel("lgdcs", dasarFile, r);
 
             var diSheet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var b in r.Cs)
             {
                 diSheet.Add(b.Rek);
+                if (lewati.Contains(b.Rek)) continue;   // diubah di panel setelah dihitung
                 PenyesuaianLgdCs lama;
                 ov.TryGetValue(b.Rek, out lama);
                 Dictionary<string, object> d;
@@ -449,11 +527,11 @@ namespace CKPNLibrary.Data
                 }
             }
 
-            // ---- baris sistem yang dihapus user → pengecualian baru (wajib alasan) ----
+            // ---- baris sistem yang dihapus user → pengecualian baru (alasan opsional) ----
             foreach (var kv in dasar)
             {
                 if (AmbilBool(kv.Value, "Dikecualikan")) continue;   // sudah dikecualikan sebelumnya
-                if (diSheet.Contains(kv.Key)) continue;
+                if (diSheet.Contains(kv.Key) || lewati.Contains(kv.Key)) continue;
                 PenyesuaianLgdCs lama;
                 if (ov.TryGetValue(kv.Key, out lama) && lama.Jenis == "hapus") continue;
 
@@ -475,9 +553,51 @@ namespace CKPNLibrary.Data
             // ---- baris manual lama yang dihapus user → hapus penyesuaian 'tambah' ----
             if (diterapkan)
                 foreach (var lama in ov.Values)
-                    if (lama.Jenis == "tambah" && !diSheet.Contains(lama.NoRek) && !dasar.ContainsKey(lama.NoRek))
+                    if (lama.Jenis == "tambah" && !diSheet.Contains(lama.NoRek) && !dasar.ContainsKey(lama.NoRek) &&
+                        !lewati.Contains(lama.NoRek))
                         r.Perubahan.Add(new Perubahan { Modul = "lgdcs", Kunci = lama.NoRek, Aksi = "hapus-manual", Hapus = true,
                             Sebelum = "Baris manual " + (lama.Nama ?? ""), Sesudah = "Dihapus" });
+        }
+
+        /// <summary>
+        /// Kunci yang penyesuaiannya ditambah/diubah/dihapus dari panel SETELAH sheet dihitung.
+        /// Sheet belum memuat nilai baru itu; bila dibandingkan, simpan akan membatalkan
+        /// perubahan dari panel. Kunci ini dilewati dan user diminta menghitung ulang grup.
+        /// </summary>
+        private static HashSet<string> DiubahDiPanel(string modul, Dictionary<string, object> dasar, Rencana r)
+        {
+            var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            object w;
+            if (!Database.Ada || dasar == null || !dasar.TryGetValue("waktu", out w) || w == null) return set;
+            string waktuHitung = Convert.ToString(w);
+            try
+            {
+                using (var con = Database.Buka(false))
+                using (var cmd = Database.Cmd(con,
+                    "SELECT DISTINCT kunci FROM log_penyesuaian WHERE (modul=@p0 OR modul='semua') " +
+                    "AND (aksi LIKE '%-dari-panel' OR aksi IN ('hapus-data-periode','kosongkan-database')) AND waktu>@p1",
+                    modul, waktuHitung))
+                using (var rd = cmd.ExecuteReader())
+                    while (rd.Read()) set.Add(Convert.ToString(rd[0]));
+            }
+            catch (Exception ex) { CatatanLog.Tulis("Cek perubahan panel: " + ex.Message); }
+
+            if (set.Contains("*"))
+            {
+                set.Remove("*");
+                r.Peringatan.Add("Sebagian penyesuaian " + (modul == "individu" ? "Individu" : "LGD CS") +
+                                 " dihapus lewat pengelolaan database setelah sheet dihitung. Hitung ulang grup ini sebelum menyimpan " +
+                                 "agar penyesuaian yang sudah dihapus tidak tercatat lagi.");
+            }
+            if (set.Count > 0)
+            {
+                var daftar = new List<string>(set);
+                daftar.Sort(StringComparer.OrdinalIgnoreCase);
+                r.Peringatan.Add("Penyesuaian " + (modul == "individu" ? "Individu" : "LGD CS") + " berikut diubah dari panel setelah sheet dihitung, " +
+                                 "sehingga sheet belum memuat nilainya: " + string.Join(", ", daftar.ToArray()) +
+                                 ". Kunci ini tidak dibandingkan saat simpan — hitung ulang grup agar nilai terbaru dipakai.");
+            }
+            return set;
         }
 
         // ================================================================

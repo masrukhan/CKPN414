@@ -134,6 +134,108 @@ namespace CKPNLibrary.Panel
                         Balas(host, id, null);
                         break;
 
+                    // ---- Tahap 3d: pengelolaan penyesuaian & database ----
+                    case "simpanPenyesuaian":
+                        Balas(host, id, DataPanel.SimpanPenyesuaian(Convert.ToString(Ambil(args, "modul") ?? ""),
+                                                                    Ambil(args, "data") as Dictionary<string, object>,
+                                                                    Convert.ToString(Ambil(args, "alasan") ?? "")));
+                        break;
+
+                    case "riwayatPenyesuaian":
+                        Balas(host, id, DataPanel.RiwayatPenyesuaian(Convert.ToString(Ambil(args, "modul") ?? ""),
+                                                                     Convert.ToString(Ambil(args, "kunci") ?? "")));
+                        break;
+
+                    case "infoDatabase":
+                        Balas(host, id, KelolaData.InfoDatabase());
+                        break;
+
+                    case "hapusDataPeriode":
+                        Balas(host, id, KelolaData.HapusDataPeriode(
+                            Convert.ToString(Ambil(args, "tanggal") ?? ""),
+                            Convert.ToString(Ambil(args, "konfirmasi") ?? ""),
+                            Convert.ToString(Ambil(args, "alasan") ?? ""),
+                            Ambil(args, "hapusPenyesuaian") is bool && (bool)Ambil(args, "hapusPenyesuaian"),
+                            Ambil(args, "hapusSnapshot") is bool && (bool)Ambil(args, "hapusSnapshot")));
+                        break;
+
+                    case "kosongkanDatabase":
+                        Balas(host, id, KelolaData.KosongkanDatabase(
+                            Convert.ToString(Ambil(args, "konfirmasi") ?? ""),
+                            Convert.ToString(Ambil(args, "alasan") ?? ""),
+                            Ambil(args, "penyesuaian") is bool && (bool)Ambil(args, "penyesuaian"),
+                            Ambil(args, "susunan") is bool && (bool)Ambil(args, "susunan"),
+                            Ambil(args, "hapusSnapshot") is bool && (bool)Ambil(args, "hapusSnapshot")));
+                        break;
+
+                    // ---- Tahap 3b: alur periode ----
+                    case "statusPeriode":
+                        string tglDiminta = Convert.ToString(Ambil(args, "tanggal") ?? "");
+                        JalankanDiExcel(host, id, app => StatusPeriode(app, tglDiminta));
+                        break;
+
+                    case "hitungGrup":
+                        string kodeGrup = Convert.ToString(Ambil(args, "kodeKC") ?? "");
+                        bool terapkanG = !(Ambil(args, "terapkanPenyesuaian") is bool) || (bool)Ambil(args, "terapkanPenyesuaian");
+                        JalankanDiExcel(host, id, app =>
+                        {
+                            string tolak = CKPNPipeline.MulaiGrup(app, kodeGrup, terapkanG);
+                            if (tolak != null) throw new InvalidOperationException(tolak);
+                            return new Dictionary<string, object> { { "diterima", true } };
+                        });
+                        break;
+
+                    case "refreshSummary":
+                        JalankanDiExcel(host, id, app => StagingGrup.RefreshSaja(app));
+                        break;
+
+                    case "hapusVersi":
+                        Periode.HapusVersi(Convert.ToInt64(Ambil(args, "runId")), Convert.ToString(Ambil(args, "alasan") ?? ""));
+                        Balas(host, id, null);
+                        break;
+
+                    case "konsolidasi":
+                        Balas(host, id, Periode.Konsolidasi(Convert.ToString(Ambil(args, "tanggal") ?? "")));
+                        break;
+
+                    case "tetapkanPeriode":
+                        Periode.Tetapkan(Convert.ToString(Ambil(args, "tanggal") ?? ""),
+                                         Convert.ToString(Ambil(args, "catatan") ?? ""));
+                        Balas(host, id, null);
+                        break;
+
+                    case "bukaKunci":
+                        Periode.BukaKunci(Convert.ToString(Ambil(args, "tanggal") ?? ""), Convert.ToString(Ambil(args, "alasan") ?? ""));
+                        Balas(host, id, null);
+                        break;
+
+                    case "simpanSusunan":
+                        var peta = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                        var sMap = Ambil(args, "peta") as Dictionary<string, object>;
+                        if (sMap != null) foreach (var kv in sMap) peta[kv.Key] = Convert.ToString(kv.Value);
+                        Periode.SimpanSusunan(Convert.ToInt32(Ambil(args, "tahun")), peta,
+                                              Convert.ToString(Ambil(args, "dasar") ?? ""),
+                                              Convert.ToString(Ambil(args, "metode") ?? ""),
+                                              Convert.ToString(Ambil(args, "kebijakanSaldo") ?? ""));
+                        Balas(host, id, null);
+                        break;
+
+                    // ---- Tahap 3c: Overview Data (OS, EAD, NPF per KC dari template Master!D14) ----
+                    case "overviewData":
+                        JalankanDiExcel(host, id, app =>
+                        {
+                            Excel.Workbook wbApp = CariWorkbookAplikasi(app);
+                            if (wbApp == null) throw new InvalidOperationException("Workbook aplikasi CKPN tidak sedang terbuka.");
+                            if (CKPNPipeline.SedangBerjalan)
+                                throw new InvalidOperationException("Perhitungan sedang berjalan. Muat Overview Data setelah selesai.");
+                            CKPNPipeline.MatikanGhostingSekali();
+                            var kursor = app.Cursor;
+                            app.Cursor = Excel.XlMousePointer.xlWait;
+                            try { return new CKPNLibrary.Modules.DataOverviewBuilder(app).UntukPanel(wbApp); }
+                            finally { app.Cursor = kursor; }
+                        });
+                        break;
+
                     default:
                         Gagal(host, id, "Perintah tidak dikenal: " + cmd);
                         break;
@@ -277,6 +379,26 @@ namespace CKPNLibrary.Panel
                 { "langkah",  langkah },
                 { "berjalan", CKPNPipeline.SedangBerjalan }
             };
+        }
+
+        // ================================================================
+        // statusPeriode — periode Master (atau periode lain yang dipilih) + status grup
+        // ================================================================
+        private static object StatusPeriode(Excel.Application app, string tanggalDiminta)
+        {
+            string tanggalMaster = "", kodeKCMaster = "";
+            Excel.Workbook wb = CariWorkbookAplikasi(app);
+            if (wb != null)
+            {
+                DateTime t;
+                if (ParameterMaster.BacaTanggalLaporan(wb, out t)) tanggalMaster = t.ToString("yyyy-MM-dd");
+                Excel.Worksheet m = ParameterMaster.CariSheet(wb, "Master");
+                if (m != null) kodeKCMaster = string.Join(",", ParameterMaster.BacaKCDicentang(m).ToArray());
+            }
+            string tanggal = string.IsNullOrEmpty(tanggalDiminta) ? tanggalMaster : tanggalDiminta;
+            if (string.IsNullOrEmpty(tanggal))
+                throw new InvalidOperationException("Tanggal laporan (Master!C4) belum diisi.");
+            return Periode.Status(tanggal, kodeKCMaster, tanggalMaster);
         }
 
         // ================================================================

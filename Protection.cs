@@ -269,6 +269,36 @@ namespace CKPNLibrary
         }
 
         // ----------------------------------------------------------------
+        // UbahMaster: jalankan aksi pada sheet Master dengan proteksi dibuka
+        // sementara, lalu dikunci ulang dengan opsi yang sama seperti
+        // CekProteksiSheet. Dipakai Panel CKPN untuk mengubah centang KC.
+        // ----------------------------------------------------------------
+        internal static void UbahMaster(Excel.Workbook wb, Action<Excel.Worksheet> aksi)
+        {
+            Excel.Worksheet ws = null;
+            foreach (Excel.Worksheet sh in wb.Worksheets)
+                if (sh.Name.Equals("Master", StringComparison.OrdinalIgnoreCase)) { ws = sh; break; }
+            if (ws == null) throw new InvalidOperationException("Sheet 'Master' tidak ditemukan.");
+
+            bool terkunci = ws.ProtectContents;
+            if (terkunci) ws.Unprotect(PasswordMaster);
+            try
+            {
+                aksi(ws);
+            }
+            finally
+            {
+                if (terkunci)
+                    ws.Protect(
+                        Password:          PasswordMaster,
+                        DrawingObjects:    true,
+                        Contents:          true,
+                        Scenarios:         true,
+                        UserInterfaceOnly: false);
+            }
+        }
+
+        // ----------------------------------------------------------------
         // Helper: tampilkan pesan error
         // ----------------------------------------------------------------
         private static void TampilkanError(string pesan)

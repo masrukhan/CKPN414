@@ -392,9 +392,42 @@ namespace CKPNLibrary.Panel
             return m != null && KeTanggal(Nilai(m, "C4"), out tanggal);
         }
 
+        /// <summary>Path file template CKPN/SLIK (Master!D14) — dipakai juga oleh Overview Data.</summary>
+        public static string BacaPathTemplate(Excel.Workbook wb)
+        {
+            Excel.Worksheet m = CariSheet(wb, "Master");
+            return m == null ? "" : Teks(m, "D14");
+        }
+
         // =============================================================
         // Checkbox KC di Master (Form Control lama, dibaca via late binding)
         // =============================================================
+        /// <summary>
+        /// Ubah centang KC di Master sesuai grup yang akan dihitung dari panel.
+        /// Sheet Master terproteksi, jadi dibuka sementara lewat Protection.UbahMaster.
+        /// xlOn = 1, xlOff = -4146.
+        /// </summary>
+        public static void SetKCDicentang(Excel.Workbook wb, ICollection<string> kcDipilih)
+        {
+            var pilih = new HashSet<string>(kcDipilih, StringComparer.OrdinalIgnoreCase);
+            Protection.UbahMaster(wb, master =>
+            {
+                foreach (string kc in DaftarKC)
+                {
+                    object chk;
+                    try { chk = master.CheckBoxes(kc); }
+                    catch { throw new InvalidOperationException("Checkbox '" + kc + "' tidak ditemukan di sheet Master."); }
+                    chk.GetType().InvokeMember("Value", BindingFlags.SetProperty, null, chk,
+                                               new object[] { pilih.Contains(kc) ? 1 : -4146 });
+                }
+            });
+
+            // Verifikasi: centang yang terbaca harus sama persis dengan yang diminta
+            var terbaca = BacaKCDicentang(CariSheet(wb, "Master"));
+            if (terbaca.Count != pilih.Count || !terbaca.TrueForAll(pilih.Contains))
+                throw new InvalidOperationException("Centang KC di Master gagal diubah (terbaca: " + string.Join(",", terbaca.ToArray()) + ").");
+        }
+
         public static List<string> BacaKCDicentang(Excel.Worksheet master)
         {
             var hasil = new List<string>();
