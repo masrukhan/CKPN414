@@ -25,7 +25,7 @@ namespace CKPNLibrary.Data
     /// </summary>
     internal static class Database
     {
-        public const int VersiSkema = 4;
+        public const int VersiSkema = 6;
         private static bool _skemaSiap;
         private static readonly object _kunci = new object();
 
@@ -229,7 +229,29 @@ namespace CKPNLibrary.Data
                     }
                     CatatanLog.Tulis("Database: migrasi ke skema v4 selesai");
                 }
-                // Migrasi versi berikutnya ditambahkan di sini: if (versi < 5) { ... }
+                // ---- v5 (Tahap 4b): Top-N debitur CKPN Individu ditetapkan per tahun ----
+                if (versi < 5)
+                {
+                    using (var tx = con.BeginTransaction())
+                    {
+                        foreach (var sql in SkemaV5) Exec(con, sql);
+                        Exec(con, "INSERT OR REPLACE INTO meta(kunci,nilai) VALUES('versi_skema','5')");
+                        tx.Commit();
+                    }
+                    CatatanLog.Tulis("Database: migrasi ke skema v5 selesai");
+                }
+                // ---- v6 (Tahap 4c): Top-N per grup (menggantikan Top-N satu angka per tahun) ----
+                if (versi < 6)
+                {
+                    using (var tx = con.BeginTransaction())
+                    {
+                        foreach (var sql in SkemaV6) Exec(con, sql);
+                        Exec(con, "INSERT OR REPLACE INTO meta(kunci,nilai) VALUES('versi_skema','6')");
+                        tx.Commit();
+                    }
+                    CatatanLog.Tulis("Database: migrasi ke skema v6 selesai");
+                }
+                // Migrasi versi berikutnya ditambahkan di sini: if (versi < 7) { ... }
 
                 _skemaSiap = true;
             }
@@ -433,6 +455,22 @@ namespace CKPNLibrary.Data
                 jenis   TEXT NOT NULL,
                 data    TEXT NOT NULL,
                 PRIMARY KEY (run_id, jenis))"
+        };
+
+        private static readonly string[] SkemaV5 =
+        {
+            // Top-N debitur CKPN Individu sesuai SOP, ditetapkan bersama susunan grup & metode
+            "ALTER TABLE susunan_tahun ADD COLUMN top_n INTEGER",
+            // Top-N yang dipakai saat kiriman grup disimpan (jejak audit)
+            "ALTER TABLE run_grup ADD COLUMN top_n INTEGER"
+        };
+
+        private static readonly string[] SkemaV6 =
+        {
+            // Top-N debitur CKPN Individu per grup (jumlah debitur tiap grup berbeda)
+            "ALTER TABLE susunan_grup ADD COLUMN top_n INTEGER",
+            // Nilai tahunan dari Tahap 4b (bila sudah diisi) menjadi nilai awal setiap grup tahun itu
+            "UPDATE susunan_grup SET top_n=(SELECT t.top_n FROM susunan_tahun t WHERE t.tahun=susunan_grup.tahun) WHERE top_n IS NULL"
         };
 
         public static void CatatAktivitas(SQLiteConnection con, string periode, string aksi, string detail)

@@ -428,6 +428,29 @@ namespace CKPNLibrary.Panel
                 throw new InvalidOperationException("Centang KC di Master gagal diubah (terbaca: " + string.Join(",", terbaca.ToArray()) + ").");
         }
 
+        /// <summary>
+        /// Tulis Top-N tahunan ke Master!C10 (dibaca Individu, Net Flow, dan Migration)
+        /// sebelum hitung grup dari panel. Master terproteksi → lewat Protection.UbahMaster.
+        /// </summary>
+        public static void SetTopN(Excel.Workbook wb, int topN)
+        {
+            Excel.Worksheet m = CariSheet(wb, "Master");
+            if (m == null) throw new InvalidOperationException("Sheet 'Master' tidak ditemukan.");
+            object lama = Nilai(m, "C10");
+            if (IsNumericVBA(lama) && CLngVBA(lama) == topN) return;   // sudah sesuai, tidak perlu buka proteksi
+            Protection.UbahMaster(wb, master => { ((Excel.Range)master.Range["C10"]).Value2 = topN; });
+        }
+
+        /// <summary>Top-N yang sedang tertulis di Master!C10 (aturan sama dengan makro Individu; default 10).</summary>
+        public static int BacaTopN(Excel.Workbook wb)
+        {
+            Excel.Worksheet m = CariSheet(wb, "Master");
+            if (m == null) return 10;
+            object c10 = Nilai(m, "C10");
+            int n = IsNumericVBA(c10) ? CLngVBA(c10) : 10;
+            return n < 1 ? 10 : n;
+        }
+
         public static List<string> BacaKCDicentang(Excel.Worksheet master)
         {
             var hasil = new List<string>();

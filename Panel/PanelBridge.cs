@@ -66,6 +66,7 @@ namespace CKPNLibrary.Panel
                         break;
 
                     case "batal":
+                        BatchGrup.MintaBatal();
                         CKPNPipeline.MintaBatal();
                         Balas(host, id, null);
                         break;
@@ -84,6 +85,7 @@ namespace CKPNLibrary.Panel
                         bool terapkan = !(Ambil(args, "terapkanPenyesuaian") is bool) || (bool)Ambil(args, "terapkanPenyesuaian");
                         JalankanDiExcel(host, id, app =>
                         {
+                            if (BatchGrup.Aktif) throw new InvalidOperationException("Hitung semua grup sedang berjalan.");
                             string tolak = CKPNPipeline.Mulai(app, ids, terapkan);
                             if (tolak != null) throw new InvalidOperationException(tolak);
                             return new Dictionary<string, object> { { "diterima", true } };
@@ -111,7 +113,11 @@ namespace CKPNLibrary.Panel
                         if (aMap != null) foreach (var kv in aMap) alasan[kv.Key] = Convert.ToString(kv.Value);
                         string catatan = Convert.ToString(Ambil(args, "catatan") ?? "");
                         bool refresh = !(Ambil(args, "refreshSummary") is bool) || (bool)Ambil(args, "refreshSummary");
-                        JalankanDiExcel(host, id, app => StagingGrup.Simpan(app, alasan, catatan, refresh));
+                        JalankanDiExcel(host, id, app =>
+                        {
+                            if (BatchGrup.Aktif) throw new InvalidOperationException("Hitung semua grup sedang berjalan.");
+                            return StagingGrup.Simpan(app, alasan, catatan, refresh);
+                        });
                         break;
 
                     case "daftarStaging":
@@ -132,6 +138,38 @@ namespace CKPNLibrary.Panel
                                                    Convert.ToString(Ambil(args, "kunci") ?? ""),
                                                    Convert.ToString(Ambil(args, "alasan") ?? ""));
                         Balas(host, id, null);
+                        break;
+
+                    // ---- Tahap 4: riwayat antarperiode & analisis PD ----
+                    case "riwayat":
+                        Balas(host, id, Riwayat.Data());
+                        break;
+
+                    case "analisisSumber":
+                        Balas(host, id, AnalisisPD.DaftarSumber());
+                        break;
+
+                    case "analisisData":
+                        string jenisSumber = Convert.ToString(Ambil(args, "sumber") ?? "workbook");
+                        if (jenisSumber == "run")
+                            Balas(host, id, AnalisisPD.BacaRun(Convert.ToInt64(Ambil(args, "runId"))));
+                        else if (jenisSumber == "gabungan")
+                            Balas(host, id, AnalisisPD.BacaGabungan(Convert.ToString(Ambil(args, "tanggal") ?? "")));
+                        else
+                            JalankanDiExcel(host, id, app =>
+                            {
+                                if (CKPNPipeline.SedangBerjalan)
+                                    throw new InvalidOperationException("Perhitungan sedang berjalan. Muat analisis setelah selesai.");
+                                Excel.Workbook wbA = CariWorkbookAplikasi(app);
+                                if (wbA == null) throw new InvalidOperationException("Workbook aplikasi CKPN tidak sedang terbuka.");
+                                var d = AnalisisPD.BacaWorkbook(wbA);
+                                DateTime tA;
+                                d["tanggal"] = ParameterMaster.BacaTanggalLaporan(wbA, out tA) ? tA.ToString("yyyy-MM-dd") : "";
+                                Excel.Worksheet mA = ParameterMaster.CariSheet(wbA, "Master");
+                                d["kodeKC"] = mA == null ? "" : string.Join(",", ParameterMaster.BacaKCDicentang(mA).ToArray());
+                                d["workbook"] = true;
+                                return d;
+                            });
                         break;
 
                     // ---- Tahap 3d: pengelolaan penyesuaian & database ----
@@ -168,6 +206,24 @@ namespace CKPNLibrary.Panel
                             Ambil(args, "hapusSnapshot") is bool && (bool)Ambil(args, "hapusSnapshot")));
                         break;
 
+                    // ---- Tahap 4e: cek cepat isi Master (periode, KC dicentang) tanpa membaca parameter lengkap ----
+                    case "infoMaster":
+                        JalankanDiExcel(host, id, app =>
+                        {
+                            Excel.Workbook wbM = CariWorkbookAplikasi(app);
+                            if (wbM == null) return new Dictionary<string, object> { { "ditemukan", false } };
+                            DateTime tM;
+                            Excel.Worksheet mM = ParameterMaster.CariSheet(wbM, "Master");
+                            return new Dictionary<string, object>
+                            {
+                                { "ditemukan", true },
+                                { "tanggal", ParameterMaster.BacaTanggalLaporan(wbM, out tM) ? tM.ToString("yyyy-MM-dd") : "" },
+                                { "kodeKC", mM == null ? "" : string.Join(",", ParameterMaster.BacaKCDicentang(mM).ToArray()) },
+                                { "topN", ParameterMaster.BacaTopN(wbM) }
+                            };
+                        });
+                        break;
+
                     // ---- Tahap 3b: alur periode ----
                     case "statusPeriode":
                         string tglDiminta = Convert.ToString(Ambil(args, "tanggal") ?? "");
@@ -179,7 +235,20 @@ namespace CKPNLibrary.Panel
                         bool terapkanG = !(Ambil(args, "terapkanPenyesuaian") is bool) || (bool)Ambil(args, "terapkanPenyesuaian");
                         JalankanDiExcel(host, id, app =>
                         {
+                            if (BatchGrup.Aktif) throw new InvalidOperationException("Hitung semua grup sedang berjalan.");
                             string tolak = CKPNPipeline.MulaiGrup(app, kodeGrup, terapkanG);
+                            if (tolak != null) throw new InvalidOperationException(tolak);
+                            return new Dictionary<string, object> { { "diterima", true } };
+                        });
+                        break;
+
+                    // ---- Tahap 4d: hitung semua grup sekaligus ----
+                    case "hitungSemuaGrup":
+                        bool lewati = !(Ambil(args, "lewatiTersimpan") is bool) || (bool)Ambil(args, "lewatiTersimpan");
+                        bool berhenti = !(Ambil(args, "berhentiBilaTemuan") is bool) || (bool)Ambil(args, "berhentiBilaTemuan");
+                        JalankanDiExcel(host, id, app =>
+                        {
+                            string tolak = BatchGrup.Mulai(app, lewati, berhenti);
                             if (tolak != null) throw new InvalidOperationException(tolak);
                             return new Dictionary<string, object> { { "diterima", true } };
                         });
@@ -216,7 +285,8 @@ namespace CKPNLibrary.Panel
                         Periode.SimpanSusunan(Convert.ToInt32(Ambil(args, "tahun")), peta,
                                               Convert.ToString(Ambil(args, "dasar") ?? ""),
                                               Convert.ToString(Ambil(args, "metode") ?? ""),
-                                              Convert.ToString(Ambil(args, "kebijakanSaldo") ?? ""));
+                                              Convert.ToString(Ambil(args, "kebijakanSaldo") ?? ""),
+                                              PetaBulat(Ambil(args, "topN")));
                         Balas(host, id, null);
                         break;
 
@@ -371,9 +441,17 @@ namespace CKPNLibrary.Panel
                 });
             }
 
+            // Top-N Master vs ketetapan tahunan (hanya peringatan di tab Manual; simpan grup menolak bila berbeda)
+            DateTime tglLap;
+            string namaGrupMaster = null;
+            int? topNTahun = ParameterMaster.BacaTanggalLaporan(wb, out tglLap)
+                ? Periode.TopNGrup(tglLap.Year, p.KCList, out namaGrupMaster) : null;
+
             return new Dictionary<string, object>
             {
                 { "namaFile", wb.Name },
+                { "topNMaster", ParameterMaster.BacaTopN(wb) }, { "topNTahun", topNTahun }, { "namaGrup", namaGrupMaster },
+                { "tahun", tglLap == DateTime.MinValue ? 0 : tglLap.Year },
                 { "periode",  p.BulanLaporan },
                 { "kc",       p.KC },
                 { "langkah",  langkah },
@@ -453,6 +531,20 @@ namespace CKPNLibrary.Panel
         {
             object v;
             return d != null && d.TryGetValue(k, out v) ? v : null;
+        }
+
+        // Objek JSON { namaGrup: angka } → Dictionary<string,int>; nilai tidak valid dilewati (divalidasi di Periode)
+        private static Dictionary<string, int> PetaBulat(object v)
+        {
+            var hasil = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var d = v as Dictionary<string, object>;
+            if (d == null) return hasil;
+            foreach (var kv in d)
+            {
+                try { if (kv.Value != null) hasil[kv.Key.Trim()] = Convert.ToInt32(kv.Value, System.Globalization.CultureInfo.InvariantCulture); }
+                catch { }
+            }
+            return hasil;
         }
 
         // Array JSON dideserialisasi JavaScriptSerializer menjadi ArrayList / object[]

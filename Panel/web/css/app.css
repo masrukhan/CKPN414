@@ -279,3 +279,77 @@ details.kartu[open] > summary { margin-bottom: 8px; }
 .aturan-jurnal td { font-size: 11px; vertical-align: top; }
 .gulir-x { overflow-x: auto; }
 .tabel-konsolidasi { font-size: 11px; }
+
+/* ================= Tahap 4: riwayat & analisis ================= */
+:root {
+  /* warna seri (palet kategorikal tervalidasi, urutan tetap) */
+  --seri-1: #2a78d6; --seri-2: #eb6834; --seri-3: #1baf7a;
+  /* aliran sankey: pasangan divergen biru–merah + abu netral */
+  --naik: #2a78d6; --turun: #e34948; --netral: #a3a198; --keluar: #d3d1c9;
+  --grid: #e1e0d9; --sumbu-garis: #c3c2b7; --tinta-redup: #898781;
+}
+.baris-filter { display: flex; align-items: center; gap: 6px 8px; flex-wrap: wrap; margin-top: 8px; }
+.pilih.lebar-penuh { flex: 1; min-width: 0; }
+.baris-tile { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.tile { background: var(--permukaan); border: 1px solid var(--garis); border-radius: 10px; padding: 10px; min-width: 0; }
+.tile-label { font-size: 11px; color: var(--teks-2); }
+.tile-nilai { font-size: 17px; font-weight: 600; margin-top: 2px; white-space: nowrap; }
+.tile-sub { font-size: 11px; color: var(--teks-2); margin-top: 2px; }
+.tile-sub.kurang { color: var(--galat); }
+
+.legenda { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--teks-2); margin: 8px 0 4px; }
+.legenda span { display: inline-flex; align-items: center; gap: 5px; }
+.kunci-garis { display: inline-block; width: 14px; height: 2px; border-radius: 2px; background: var(--netral); flex-shrink: 0; }
+.kunci-kotak { display: inline-block; width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+.kunci-garis.seri-1 { background: var(--seri-1); } .kunci-garis.seri-2 { background: var(--seri-2); } .kunci-garis.seri-3 { background: var(--seri-3); }
+.membaik { background: var(--naik); } .tetap { background: var(--netral); } .memburuk { background: var(--turun); } .keluar { background: var(--keluar); }
+.kunci-garis.membaik, .kunci-garis.tetap, .kunci-garis.memburuk, .kunci-garis.keluar { height: 8px; width: 8px; border-radius: 2px; }
+
+.wadah-grafik { width: 100%; margin: 4px 0; }
+.grafik-svg { display: block; overflow: visible; }
+.grafik-svg .grid { stroke: var(--grid); stroke-width: 1; }
+.grafik-svg .sumbu { stroke: var(--sumbu-garis); stroke-width: 1; }
+.grafik-svg .label-sumbu { font-size: 10px; fill: var(--tinta-redup); font-variant-numeric: tabular-nums; }
+.grafik-svg .label-ujung { font-size: 11px; fill: var(--teks-2); }
+.grafik-svg .garis { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.grafik-svg .garis.seri-1 { stroke: var(--seri-1); } .grafik-svg .garis.seri-2 { stroke: var(--seri-2); } .grafik-svg .garis.seri-3 { stroke: var(--seri-3); }
+.grafik-svg .penanda { stroke: #fff; stroke-width: 2; }
+.grafik-svg .penanda.seri-1 { fill: var(--seri-1); } .grafik-svg .penanda.seri-2 { fill: var(--seri-2); } .grafik-svg .penanda.seri-3 { fill: var(--seri-3); }
+.grafik-svg .crosshair { stroke: var(--sumbu-garis); stroke-width: 1; }
+.grafik-svg .lapis-sentuh { cursor: crosshair; outline: none; }
+.grafik-svg .lapis-sentuh:focus-visible { stroke: var(--aksen); stroke-width: 1; }
+
+.grafik-svg .pita { opacity: .5; transition: opacity .12s; cursor: pointer; outline: none; }
+.grafik-svg .pita.membaik { fill: var(--naik); } .grafik-svg .pita.tetap { fill: var(--netral); }
+.grafik-svg .pita.memburuk { fill: var(--turun); } .grafik-svg .pita.keluar { fill: var(--keluar); opacity: .7; }
+.grafik-svg .pita-grup.ada-sorot .pita { opacity: .18; }
+.grafik-svg .pita-grup.ada-sorot .pita.sorot, .grafik-svg .pita:focus-visible { opacity: .9; }
+.grafik-svg .simpul { fill: #5B625F; }
+.grafik-svg .simpul.khusus { fill: #9a988f; }
+.grafik-svg .label-simpul { font-size: 11px; fill: var(--teks); }
+.grafik-svg .label-simpul.kosong { fill: var(--tinta-redup); }
+
+.grafik-tip { position: absolute; z-index: 10; background: #fff; border: 1px solid var(--garis); border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.12); padding: 7px 9px; font-size: 12px; pointer-events: none; max-width: 260px; }
+.grafik-tip[hidden] { display: none; }
+.grafik-tip-judul { color: var(--teks-2); margin-bottom: 3px; }
+.grafik-tip-baris { display: flex; align-items: center; gap: 6px; }
+.grafik-tip-baris b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.grafik-tip-baris span:last-child { color: var(--teks-2); }
+
+.tabel-rw td.dipakai { font-weight: 600; color: var(--aksen); background: #EEF5F3; }
+.tabel-matriks td.diagonal { background: #F4F3EE; }
+.tautan-ringkas { cursor: pointer; color: var(--aksen); }
+#an-tw { margin-top: 8px; }
+.tabel-matriks th, .tabel-matriks td { padding: 3px 2px; font-size: 10px; }
+.isian.lebar-kecil { width: 120px; }
+
+/* ================= Tahap 4d: hitung semua grup ================= */
+.kotak-opsi { border: 1px solid var(--garis); border-radius: 10px; padding: 10px 12px; margin-top: 8px; background: #FAFAF7; }
+.kotak-opsi[hidden] { display: none; }
+.batch-daftar { list-style: none; margin: 8px 0 0; padding: 0; }
+.batch-daftar > li { border-top: 1px solid #EFEDE6; padding: 8px 0; }
+.batch-daftar > li.menghitung { box-shadow: inset 3px 0 0 var(--aksen); padding-left: 8px; }
+.batch-daftar > li.antre .nama-grup { color: #6B726F; }
+.batch-temuan { margin: 4px 0 0; padding-left: 18px; font-size: 12px; color: var(--peringatan); }
+.batch-temuan li.ok-ringan { color: var(--teks-2); list-style: none; margin-left: -18px; }

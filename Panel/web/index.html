@@ -32,6 +32,17 @@
 <main>
   <!-- ================= Area proses (progres, hasil, simpan) — tampil di semua tab ================= -->
   <section id="area-proses" class="isi-tab area-proses" aria-live="polite">
+    <!-- Hitung semua grup: daftar status per grup (Tahap 4d) -->
+    <div class="kartu" id="kartu-batch" hidden>
+      <div class="baris-antara">
+        <div class="judul-kartu" id="batch-judul">Hitung semua grup</div>
+        <button id="btn-batch-tutup" class="tautan" type="button" hidden>Tutup</button>
+      </div>
+      <div id="batch-sub" class="teks-kecil"></div>
+      <ol id="batch-daftar" class="batch-daftar"></ol>
+      <div id="batch-ringkas"></div>
+    </div>
+
     <!-- Progres -->
     <div class="kartu" id="kartu-progres" hidden>
       <div class="baris-antara">
@@ -134,6 +145,7 @@
         <label class="teks-kecil pilih-semua"><input type="checkbox" id="cek-semua" checked> Semua</label>
       </div>
       <ul id="daftar-langkah" class="daftar-langkah"></ul>
+      <div id="topn-info"></div>
       <label class="opsi"><input type="checkbox" id="cek-penyesuaian" checked>
         <span>Terapkan penyesuaian tersimpan <span class="teks-kecil">(agunan &amp; biaya Individu, perubahan LGD CS)</span></span></label>
       <button id="btn-jalankan" class="tombol-utama" type="button" disabled>Jalankan</button>
@@ -159,7 +171,12 @@
     <!-- Alur periode -->
     <div class="kartu">
       <div class="baris-antara">
-        <label class="label-kecil" for="pilih-periode">Periode</label>
+        <div class="label-kecil">Periode laporan (Master!C4)</div>
+        <button id="btn-periksa-master" class="tautan" type="button">Periksa ulang Master</button>
+      </div>
+      <div id="pg-master" class="nilai-besar">Memeriksa…</div>
+      <div class="baris-antara">
+        <label class="teks-kecil" for="pilih-periode">Tampilkan periode</label>
         <select id="pilih-periode" class="pilih"></select>
       </div>
       <ol id="periode-alur" class="alur" aria-label="Tahapan periode"></ol>
@@ -171,6 +188,27 @@
       <div class="baris-antara">
         <div class="judul-kartu">Grup segmen</div>
         <button id="btn-atur-susunan" class="tautan" type="button">Atur susunan grup</button>
+      </div>
+      <div class="baris-tombol jarak-atas">
+        <button id="btn-batch-opsi" class="tombol-sekunder" type="button">Hitung semua grup sekaligus…</button>
+      </div>
+      <div id="kartu-batch-opsi" class="kotak-opsi" hidden>
+        <p class="teks-kecil">Grup dihitung berurutan dengan cara yang sama seperti <b>Hitung grup ini</b> (centang KC, Top-N grup,
+          penyesuaian tersimpan). Grup yang <b>tanpa temuan</b> langsung disimpan. Temuan = kontrak Individu baru, agunan sistem berubah pada
+          kontrak berpenyesuaian, debitur LGD CS baru, atau peringatan simpan (mis. Top-N berbeda).</p>
+        <label class="opsi"><input type="checkbox" id="batch-lewati" checked>
+          <span>Lewati grup yang sudah tersimpan di periode ini</span></label>
+        <fieldset class="pilih-metode">
+          <legend class="label-isian">Bila sebuah grup punya temuan</legend>
+          <label class="opsi"><input type="radio" name="batch-temuan" value="berhenti" checked>
+            <span>Berhenti di grup itu <span class="teks-kecil">(sheet tetap berisi grup tersebut, bisa langsung direview &amp; disimpan)</span></span></label>
+          <label class="opsi"><input type="radio" name="batch-temuan" value="lanjut">
+            <span>Tandai lalu lanjut ke grup berikutnya <span class="teks-kecil">(grup bertanda dihitung ulang satu per satu nanti)</span></span></label>
+        </fieldset>
+        <div class="baris-tombol">
+          <button id="btn-batch-mulai" class="tombol-utama" type="button">Mulai</button>
+          <button id="btn-batch-batal" class="tombol-sekunder" type="button">Batal</button>
+        </div>
       </div>
       <div id="grup-isi"></div>
     </div>
@@ -189,6 +227,10 @@
         <label class="opsi"><input type="radio" name="susunan-metode" value="mig"> <span>PD Migration + LGD weighted</span></label>
         <p class="teks-kecil">Tidak dapat diganti setelah ada periode tahun ini yang dikunci (Final), kecuali kunci periode tersebut dibuka.</p>
       </fieldset>
+      <div class="label-isian">Top-N debitur CKPN Individu per grup (sesuai SOP)</div>
+      <div id="susunan-topn-grup" class="susunan-isi"></div>
+      <p class="teks-kecil">Daftar grup mengikuti nama grup di atas. Hitung grup dari panel menulis Top-N grup tersebut ke Master!C10,
+        dan Simpan grup ditolak bila Top-N di Master berbeda. Tidak dapat diganti setelah ada periode Final di tahun ini.</p>
       <label class="label-isian" for="susunan-dasar">Dasar kebijakan / SOP (wajib)</label>
       <input id="susunan-dasar" class="isian" type="text" placeholder="Mis. POL-CKPN-001 rev. 2026">
       <div class="baris-tombol jarak-atas">
@@ -290,11 +332,82 @@
     </details>
   </section>
 
+  <!-- ================= Riwayat antarperiode (Tahap 4) ================= -->
   <section id="tab-riwayat" class="isi-tab" role="tabpanel" hidden>
-    <div class="kartu info">Riwayat CKPN antarperiode — <b>Tahap 4</b>.</div>
+    <div class="kartu">
+      <div class="baris-antara">
+        <div class="judul-kartu">Riwayat antarperiode</div>
+        <button id="btn-rw-muat" class="tautan" type="button">Muat ulang</button>
+      </div>
+      <div class="baris-filter">
+        <label class="teks-kecil" for="rw-tahun">Tahun</label>
+        <select id="rw-tahun" class="pilih"></select>
+        <label class="teks-kecil" for="rw-grup">Lingkup</label>
+        <select id="rw-grup" class="pilih"></select>
+      </div>
+      <div id="rw-info" class="teks-kecil">Memuat…</div>
+    </div>
+    <div id="rw-tile" class="baris-tile"></div>
+    <div class="kartu">
+      <div class="judul-kartu" id="rw-judul-grafik">CKPN vs PPKA</div>
+      <div id="rw-legenda" class="legenda"></div>
+      <div id="rw-grafik" class="wadah-grafik"></div>
+      <div class="teks-kecil">Nilai dalam miliar Rp (M). Arahkan kursor atau fokus grafik lalu pakai panah untuk membaca tiap periode.</div>
+    </div>
+    <div class="kartu">
+      <div class="judul-kartu">Tabel per periode</div>
+      <div id="rw-tabel" class="gulir-x teks-kecil">—</div>
+    </div>
   </section>
+
+  <!-- ================= Analisis PD (Tahap 4) ================= -->
   <section id="tab-analisis" class="isi-tab" role="tabpanel" hidden>
-    <div class="kartu info">Sankey PD Migration &amp; Net Flow — <b>Tahap 4</b>.</div>
+    <div class="kartu">
+      <div class="judul-kartu">Analisis PD</div>
+      <div class="baris-filter">
+        <label class="teks-kecil" for="an-sumber">Sumber</label>
+        <select id="an-sumber" class="pilih lebar-penuh"></select>
+      </div>
+      <div class="baris-tombol jarak-atas">
+        <button id="btn-an-muat" class="tombol-sekunder" type="button">Muat</button>
+      </div>
+      <div id="an-info" class="teks-kecil jarak-atas">Pilih sumber: workbook yang sedang terbuka atau kiriman grup yang tersimpan.</div>
+    </div>
+
+    <div class="kartu" id="kartu-an-migrasi" hidden>
+      <div class="judul-kartu">PD Migration — perpindahan kualitas</div>
+      <div id="an-tw" class="segmen" role="group" aria-label="Triwulan"></div>
+      <label class="opsi jarak-atas"><input type="checkbox" id="an-mg-tanpa" checked>
+        <span>Sembunyikan saldo yang tetap di Kol 1 <span class="teks-kecil">(porsi terbesar; perpindahan lain menjadi tipis)</span></span></label>
+      <div id="an-mg-ringkas" class="teks-kecil"></div>
+      <div class="legenda">
+        <span><i class="kunci-kotak membaik"></i>Membaik</span>
+        <span><i class="kunci-kotak tetap"></i>Tetap</span>
+        <span><i class="kunci-kotak memburuk"></i>Memburuk / hapus buku</span>
+        <span><i class="kunci-kotak keluar"></i>Lunas / keluar</span>
+      </div>
+      <div id="an-mg-sankey" class="wadah-grafik"></div>
+      <details class="jarak-atas"><summary class="teks-kecil tautan-ringkas">Tabel matriks migrasi</summary>
+        <div id="an-mg-tabel" class="gulir-x"></div></details>
+    </div>
+
+    <div class="kartu" id="kartu-an-netflow" hidden>
+      <div class="judul-kartu">PD Net Flow — perguliran bucket tunggakan</div>
+      <div class="baris-filter">
+        <label class="teks-kecil" for="an-bulan">Bulan</label>
+        <select id="an-bulan" class="pilih"></select>
+      </div>
+      <label class="opsi jarak-atas"><input type="checkbox" id="an-nol">
+        <span>Sertakan bucket 0 hari <span class="teks-kecil">(saldo terbesar; bucket tunggakan menjadi tipis)</span></span></label>
+      <div id="an-nf-ringkas" class="teks-kecil"></div>
+      <div class="legenda">
+        <span><i class="kunci-kotak memburuk"></i>Bergulir ke bucket berikutnya</span>
+        <span><i class="kunci-kotak keluar"></i>Tidak bergulir</span>
+      </div>
+      <div id="an-nf-sankey" class="wadah-grafik"></div>
+      <details class="jarak-atas"><summary class="teks-kecil tautan-ringkas">Tabel roll rate &amp; PD per bucket</summary>
+        <div id="an-nf-tabel" class="gulir-x"></div></details>
+    </div>
   </section>
 
   <!-- ================= Diagnostik ================= -->
@@ -316,6 +429,7 @@
   </details>
 </main>
 
+<script src="js/grafik.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

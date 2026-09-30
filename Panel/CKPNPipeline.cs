@@ -71,6 +71,12 @@ namespace CKPNLibrary.Panel
         // ------------------------------------------------------------
         public static bool SedangBerjalan { get; private set; }
 
+        /// <summary>
+        /// Callback sekali pakai setelah run berakhir (dipakai BatchGrup untuk lanjut ke grup
+        /// berikutnya). Null untuk run biasa, sehingga hitung manual/per grup tidak berubah.
+        /// </summary>
+        internal static Action<Excel.Application, string> SetelahSelesai;
+
         /// <summary>True hanya saat sebuah langkah sedang dieksekusi oleh pipeline.</summary>
         public static bool DiDalamLangkah { get; private set; }
 
@@ -272,6 +278,19 @@ namespace CKPNLibrary.Panel
             try { ParameterMaster.SetKCDicentang(wb, kodeKC.Split(',')); }
             catch (Exception ex) { return "Tidak dapat mengubah centang KC di Master: " + PesanError(ex); }
 
+            // Top-N debitur Individu mengikuti ketetapan grup di susunan tahunan (SOP) — ditulis ke Master!C10
+            DateTime tgl;
+            if (ParameterMaster.BacaTanggalLaporan(wb, out tgl))
+            {
+                string namaGrup;
+                int? topN = Data.Periode.TopNGrup(tgl.Year, kodeKC, out namaGrup);
+                if (topN.HasValue)
+                {
+                    try { ParameterMaster.SetTopN(wb, topN.Value); }
+                    catch (Exception ex) { return "Tidak dapat menulis Top-N ke Master!C10: " + PesanError(ex); }
+                }
+            }
+
             var semua = new List<string>(IdLangkahHitung);
             return Mulai(app, semua, terapkanPenyesuaian);
         }
@@ -311,6 +330,14 @@ namespace CKPNLibrary.Panel
             });
 
             _antrian = null; _param = null; _wbApp = null;
+
+            var lanjut = SetelahSelesai;
+            SetelahSelesai = null;
+            if (lanjut != null)
+            {
+                try { lanjut(app, status); }
+                catch (Exception ex) { CatatanLog.Tulis("Lanjutan setelah run gagal: " + ex.Message); }
+            }
         }
 
         // ------------------------------------------------------------

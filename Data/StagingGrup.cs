@@ -131,6 +131,10 @@ namespace CKPNLibrary.Data
             if (statusPeriode == "Final")
                 r.Peringatan.Add("Periode ini sudah dikunci (Final). Buka kunci di tab Periode sebelum menyimpan.");
 
+            // Top-N debitur Individu harus sama dengan ketetapan tahunan (SOP) — Tahap 4b
+            string tolakTopN = CekTopN(r);
+            if (tolakTopN != null) r.Peringatan.Add(tolakTopN);
+
             return new Dictionary<string, object>
             {
                 { "namaGrup", namaGrup }, { "statusPeriode", statusPeriode },
@@ -138,7 +142,8 @@ namespace CKPNLibrary.Data
                 { "kodeKC", r.KodeKC }, { "versi", r.VersiBerikut },
                 { "jumlahIndividu", r.Indv.Count }, { "jumlahLgdCs", r.Cs.Count },
                 { "perubahan", daftar }, { "peringatan", r.Peringatan },
-                { "bolehMenulis", boleh && statusPeriode != "Final" }, { "infoPengirim", alasanTulis },
+                { "bolehMenulis", boleh && statusPeriode != "Final" && tolakTopN == null }, { "infoPengirim", alasanTulis },
+                { "topN", ParameterMaster.BacaTopN(r.Wb) },
                 { "berjalan", CKPNPipeline.SedangBerjalan }
             };
         }
@@ -193,6 +198,8 @@ namespace CKPNLibrary.Data
                     ((PenyesuaianLgdCs)p.Data).Alasan = a.Trim();
                     p.Keterangan = a.Trim();
                 }
+                string tolakTopN = CekTopN(r);
+                if (tolakTopN != null) throw new InvalidOperationException(tolakTopN);
                 var ringkasan = BacaRingkasan(wb);
                 string analisisJson = AnalisisPD.BacaWorkbookJson(wb);   // Tahap 4: bahan sankey
                 ParameterCKPN param = ParameterMaster.Baca(wb);
@@ -221,6 +228,7 @@ namespace CKPNLibrary.Data
                         _json.Serialize(new Dictionary<string, object> { { "periode", param.BulanLaporan }, { "ringkas", param.Ringkas } }),
                         catatan ?? "");
                     runId = con.LastInsertRowId;
+                    Database.Exec(con, "UPDATE run_grup SET top_n=@p0 WHERE id=@p1", ParameterMaster.BacaTopN(wb), runId);
 
                     foreach (var kv in ringkasan)
                         Database.Exec(con, "INSERT INTO ringkasan(run_id,kunci,nilai) VALUES(@p0,@p1,@p2)", runId, kv.Key, kv.Value);
@@ -557,6 +565,24 @@ namespace CKPNLibrary.Data
                         !lewati.Contains(lama.NoRek))
                         r.Perubahan.Add(new Perubahan { Modul = "lgdcs", Kunci = lama.NoRek, Aksi = "hapus-manual", Hapus = true,
                             Sebelum = "Baris manual " + (lama.Nama ?? ""), Sesudah = "Dihapus" });
+        }
+
+        /// <summary>
+        /// Top-N di Master!C10 dibandingkan dengan Top-N grup (kombinasi KC yang dicentang) di susunan tahunan.
+        /// Null = sesuai (atau belum ada ketetapan). Hitung grup dari tab Per grup menulis
+        /// nilai tahunan ke C10 secara otomatis, sehingga ketidaksesuaian biasanya berasal
+        /// dari hitung manual / tombol VBA dengan C10 yang diubah.
+        /// </summary>
+        private static string CekTopN(Rencana r)
+        {
+            string nama;
+            int? ketetapan = Periode.TopNGrup(r.Tanggal.Year, r.KodeKC, out nama);
+            if (!ketetapan.HasValue) return null;
+            int master = ParameterMaster.BacaTopN(r.Wb);
+            if (master == ketetapan.Value) return null;
+            return "Top-N di Master!C10 (" + master + ") berbeda dengan ketetapan grup " + nama + " tahun " + r.Tanggal.Year +
+                   " (" + ketetapan.Value + "). Hasil tidak dapat disimpan ke staging. Hitung ulang dari tab Per grup " +
+                   "(Top-N otomatis disesuaikan) atau ubah Master!C10 lalu hitung ulang.";
         }
 
         /// <summary>
