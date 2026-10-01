@@ -93,6 +93,12 @@ namespace CKPNLibrary.Panel
                 daftar.Add(new Dictionary<string, object> { { "nama", it.Nama }, { "kodeKC", it.KodeKC }, { "topN", it.TopN } });
             CatatanLog.Tulis("=== HITUNG SEMUA GRUP · periode " + tanggal + " · " + antrian.Count + " grup · " +
                              (berhentiBilaTemuan ? "berhenti bila ada temuan" : "lanjut bila ada temuan"));
+            var namaAntrian = new List<string>();
+            foreach (var it in antrian) namaAntrian.Add(it.Nama);
+            LogProses.CatatPanel(tanggal, "Hitung semua grup", "Mulai", LogProses.Info, LogProses.R()
+                .Tambah("Grup", string.Join(", ", namaAntrian.ToArray()))
+                .Tambah("Bila ada temuan", berhentiBilaTemuan ? "berhenti di grup itu" : "tandai lalu lanjut")
+                .Tambah("Lewati grup tersimpan", lewatiTersimpan ? "ya" : "tidak"));
             PanelBridge.Siarkan("batchMulai", new Dictionary<string, object>
             {
                 { "tanggal", tanggal }, { "grup", daftar }, { "berhentiBilaTemuan", berhentiBilaTemuan }
@@ -230,6 +236,16 @@ namespace CKPNLibrary.Panel
             }
             if (status != "menghitung") _hasil.Add(d);
             CatatanLog.Tulis("  [semua grup] " + it.Nama + " · " + status + (temuan != null && temuan.Count > 0 ? " · " + string.Join(" | ", temuan.ToArray()) : ""));
+            if (status != "menghitung")
+                LogProses.CatatPanel(_tanggal, "Hitung semua grup", it.Nama,
+                    status == "tersimpan" ? LogProses.OK : status == "perlu-review" ? LogProses.Peringatan
+                        : status == "dibatalkan" ? LogProses.Dilewati : LogProses.Gagal,
+                    LogProses.R()
+                        .Tambah("Status", status)
+                        .Tambah("KC", it.KodeKC)
+                        .TambahBila(simpan != null, "Versi", simpan == null ? null : simpan["versi"])
+                        .TambahBila(temuan != null && temuan.Count > 0, "Temuan",
+                                    temuan == null ? "" : string.Join(" | ", temuan.ToArray())));
             PanelBridge.Siarkan("batchGrup", d);
         }
 
@@ -239,6 +255,13 @@ namespace CKPNLibrary.Panel
             CKPNPipeline.SetelahSelesai = null;
             int sisa = _antrian == null ? 0 : Math.Max(0, _antrian.Count - _indeks - (status == "selesai" ? 0 : 1));
             CatatanLog.Tulis("=== HITUNG SEMUA GRUP " + status.ToUpperInvariant() + (error == null ? "" : " · " + error));
+            LogProses.CatatPanel(_tanggal, "Hitung semua grup", "Selesai · " + status,
+                status == "selesai" ? LogProses.OK : status == "perlu-review" ? LogProses.Peringatan
+                    : status == "dibatalkan" ? LogProses.Dilewati : LogProses.Gagal,
+                LogProses.R()
+                    .Tambah("Grup diproses", _hasil == null ? 0 : _hasil.Count)
+                    .Tambah("Grup belum dihitung", sisa)
+                    .TambahBila(error != null, "Error", error));
             PanelBridge.Siarkan("batchSelesai", new Dictionary<string, object>
             {
                 { "status", status }, { "error", error }, { "hasil", _hasil }, { "sisa", sisa }, { "tanggal", _tanggal }

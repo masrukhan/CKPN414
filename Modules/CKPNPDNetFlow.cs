@@ -53,9 +53,8 @@ namespace CKPNLibrary.Modules
             if (wsTarget == null)
                 throw new InvalidOperationException("Sheet 'B1.PD-Net Flow' tidak ditemukan.");
 
-            var wsLog = CariSheet(wb, "Audit Log");
-            if (wsLog == null)
-                throw new InvalidOperationException("Sheet 'Audit Log' tidak ditemukan.");
+            // Tahap 5: sheet "Audit Log" tidak dipakai lagi — catatan ditulis ke log proses (file teks)
+            Excel.Worksheet wsLog = null;
 
             var specs = new List<SheetSpec>();
             foreach (var shName in sheetKCList)
@@ -453,30 +452,15 @@ namespace CKPNLibrary.Modules
         }
 
         // ----------------------------------------------------------------
-        // Audit Log
+        // Log proses (Tahap 5) — dulu sheet "Audit Log", kini file teks.
+        // Nama & parameter method dipertahankan agar pemanggilnya tidak
+        // perlu diubah; wsLog dan r tidak dipakai lagi.
         // ----------------------------------------------------------------
+        private List<SheetSpec> _specsLog = new List<SheetSpec>();
+
         private void TulisAuditLogHeader(Excel.Worksheet wsLog, List<SheetSpec> specs)
         {
-            const int startCol = 14;
-            ((Excel.Range)wsLog.Range[wsLog.Cells[4, 14], wsLog.Cells[4, 29]]).ClearContents();
-
-            for (int i = 0; i < specs.Count; i++)
-                ((Excel.Range)wsLog.Cells[4, startCol + i]).Value2 = "OS " + specs[i].SheetName;
-
-            int baseCol = startCol + specs.Count;
-            ((Excel.Range)wsLog.Cells[4, baseCol    ]).Value2 = "Total OS";
-            ((Excel.Range)wsLog.Cells[4, baseCol + 1]).Value2 = "WO KC2900";
-            ((Excel.Range)wsLog.Cells[4, baseCol + 2]).Value2 = "Total EAD";
-            ((Excel.Range)wsLog.Cells[4, baseCol + 3]).Value2 = "Top-N Debitur";
-            ((Excel.Range)wsLog.Cells[4, baseCol + 4]).Value2 = "OS Individu (Top-N)";
-            ((Excel.Range)wsLog.Cells[4, baseCol + 5]).Value2 = "OS Non-Individu (PD Net Flow)";
-
-            Excel.Range hdrRange = (Excel.Range)wsLog.Range[
-                wsLog.Cells[4, baseCol + 3], wsLog.Cells[4, baseCol + 5]];
-            hdrRange.Font.Bold            = true;
-            hdrRange.Font.Color           = 0xFFFFFF;
-            hdrRange.Interior.Color       = 0x436E1F;
-            hdrRange.HorizontalAlignment  = Excel.XlHAlign.xlHAlignCenter;
+            _specsLog = specs ?? new List<SheetSpec>();   // nama KC untuk rincian OS per sheet
         }
 
         private void TulisAuditLog(
@@ -485,37 +469,30 @@ namespace CKPNLibrary.Modules
             double[] osPerSheet, double totalOS, double woSum, double totalEAD,
             int topN, double osIndividu, double osNonIndividu)
         {
-            ((Excel.Range)wsLog.Cells[r, 1]).Value2 = ts;
-            ((Excel.Range)wsLog.Cells[r, 2]).Value2 = "PD Net Flow";
-            ((Excel.Range)wsLog.Cells[r, 3]).Value2 = bulanLabel;
-            ((Excel.Range)wsLog.Cells[r, 4]).Value2 = refDate;
-            ((Excel.Range)wsLog.Cells[r, 7]).Value2 = filePath;
-            ((Excel.Range)wsLog.Cells[r, 8]).Value2 = status;
-
-            const int startCol = 14;
-            for (int i = 0; i < osPerSheet.Length; i++)
-                ((Excel.Range)wsLog.Cells[r, startCol + i]).Value2 = osPerSheet[i];
-
-            int baseCol = startCol + osPerSheet.Length;
-            ((Excel.Range)wsLog.Cells[r, baseCol    ]).Value2 = totalOS;
-            ((Excel.Range)wsLog.Cells[r, baseCol + 1]).Value2 = woSum;
-            ((Excel.Range)wsLog.Cells[r, baseCol + 2]).Value2 = totalEAD;
-            ((Excel.Range)wsLog.Cells[r, baseCol + 3]).Value2 = topN;
-            ((Excel.Range)wsLog.Cells[r, baseCol + 4]).Value2 = osIndividu;
-            ((Excel.Range)wsLog.Cells[r, baseCol + 5]).Value2 = osNonIndividu;
+            string st = status == "OK" ? LogProses.OK
+                      : status.StartsWith("Skipped", StringComparison.OrdinalIgnoreCase) ? LogProses.Dilewati
+                      : LogProses.Gagal;
+            var rinci = LogProses.R().Tambah("Tgl ref", refDate);
+            if (st != LogProses.OK)
+                rinci.Tambah("Keterangan", status);
+            else
+            {
+                for (int i = 0; i < osPerSheet.Length; i++)
+                    rinci.Tambah("OS " + (i < _specsLog.Count ? _specsLog[i].SheetName : "sheet " + (i + 1)), osPerSheet[i]);
+                rinci.Tambah("Total OS", totalOS)
+                     .Tambah("WO KC2900", woSum)
+                     .Tambah("Total EAD", totalEAD)
+                     .Tambah("Top-N debitur", topN)
+                     .Tambah("OS Individu (Top-N)", osIndividu)
+                     .Tambah("OS Non-Individu (PD Net Flow)", osNonIndividu);
+            }
+            rinci.Tambah("File", filePath);
+            LogProses.Catat("PD Net Flow", bulanLabel, st, rinci);
         }
 
         private int NextAuditLogRow(Excel.Worksheet wsLog)
         {
-            for (int r = 5; r <= 100000; r++)
-            {
-                string a = (((Excel.Range)wsLog.Cells[r, 1]).Value2 ?? "").ToString().Trim();
-                string b = (((Excel.Range)wsLog.Cells[r, 2]).Value2 ?? "").ToString().Trim();
-                if (string.IsNullOrEmpty(a) && string.IsNullOrEmpty(b)) return r;
-                if (string.IsNullOrEmpty(a) &&
-                    b.IndexOf("DETAIL", StringComparison.OrdinalIgnoreCase) >= 0) return r;
-            }
-            return 100001;
+            return 0;   // tidak ada baris sheet lagi (Tahap 5)
         }
 
         // ================================================================

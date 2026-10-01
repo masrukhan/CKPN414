@@ -112,8 +112,7 @@ namespace CKPNLibrary.Modules
                 else fileGagal++;
             }
 
-            // ── Catat ke Audit Log ────────────────────────────────────
-            if (wsLog != null)
+            // ── Catat ke log proses (Tahap 5 — dulu sheet Audit Log) ──
             {
                 try
                 {
@@ -390,7 +389,7 @@ namespace CKPNLibrary.Modules
         }
 
         // ================================================================
-        // Catat ringkasan ke Audit Log
+        // Catat ringkasan ke log proses (Tahap 5; dulu sheet "Audit Log")
         // ================================================================
         private void CatatAuditLog(
             Excel.Worksheet wsLog,
@@ -398,34 +397,21 @@ namespace CKPNLibrary.Modules
             int jmlAda, int jmlHilang, int jmlKodeProduk,
             int totRows, int totHit, int fileOk, int fileGagal)
         {
-            // Cari baris kosong berikutnya
-            int r = 5;
-            for (int row = 5; row <= 1000000; row++)
-            {
-                string a = (((Excel.Range)wsLog.Cells[row, 1]).Value2 ?? "").ToString().Trim();
-                string b = (((Excel.Range)wsLog.Cells[row, 2]).Value2 ?? "").ToString().Trim();
-                if (string.IsNullOrEmpty(a) && string.IsNullOrEmpty(b)) { r = row; break; }
-            }
+            bool sukses = fileGagal == 0 && totHit > 0;
+            string status = sukses ? LogProses.OK : fileOk == 0 ? LogProses.Gagal : LogProses.Peringatan;
+            var berkas = new List<string>();
+            foreach (var kv in filePaths) berkas.Add(kv.Key + ": " + kv.Value);
 
-            string status = fileGagal == 0 && totHit > 0 ? "SUKSES"
-                          : fileOk   == 0               ? "GAGAL"
-                          :                               "SEBAGIAN";
-
-            // Ambil path file pertama untuk kolom G
-            string pathPertama = "";
-            foreach (var kv in filePaths) { pathPertama = kv.Value; break; }
-
-            ((Excel.Range)wsLog.Cells[r, 1]).Value2 = DateTime.Now.ToOADate();
-            ((Excel.Range)wsLog.Cells[r, 1]).NumberFormat = "m/d/yyyy h:mm";
-            ((Excel.Range)wsLog.Cells[r, 2]).Value2 = "Bangun RefKC";
-            ((Excel.Range)wsLog.Cells[r, 3]).Value2 = "KC0600,KC0700,KC0800,KC0900,KC1000,KC1100";
-            ((Excel.Range)wsLog.Cells[r, 6]).Value2 = "Master!D60:D65";
-            ((Excel.Range)wsLog.Cells[r, 7]).Value2 = pathPertama;
-            ((Excel.Range)wsLog.Cells[r, 8]).Value2 = status;
-            ((Excel.Range)wsLog.Cells[r, 9]).Value2 = filePaths.Count;     // jumlah path
-            ((Excel.Range)wsLog.Cells[r,10]).Value2 = fileOk;              // file OK
-            ((Excel.Range)wsLog.Cells[r,11]).Value2 = jmlHilang;           // file hilang
-            ((Excel.Range)wsLog.Cells[r,18]).Value2 = jmlKodeProduk;       // kolom R = kode produk unik
+            LogProses.Catat("Bangun RefKC", "KC0600-KC1100", status, LogProses.R()
+                .Tambah("Hasil", sukses ? "SUKSES" : fileOk == 0 ? "GAGAL" : "SEBAGIAN")
+                .Tambah("Jumlah path", filePaths.Count)
+                .Tambah("File OK", fileOk)
+                .Tambah("File gagal", fileGagal)
+                .Tambah("File tidak ditemukan", jmlHilang)
+                .Tambah("Kode produk unik", jmlKodeProduk)
+                .Tambah("Baris KC2900 diisi", totRows)
+                .Tambah("Baris terpetakan", totHit)
+                .Tambah("File", string.Join(" | ", berkas.ToArray())));
         }
     }
 }

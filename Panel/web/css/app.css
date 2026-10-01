@@ -353,3 +353,46 @@ details.kartu[open] > summary { margin-bottom: 8px; }
 .batch-daftar > li.antre .nama-grup { color: #6B726F; }
 .batch-temuan { margin: 4px 0 0; padding-left: 18px; font-size: 12px; color: var(--peringatan); }
 .batch-temuan li.ok-ringan { color: var(--teks-2); list-style: none; margin-left: -18px; }
+
+/* ================= Tahap 4g: penjelasan perubahan CKPN ================= */
+.narasi-pj { background: #F6F8F7; border-radius: 8px; padding: 10px 12px; margin: 10px 0; }
+.narasi-judul { margin: 0 0 6px; font-weight: 600; font-size: 13px; }
+.narasi-daftar { margin: 0; padding-left: 18px; font-size: 12px; line-height: 1.55; }
+.narasi-daftar li + li { margin-top: 4px; }
+.tabel-pj td { white-space: nowrap; }
+.tabel-pj td:first-child { white-space: normal; }
+.tabel-pj td.arah { font-family: inherit; font-size: 11px; color: var(--teks-2); }
+.tabel-pj td.arah1, .tabel-pj td.arah-1 { color: var(--teks); }   /* naik/turun tidak otomatis baik/buruk (OS naik ≠ NPF naik) */
+
+/* ---------------- Log proses (Tahap 5) ---------------- */
+#kartu-log > summary { cursor: pointer; }
+#kartu-log[open] > summary { margin-bottom: 6px; }
+.lp-filter { display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content minmax(0, 1fr); gap: 6px 8px; align-items: center; margin: 8px 0 6px; }
+.lp-filter .pilih { width: 100%; min-width: 0; }
+.lp-filter #lp-cari { grid-column: 1 / -1; }
+@media (max-width: 360px) { .lp-filter { grid-template-columns: max-content minmax(0, 1fr); } }
+.lp-rinci .tautan { text-align: left; }
+.lp-jalan { display: flex; align-items: center; gap: 6px; font-size: 12px; background: #EEF5F3; color: #174F46; border-radius: 8px; padding: 4px 10px; margin-top: 8px; }
+.lp-jalan[hidden] { display: none; }
+.lp-daftar { list-style: none; margin: 8px 0 0; padding: 0; }
+.lp-tanggal { font-size: 11px; font-weight: 600; color: var(--teks-2); text-transform: uppercase; letter-spacing: .04em; padding: 10px 0 4px; }
+.lp-item { border-top: 1px solid #EFEDE6; }
+.lp-item summary { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; gap: 8px; align-items: start; padding: 6px 0; cursor: pointer; list-style: none; font-size: 12px; }
+.lp-item summary::-webkit-details-marker { display: none; }
+.lp-item summary:focus-visible { outline: 2px solid var(--aksen); outline-offset: 2px; border-radius: 4px; }
+.lp-waktu { font-family: var(--mono); color: var(--teks-2); padding-top: 1px; }
+.lp-judul { min-width: 0; overflow-wrap: anywhere; }
+.lp-proses { font-weight: 600; }
+.lp-sumber { display: block; font-size: 11px; color: var(--teks-2); }
+.lp-status { font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 999px; background: #EEEDE8; color: #4E5451; white-space: nowrap; }
+.lp-status.ok { background: #E7F2EC; color: var(--sukses); }
+.lp-status.gagal { background: #F8E2DD; color: var(--galat); }
+.lp-status.peringatan { background: var(--peringatan-bg); color: var(--peringatan); }
+.lp-status.info { background: #EEF5F3; color: #174F46; }
+.lp-rinci { font-size: 12px; margin: 0 0 8px 64px; padding: 6px 8px; background: #F8F7F3; border-radius: 8px; }
+.lp-rinci dd { overflow-wrap: anywhere; }
+.lp-lama { border-top: 1px solid var(--garis); margin-top: 12px; padding-top: 10px; }
+.lp-lama[hidden] { display: none; }
+.lp-lama .judul-kartu { font-size: 13px; }
+#lp-lama-hasil { overflow-wrap: anywhere; margin-top: 6px; }
+@media (max-width: 380px) { .lp-rinci { margin-left: 0; } }

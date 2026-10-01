@@ -40,7 +40,6 @@ namespace CKPNLibrary.Modules
 
         private const string SheetDataSource   = "Sumber Data";
         private const string SheetDataOverview = "Data Overview";
-        private const string SheetLog          = "Audit Log";
 
         private static readonly string[] SegmenOverview =
             { "KC0600", "KC0700", "KC0800", "KC0900", "KC1000", "KC1100" };
@@ -103,6 +102,15 @@ namespace CKPNLibrary.Modules
 
             if (string.IsNullOrEmpty(pathTemplate))
                 throw new InvalidOperationException("Path file template (Master!D14) belum diisi.");
+            return UntukFile(pathTemplate, periode);
+        }
+
+        /// <summary>
+        /// Overview dari file template mana pun (Tahap 4g: mengisi periode lama untuk
+        /// penjelasan perubahan CKPN). periode = "yyyy-MM-dd" yang diwakili file tersebut.
+        /// </summary>
+        public Dictionary<string, object> UntukFile(string pathTemplate, string periode)
+        {
             if (!File.Exists(pathTemplate))
                 throw new InvalidOperationException("File template tidak ditemukan: " + pathTemplate);
 
@@ -312,7 +320,6 @@ namespace CKPNLibrary.Modules
         {
             var wb = _app.ActiveWorkbook;
             var wsOv  = CariSheet(wb, SheetDataOverview);
-            var wsLog = CariSheet(wb, SheetLog);
             if (wsOv == null) throw new InvalidOperationException("Sheet '" + SheetDataOverview + "' tidak ditemukan.");
 
             var hasilLog = new List<string>();
@@ -338,7 +345,7 @@ namespace CKPNLibrary.Modules
                 {
                     KosongkanSemua(wsOv);
                     hasilLog.Add("Path 'Sumber Data'!E7 kosong / tidak ditemukan -> semua dikosongkan.");
-                    Selesai(wsLog, hasilLog);
+                    Selesai(hasilLog);
                     return;
                 }
                 Excel.Workbook wbApp = null;
@@ -362,7 +369,7 @@ namespace CKPNLibrary.Modules
             {
                 KosongkanTemplate(wsOv);
                 hasilLog.Add("Path Master!D14 kosong / tidak ditemukan (" + pathTemplate + ").");
-                Selesai(wsLog, hasilLog);
+                Selesai(hasilLog);
                 return;
             }
 
@@ -399,7 +406,7 @@ namespace CKPNLibrary.Modules
             }
 
             _app.Calculate();
-            Selesai(wsLog, hasilLog);
+            Selesai(hasilLog);
         }
 
         private static void TulisBaris(Excel.Worksheet ws, int row, double[] b)
@@ -437,32 +444,14 @@ namespace CKPNLibrary.Modules
                 ((Excel.Range)ws.Range[a]).Value2 = 0;
         }
 
-        private void Selesai(Excel.Worksheet wsLog, List<string> hasilLog)
+        private void Selesai(List<string> hasilLog)
         {
-            if (wsLog != null)
-            {
-                try
-                {
-                    int r = NextAuditLogRow(wsLog);
-                    ((Excel.Range)wsLog.Cells[r, 1]).Value2 = DateTime.Now.ToOADate();
-                    ((Excel.Range)wsLog.Cells[r, 1]).NumberFormat = "m/d/yyyy h:mm";
-                    ((Excel.Range)wsLog.Cells[r, 2]).Value2 = "Data Overview Refresh";
-                    ((Excel.Range)wsLog.Cells[r, 3]).Value2 = string.Join(" | ", hasilLog);
-                }
-                catch { }
-            }
+            // Tahap 5: dulu ditulis ke sheet "Audit Log"; kini ke log proses (file teks)
+            bool gagal = hasilLog.Exists(x => x.StartsWith("Gagal", StringComparison.OrdinalIgnoreCase) ||
+                                              x.IndexOf("tidak ditemukan", StringComparison.OrdinalIgnoreCase) >= 0);
+            LogProses.Catat("Data Overview Refresh", "Sheet Data Overview", gagal ? LogProses.Peringatan : LogProses.OK,
+                            LogProses.R().Tambah("Hasil", string.Join(" | ", hasilLog.ToArray())));
             Pemberitahu.Info("Data Overview CKPN", "Data Overview selesai di-refresh.\n\n" + string.Join("\n", hasilLog));
-        }
-
-        private static int NextAuditLogRow(Excel.Worksheet wsLog)
-        {
-            for (int r = 5; r <= 1000000; r++)
-            {
-                if (string.IsNullOrEmpty(ToStr(((Excel.Range)wsLog.Cells[r, 1]).Value2)) &&
-                    string.IsNullOrEmpty(ToStr(((Excel.Range)wsLog.Cells[r, 2]).Value2)))
-                    return r;
-            }
-            return 1000001;
         }
 
         // ================================================================

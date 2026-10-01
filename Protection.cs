@@ -22,8 +22,7 @@ namespace CKPNLibrary
             "B2.PD-Migration",
             "B3.LGD-ER",
             "B4.LGD-CS MACET",
-            "state PD Migration",
-            "Audit Log"
+            "state PD Migration"
         };
 
         // Password proteksi sheet Master yang valid.
@@ -295,6 +294,39 @@ namespace CKPNLibrary
                         Contents:          true,
                         Scenarios:         true,
                         UserInterfaceOnly: false);
+            }
+        }
+
+        // ----------------------------------------------------------------
+        // HapusSheet (Tahap 5): hapus satu sheet dengan membuka proteksi
+        // struktur workbook sementara. Dipakai Panel CKPN untuk menghapus
+        // sheet "Audit Log" setelah isinya diarsipkan ke file teks.
+        // Sheet wajib tidak boleh dihapus lewat method ini.
+        // ----------------------------------------------------------------
+        internal static void HapusSheet(Excel.Workbook wb, string namaSheet)
+        {
+            foreach (var w in SheetWajib)
+                if (w.Equals(namaSheet, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("Sheet '" + namaSheet + "' wajib ada dan tidak boleh dihapus.");
+
+            Excel.Worksheet ws = null;
+            foreach (Excel.Worksheet sh in wb.Worksheets)
+                if (sh.Name.Equals(namaSheet, StringComparison.OrdinalIgnoreCase)) { ws = sh; break; }
+            if (ws == null) return;
+
+            bool terkunci = wb.ProtectStructure;
+            if (terkunci) wb.Unprotect(PasswordWorkbook);
+            bool alert = wb.Application.DisplayAlerts;
+            try
+            {
+                wb.Application.DisplayAlerts = false;   // tanpa dialog "hapus permanen?"
+                ws.Delete();
+            }
+            finally
+            {
+                wb.Application.DisplayAlerts = alert;
+                if (terkunci)
+                    wb.Protect(Password: PasswordWorkbook, Structure: true, Windows: false);
             }
         }
 

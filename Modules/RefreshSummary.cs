@@ -272,6 +272,18 @@ namespace CKPNLibrary.Modules
                 // (lihat setelah blok finally) agar tidak muncul di atas layar abu-abu.
                 laporan = lap.ToString();
 
+                // Log proses (Tahap 5): hasil Refresh Summary
+                CKPNLibrary.Helpers.LogProses.Catat("Refresh Summary", "Summary", CKPNLibrary.Helpers.LogProses.OK,
+                    CKPNLibrary.Helpers.LogProses.R()
+                        .Tambah("CKPN Individual", totalIndv)
+                        .Tambah("CKPN Kolektif", totalKol)
+                        .Tambah("ABA dijamin (C18)", abaDijamin)
+                        .Tambah("ABA di atas plafon (C19)", abaDiAtasPlafon)
+                        .Tambah("PPKA per KC", lapPPKA.ToString())
+                        .TambahBila(lapSkip.Length > 0, "Dilewati", lapSkip.ToString())
+                        .Tambah("KC", string.Join(",", kcAktif.ToArray()))
+                        .Tambah("File", filePath));
+
                 Langkah("Selesai");
             }
             finally
@@ -321,9 +333,7 @@ namespace CKPNLibrary.Modules
             if (CariSheet(wb, SH_KOL) == null)
                 masalah.Add("Sheet '" + SH_KOL + "' tidak ditemukan " +
                             "(dipakai formula Summary!B7, B13, B14).");
-            if (CariSheet(wb, SH_LOG) == null)
-                masalah.Add("Sheet '" + SH_LOG + "' tidak ditemukan " +
-                            "(tujuan penulisan rincian ABA).");
+            // Tahap 5: sheet Audit Log tidak wajib lagi — rincian ABA ditulis ke log proses
 
             // (b) Proteksi sheet Summary TIDAK lagi menggagalkan praterbang.
             //     Sheet yang terproteksi kini dibuka otomatis di awal RefreshInti
@@ -630,52 +640,25 @@ namespace CKPNLibrary.Modules
                 }
             }
 
-            // Siapkan Audit Log
-            Langkah("Menulis rincian ABA ke sheet Audit Log");
-            var wsLog = CariSheet(_wbApp, SH_LOG);
-            int rowLog = 0;
-            if (wsLog != null)
-            {
-                rowLog = BarisKosongBerikutnya(wsLog);
-                ((Excel.Range)wsLog.Cells[rowLog, 1]).Value2 =
-                    "PERHITUNGAN CKPN ABA (" + ABA_SHEET + ") - " +
-                    DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-                ((Excel.Range)wsLog.Cells[rowLog, 1]).Font.Bold = true;
-                rowLog++;
-
-                ((Excel.Range)wsLog.Cells[rowLog, 1]).Value2 = "Sandi Bank";
-                ((Excel.Range)wsLog.Cells[rowLog, 2]).Value2 = "Nama Bank";
-                ((Excel.Range)wsLog.Cells[rowLog, 3]).Value2 = "Total EAD (kolom " + ABA_COL_EAD + ")";
-                ((Excel.Range)wsLog.Cells[rowLog, 4]).Value2 = "Klasifikasi";
-                ((Excel.Range)wsLog.Range[wsLog.Cells[rowLog, 1], wsLog.Cells[rowLog, 4]]).Font.Bold = true;
-                rowLog++;
-            }
-
+            // Rincian ABA ke log proses (Tahap 5 — dulu sheet Audit Log)
+            Langkah("Mencatat rincian ABA ke log proses");
             foreach (var sandi in urutan)
             {
                 double g = grp[sandi];
-                string klas;
-                if (g > PLAFON_LPS) { totalPlafon  += g; klas = "Di atas plafon (>2M) -> C19"; }
-                else                { totalDijamin += g; klas = "Dijamin (<=2M) -> C18"; }
-
-                if (wsLog != null)
-                {
-                    ((Excel.Range)wsLog.Cells[rowLog, 1]).NumberFormat = "@";
-                    ((Excel.Range)wsLog.Cells[rowLog, 1]).Value2 = "'" + sandi;
-                    ((Excel.Range)wsLog.Cells[rowLog, 2]).Value2 = nmMap[sandi];
-                    ((Excel.Range)wsLog.Cells[rowLog, 3]).Value2 = g;
-                    ((Excel.Range)wsLog.Cells[rowLog, 3]).NumberFormat = "#,##0";
-                    ((Excel.Range)wsLog.Cells[rowLog, 4]).Value2 = klas;
-                    rowLog++;
-                }
+                bool diAtasPlafon = g > PLAFON_LPS;
+                if (diAtasPlafon) totalPlafon += g; else totalDijamin += g;
+                CKPNLibrary.Helpers.LogProses.Catat("CKPN ABA", sandi, CKPNLibrary.Helpers.LogProses.OK,
+                    CKPNLibrary.Helpers.LogProses.R()
+                        .Tambah("Nama bank", nmMap[sandi])
+                        .Tambah("Total EAD", g)
+                        .Tambah("Klasifikasi", diAtasPlafon ? "Di atas plafon (>2M) -> C19" : "Dijamin (<=2M) -> C18"));
             }
-
-            if (wsLog != null)
-            {
-                rowLog = TulisTotalLog(wsLog, rowLog, "TOTAL EAD Dijamin (C18)", totalDijamin);
-                rowLog = TulisTotalLog(wsLog, rowLog, "TOTAL EAD Di atas plafon (C19)", totalPlafon);
-                rowLog = TulisTotalLog(wsLog, rowLog, "TOTAL EAD Antar Bank", totalDijamin + totalPlafon);
-            }
+            CKPNLibrary.Helpers.LogProses.Catat("CKPN ABA", "Ringkasan", CKPNLibrary.Helpers.LogProses.OK,
+                CKPNLibrary.Helpers.LogProses.R()
+                    .Tambah("Jumlah bank", urutan.Count)
+                    .Tambah("EAD dijamin (C18)", totalDijamin)
+                    .Tambah("EAD di atas plafon (C19)", totalPlafon)
+                    .Tambah("Total EAD antar bank", totalDijamin + totalPlafon));
 
             Langkah("Menulis hasil ABA ke Summary!C18 dan C19");
             ((Excel.Range)wsSum.Range["C18"]).Value2 = totalDijamin;

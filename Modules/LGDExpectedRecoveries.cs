@@ -59,9 +59,8 @@ namespace CKPNLibrary.Modules
             if (wsL == null)
                 throw new InvalidOperationException("Sheet '" + SheetLGD + "' tidak ditemukan.");
 
-            var wsLog = CariSheet(wb, SheetLog);
-            if (wsLog == null)
-                throw new InvalidOperationException("Sheet '" + SheetLog + "' tidak ditemukan.");
+            // Tahap 5: sheet "Audit Log" tidak dipakai lagi — catatan ditulis ke log proses (file teks)
+            Excel.Worksheet wsLog = null;
 
             // Parse file paths: "2020=F:\path\file.xlsx|2021=..."
             var filePaths = ParseFilePaths(filePathsStr);
@@ -239,8 +238,8 @@ namespace CKPNLibrary.Modules
                          statRefKC.BakiTanpaKC.ToString("N0") + "." +
                          "\nRekening ini TIDAK ikut dihitung." +
                          "\nJenis instrumen: " + statRefKC.RingkasProdukTanpaKC() +
-                         "\nRincian per tahun ada di sheet 'Audit Log' " +
-                         "(baris \"LGD ER - Referensi KC\").";
+                        "\nRincian per tahun ada di log proses (Panel CKPN › Riwayat › " +
+                         "Log proses, proses \"LGD ER - Referensi KC\").";
             }
             }
             finally
@@ -715,25 +714,8 @@ namespace CKPNLibrary.Modules
         }
 
         // ================================================================
-        // TulisAuditLog: catat ringkasan LGD ER ke sheet Audit Log
-        //
-        // Pola penulisan: SATU BARIS per file tahunan (detail per tahun)
-        // + SATU BARIS RINGKASAN di akhir (total keseluruhan)
-        //
-        // Kolom A-Y sesuai standar Audit Log:
-        //   A  = Timestamp
-        //   B  = Jenis Proses ("LGD Expected Recoveries")
-        //   C  = Periode/Label ("Des YYYY")
-        //   D  = Tgl Ref / Tahun file (angka)
-        //   E  = Tgl Akhir / currYear (di baris ringkasan)
-        //   F  = Path Awal (kosong untuk LGD-ER, satu file per tahun)
-        //   G  = Path File tahunan
-        //   H  = Status ("OK" / "File kosong")
-        //   I  = #Rek Awal / #Rek KC2900 di file ini
-        //   J  = #Rek Akhir (di baris ringkasan = total rekening masuk cohort)
-        //   K  = #Rek WO (di baris ringkasan = total cohort)
-        //   L  = Total Saldo Awal (total baki KC2900 file ini)
-        //   S  = Ruang Lingkup KC (di baris ringkasan)
+        // TulisAuditLog: catat ringkasan LGD ER ke log proses (Tahap 5;
+        // dulu sheet "Audit Log"). Satu catatan per file tahunan + ringkasan.
         // ================================================================
         private void TulisAuditLog(
             Excel.Worksheet wsLog,
@@ -746,99 +728,39 @@ namespace CKPNLibrary.Modules
             Dictionary<int, HashSet<string>> cohortRek,
             string sheetKCList)
         {
-            // Cari baris kosong berikutnya di Audit Log
-            int nextRow = NextAuditLogRow(wsLog);
-            double ts   = DateTime.Now.ToOADate();
-
-            // ── Detail per file tahunan ──────────────────────────────
-            // Urutkan tahun ascending (tua ke baru)
             var sortedYears = new List<int>(filePaths.Keys);
             sortedYears.Sort();
 
-            int totalRekLog   = 0;
+            int    totalRekLog  = 0;
             double totalBakiLog = 0;
-
             foreach (int yr in sortedYears)
             {
-                string path   = filePaths.ContainsKey(yr) ? filePaths[yr] : "";
-                int    nRek   = rekPerTahun.ContainsKey(yr)  ? rekPerTahun[yr]  : 0;
-                double nBaki  = bakiPerTahun.ContainsKey(yr) ? bakiPerTahun[yr] : 0;
-                string status = nRek > 0 ? "OK" : "File kosong / tidak ada data KC2900";
-
-                // Hitung jumlah rekening di cohort tahun ini
-                int nCohort = cohortRek.ContainsKey(yr) ? cohortRek[yr].Count : 0;
-
-                // A: Timestamp
-                ((Excel.Range)wsLog.Cells[nextRow, 1]).Value2 = ts;
-                ((Excel.Range)wsLog.Cells[nextRow, 1]).NumberFormat = "m/d/yyyy h:mm";
-                // B: Jenis Proses
-                ((Excel.Range)wsLog.Cells[nextRow, 2]).Value2 = "LGD Expected Recoveries";
-                // C: Periode/Label
-                ((Excel.Range)wsLog.Cells[nextRow, 3]).Value2 = "Des " + yr;
-                // D: Tahun file (Tgl Ref)
-                ((Excel.Range)wsLog.Cells[nextRow, 4]).Value2 = yr;
-                // G: Path File
-                ((Excel.Range)wsLog.Cells[nextRow, 7]).NumberFormat = "@";
-                ((Excel.Range)wsLog.Cells[nextRow, 7]).Value2 = path;
-                // H: Status
-                ((Excel.Range)wsLog.Cells[nextRow, 8]).Value2 = status;
-                // I: #Rek KC2900 di file ini
-                ((Excel.Range)wsLog.Cells[nextRow, 9]).Value2 = nRek;
-                // J: #Rek masuk cohort tahun ini
-                ((Excel.Range)wsLog.Cells[nextRow, 10]).Value2 = nCohort;
-                // L: Total Baki KC2900
-                ((Excel.Range)wsLog.Cells[nextRow, 12]).Value2 = nBaki;
-                ((Excel.Range)wsLog.Cells[nextRow, 12]).NumberFormat = "#,##0;(#,##0);-";
-
-                totalRekLog   += nRek;
-                totalBakiLog  += nBaki;
-                nextRow++;
+                int    nRek    = rekPerTahun.ContainsKey(yr)  ? rekPerTahun[yr]  : 0;
+                double nBaki   = bakiPerTahun.ContainsKey(yr) ? bakiPerTahun[yr] : 0;
+                int    nCohort = cohortRek.ContainsKey(yr)    ? cohortRek[yr].Count : 0;
+                LogProses.Catat("LGD Expected Recoveries", "Des " + yr,
+                    nRek > 0 ? LogProses.OK : LogProses.Peringatan, LogProses.R()
+                        .TambahBila(nRek == 0, "Keterangan", "File kosong / tidak ada data KC2900")
+                        .Tambah("Rek KC2900", nRek)
+                        .Tambah("Rek masuk cohort " + yr, nCohort)
+                        .Tambah("Total baki KC2900", nBaki)
+                        .Tambah("File", filePaths[yr]));
+                totalRekLog  += nRek;
+                totalBakiLog += nBaki;
             }
 
-            // ── Baris ringkasan keseluruhan ──────────────────────────
-            // Total cohort dan rekening lintas semua tahun
-            int totalRekCohort = accountMeta.Count;
-            int totalCohort    = cohortRek.Count;
-
-            ((Excel.Range)wsLog.Cells[nextRow, 1]).Value2 = ts;
-            ((Excel.Range)wsLog.Cells[nextRow, 1]).NumberFormat = "m/d/yyyy h:mm";
-            ((Excel.Range)wsLog.Cells[nextRow, 2]).Value2 = "LGD Expected Recoveries";
-            // C: Label ringkasan
-            ((Excel.Range)wsLog.Cells[nextRow, 3]).Value2 = "RINGKASAN " + minYear + "-" + currYear;
-            // D: Tahun tertua (minYear)
-            ((Excel.Range)wsLog.Cells[nextRow, 4]).Value2 = minYear;
-            // E: currYear
-            ((Excel.Range)wsLog.Cells[nextRow, 5]).Value2 = currYear;
-            // H: Status
-            ((Excel.Range)wsLog.Cells[nextRow, 8]).Value2 = "OK - " + totalCohort + " cohort";
-            // I: Total #Rek KC2900 dari semua file
-            ((Excel.Range)wsLog.Cells[nextRow, 9]).Value2 = totalRekLog;
-            // J: Total rekening masuk cohort (lintas semua tahun)
-            ((Excel.Range)wsLog.Cells[nextRow, 10]).Value2 = totalRekCohort;
-            // K: Jumlah cohort aktif
-            ((Excel.Range)wsLog.Cells[nextRow, 11]).Value2 = totalCohort;
-            // L: Total baki KC2900 lintas semua file
-            ((Excel.Range)wsLog.Cells[nextRow, 12]).Value2 = totalBakiLog;
-            ((Excel.Range)wsLog.Cells[nextRow, 12]).NumberFormat = "#,##0;(#,##0);-";
-            // S: Ruang lingkup KC (kolom 19)
-            ((Excel.Range)wsLog.Cells[nextRow, 19]).Value2 = sheetKCList;
-
-            // Warna baris ringkasan agar mudah dibedakan
-            Excel.Range ringkasanRng = (Excel.Range)wsLog.Range[
-                wsLog.Cells[nextRow, 1], wsLog.Cells[nextRow, 19]];
-            ringkasanRng.Interior.Color = 0xD4EBD4;  // hijau muda
-            ringkasanRng.Font.Bold      = true;
+            LogProses.Catat("LGD Expected Recoveries", "Ringkasan " + minYear + "-" + currYear, LogProses.OK,
+                LogProses.R()
+                    .Tambah("Jumlah cohort", cohortRek.Count)
+                    .Tambah("Rek KC2900 semua file", totalRekLog)
+                    .Tambah("Rek masuk cohort", accountMeta.Count)
+                    .Tambah("Total baki KC2900", totalBakiLog)
+                    .Tambah("KC", sheetKCList));
         }
 
         private static int NextAuditLogRow(Excel.Worksheet wsLog)
         {
-            for (int r = 5; r <= 1000000; r++)
-            {
-                string a = (((Excel.Range)wsLog.Cells[r, 1]).Value2 ?? "").ToString().Trim();
-                string b = (((Excel.Range)wsLog.Cells[r, 2]).Value2 ?? "").ToString().Trim();
-                if (string.IsNullOrEmpty(a) && string.IsNullOrEmpty(b)) return r;
-            }
-            return 1000001;
+            return 0;   // tidak ada baris sheet lagi (Tahap 5)
         }
 
         // ================================================================
@@ -984,97 +906,38 @@ namespace CKPNLibrary.Modules
         }
 
         // ================================================================
-        // TulisLogRefKC: tulis rekap Jenis Instrumen x Kode KC ke Audit Log
-        //
-        // Satu baris per kombinasi (tahun, jenis instrumen, kode KC), plus
-        // satu baris ringkasan rekening tanpa Kode KC di akhir.
-        //
-        // Pemetaan kolom (mengikuti konvensi Audit Log yang sudah ada):
-        //   A  Timestamp
-        //   B  Jenis Proses  = "LGD ER - Referensi KC"
-        //   C  Periode       = "Des yyyy"
-        //   D  Tahun file
-        //   H  Status        = "Terpetakan" / "TIDAK ADA KC" / "Terpetakan (ganda)"
-        //   I  Jumlah rekening
-        //   L  Total baki debet
-        //   T  Rek tanpa Kode KC (hanya di baris ringkasan)
-        //   U  Jenis Instrumen
-        //   V  Kode KC
-        //   W  Contoh No Rekening (maksimal 5, hanya untuk yang tanpa KC)
+        // TulisLogRefKC: rekap Jenis Instrumen x Kode KC ke log proses
+        // (Tahap 5; dulu sheet "Audit Log"). Satu catatan per kombinasi
+        // (tahun, jenis instrumen, kode KC) + satu ringkasan.
         // ================================================================
         private void TulisLogRefKC(Excel.Worksheet wsLog, StatistikRefKC stat)
         {
             var baris = stat.Semua();
             if (baris.Count == 0) return;
-
-            var ganda   = stat.ProdukGanda();
-            int nextRow = NextAuditLogRow(wsLog);
-            double ts   = DateTime.Now.ToOADate();
-
-            // Header kolom tambahan — ditulis ulang agar selalu berlabel
-            ((Excel.Range)wsLog.Cells[4, 20]).Value2 = "Rek tanpa Kode KC";
-            ((Excel.Range)wsLog.Cells[4, 21]).Value2 = "Jenis Instrumen";
-            ((Excel.Range)wsLog.Cells[4, 22]).Value2 = "Kode KC";
-            ((Excel.Range)wsLog.Cells[4, 23]).Value2 = "Contoh No Rekening";
+            var ganda = stat.ProdukGanda();
 
             foreach (var b in baris)
             {
                 bool tanpaKC = b.KodeKC.Length == 0;
-                string status;
-                if (tanpaKC)
-                    status = "TIDAK ADA KC - lengkapi kolom M manual";
-                else if (ganda.Contains(b.Tahun + "|" + b.Produk))
-                    status = "Terpetakan (produk ini juga ke KC lain)";
-                else
-                    status = "Terpetakan";
-
-                ((Excel.Range)wsLog.Cells[nextRow, 1]).Value2 = ts;
-                ((Excel.Range)wsLog.Cells[nextRow, 1]).NumberFormat = "m/d/yyyy h:mm";
-                ((Excel.Range)wsLog.Cells[nextRow, 2]).Value2 = "LGD ER - Referensi KC";
-                ((Excel.Range)wsLog.Cells[nextRow, 3]).Value2 = "Des " + b.Tahun;
-                ((Excel.Range)wsLog.Cells[nextRow, 4]).Value2 = b.Tahun;
-                ((Excel.Range)wsLog.Cells[nextRow, 8]).Value2 = status;
-                ((Excel.Range)wsLog.Cells[nextRow, 9]).Value2 = b.Jumlah;
-                ((Excel.Range)wsLog.Cells[nextRow, 12]).Value2 = b.Baki;
-                ((Excel.Range)wsLog.Cells[nextRow, 12]).NumberFormat = "#,##0;(#,##0);-";
-                ((Excel.Range)wsLog.Cells[nextRow, 21]).NumberFormat = "@";
-                ((Excel.Range)wsLog.Cells[nextRow, 21]).Value2 = b.Produk;
-                ((Excel.Range)wsLog.Cells[nextRow, 22]).NumberFormat = "@";
-                ((Excel.Range)wsLog.Cells[nextRow, 22]).Value2 =
-                    tanpaKC ? "(kosong)" : b.KodeKC;
-                ((Excel.Range)wsLog.Cells[nextRow, 23]).NumberFormat = "@";
-                ((Excel.Range)wsLog.Cells[nextRow, 23]).Value2 =
-                    tanpaKC ? string.Join(", ", b.Contoh.ToArray()) : "";
-
-                // Baris tanpa Kode KC diberi warna agar langsung terlihat
-                if (tanpaKC)
-                {
-                    Excel.Range rng = (Excel.Range)wsLog.Range[
-                        wsLog.Cells[nextRow, 1], wsLog.Cells[nextRow, 23]];
-                    rng.Interior.Color = CLR_HIGHLIGHT_YELLOW;
-                }
-                nextRow++;
+                bool dobel   = !tanpaKC && ganda.Contains(b.Tahun + "|" + b.Produk);
+                LogProses.Catat("LGD ER - Referensi KC", "Des " + b.Tahun,
+                    tanpaKC ? LogProses.Peringatan : LogProses.OK, LogProses.R()
+                        .Tambah("Status", tanpaKC ? "TIDAK ADA KC - lengkapi kolom M manual"
+                                        : dobel ? "Terpetakan (produk ini juga ke KC lain)" : "Terpetakan")
+                        .Tambah("Jenis instrumen", b.Produk)
+                        .Tambah("Kode KC", tanpaKC ? "(kosong)" : b.KodeKC)
+                        .Tambah("Jumlah rek", b.Jumlah)
+                        .Tambah("Baki debet", b.Baki)
+                        .TambahBila(tanpaKC, "Contoh no rek", string.Join(", ", b.Contoh.ToArray())));
             }
 
-            // ---- Baris ringkasan ----
-            ((Excel.Range)wsLog.Cells[nextRow, 1]).Value2 = ts;
-            ((Excel.Range)wsLog.Cells[nextRow, 1]).NumberFormat = "m/d/yyyy h:mm";
-            ((Excel.Range)wsLog.Cells[nextRow, 2]).Value2 = "LGD ER - Referensi KC";
-            ((Excel.Range)wsLog.Cells[nextRow, 3]).Value2 = "RINGKASAN";
-            ((Excel.Range)wsLog.Cells[nextRow, 8]).Value2 =
-                stat.TotalTanpaKC == 0
-                    ? "OK - semua rekening terpetakan"
-                    : "PERLU TINDAKAN - ada rekening tanpa Kode KC";
-            ((Excel.Range)wsLog.Cells[nextRow, 12]).Value2 = stat.BakiTanpaKC;
-            ((Excel.Range)wsLog.Cells[nextRow, 12]).NumberFormat = "#,##0;(#,##0);-";
-            ((Excel.Range)wsLog.Cells[nextRow, 20]).Value2 = stat.TotalTanpaKC;
-            ((Excel.Range)wsLog.Cells[nextRow, 21]).NumberFormat = "@";
-            ((Excel.Range)wsLog.Cells[nextRow, 21]).Value2 = stat.RingkasProdukTanpaKC();
-
-            Excel.Range ringkasanRng = (Excel.Range)wsLog.Range[
-                wsLog.Cells[nextRow, 1], wsLog.Cells[nextRow, 23]];
-            ringkasanRng.Interior.Color = CLR_GREEN_LIGHT;
-            ringkasanRng.Font.Bold      = true;
+            LogProses.Catat("LGD ER - Referensi KC", "Ringkasan",
+                stat.TotalTanpaKC == 0 ? LogProses.OK : LogProses.Peringatan, LogProses.R()
+                    .Tambah("Status", stat.TotalTanpaKC == 0 ? "OK - semua rekening terpetakan"
+                                                             : "PERLU TINDAKAN - ada rekening tanpa Kode KC")
+                    .Tambah("Rek tanpa Kode KC", stat.TotalTanpaKC)
+                    .Tambah("Baki tanpa Kode KC", stat.BakiTanpaKC)
+                    .Tambah("Jenis instrumen tanpa KC", stat.RingkasProdukTanpaKC()));
         }
 
         // ================================================================

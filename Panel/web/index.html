@@ -358,10 +358,75 @@
       <div class="judul-kartu">Tabel per periode</div>
       <div id="rw-tabel" class="gulir-x teks-kecil">—</div>
     </div>
+
+    <!-- Log proses (Tahap 5) — pengganti sheet "Audit Log" -->
+    <details class="kartu" id="kartu-log">
+      <summary class="judul-kartu">Log proses</summary>
+      <p class="teks-kecil">Catatan setiap langkah hitung (Individu, Net Flow, Migration, LGD ER/CS, ABA, Summary),
+        simpan grup, dan hitung semua grup. Dulu ditulis ke sheet Audit Log; kini ke file teks per user per bulan
+        di <span class="path">library\logs\proses</span>, jadi workbook tidak ikut membesar.</p>
+      <div class="lp-filter">
+        <label class="teks-kecil" for="lp-bulan">Bulan</label>
+        <select id="lp-bulan" class="pilih"></select>
+        <label class="teks-kecil" for="lp-proses">Proses</label>
+        <select id="lp-proses" class="pilih"></select>
+        <label class="teks-kecil" for="lp-status">Status</label>
+        <select id="lp-status" class="pilih">
+          <option value="">Semua</option>
+          <option value="masalah">Gagal + peringatan</option>
+          <option value="OK">OK</option>
+          <option value="INFO">Info</option>
+          <option value="DILEWATI">Dilewati</option>
+        </select>
+        <label class="teks-kecil" for="lp-pengguna">User</label>
+        <select id="lp-pengguna" class="pilih"></select>
+        <input id="lp-cari" class="isian" type="search" placeholder="Cari label, KC, nama file, angka…" aria-label="Cari di log">
+      </div>
+      <div class="baris-antara">
+        <div id="lp-info" class="teks-kecil">—</div>
+        <div class="baris-tombol">
+          <button id="lp-muat" class="tautan" type="button">Muat ulang</button>
+          <button class="tautan" type="button" data-folder="proses">Buka folder</button>
+        </div>
+      </div>
+      <div id="lp-jalan" class="lp-jalan" hidden></div>
+      <ol id="lp-daftar" class="lp-daftar"></ol>
+      <button id="lp-lagi" class="tombol-sekunder lebar" type="button" hidden>Tampilkan lebih banyak</button>
+
+      <div id="lp-lama" class="lp-lama" hidden>
+        <div class="judul-kartu">Sheet Audit Log lama</div>
+        <p id="lp-lama-info" class="teks-kecil"></p>
+        <button id="lp-lama-arsip" class="tombol-sekunder" type="button">Arsipkan ke file teks lalu hapus sheet…</button>
+        <div id="lp-lama-konfirmasi" class="form-bahaya" hidden>
+          <p class="teks-kecil">Seluruh isi sheet disalin ke <span class="path">library\logs\proses\arsip_sheet_audit_log_….txt</span>,
+            lalu sheet <b>Audit Log</b> dihapus dari workbook. Simpan workbook (Ctrl+S) setelahnya agar ukuran file mengecil.
+            Pastikan patch Tahap 5 pada modul sudah diterapkan, karena modul versi lama masih mencari sheet ini.</p>
+          <div class="baris-tombol">
+            <button id="lp-lama-ya" class="tombol-sekunder bahaya" type="button">Ya, arsipkan &amp; hapus</button>
+            <button id="lp-lama-batal" class="tautan" type="button">Batal</button>
+          </div>
+        </div>
+        <div id="lp-lama-hasil" class="teks-kecil" role="status"></div>
+      </div>
+    </details>
   </section>
 
   <!-- ================= Analisis PD (Tahap 4) ================= -->
   <section id="tab-analisis" class="isi-tab" role="tabpanel" hidden>
+    <!-- Tahap 4g: penjelasan perubahan CKPN antarperiode -->
+    <div class="kartu">
+      <div class="judul-kartu">Mengapa CKPN berubah?</div>
+      <div class="baris-filter">
+        <label class="teks-kecil" for="pj-periode">Periode</label>
+        <select id="pj-periode" class="pilih"></select>
+        <label class="teks-kecil" for="pj-lingkup">Lingkup</label>
+        <select id="pj-lingkup" class="pilih"></select>
+      </div>
+      <div id="pj-info" class="teks-kecil jarak-atas">Memuat…</div>
+      <div id="pj-ov"></div>
+      <div id="pj-isi"></div>
+    </div>
+
     <div class="kartu">
       <div class="judul-kartu">Analisis PD</div>
       <div class="baris-filter">

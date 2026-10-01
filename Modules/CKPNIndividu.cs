@@ -235,37 +235,29 @@ namespace CKPNLibrary.Modules
         }
 
         // ----------------------------------------------------------------
-        // Tulis ringkasan eksekusi ke sheet "Audit Log" — SATU BARIS PER KC
+        // Log proses (Tahap 5): ringkasan eksekusi — satu catatan per KC
+        // + satu ringkasan. Dulu ditulis ke sheet "Audit Log"; kini ke file
+        // teks lewat LogProses (lihat Panel CKPN › Riwayat › Log proses).
         // ----------------------------------------------------------------
         private void TulisAuditLog(
             string filePath, int topN, int totalNOA, double totalOS,
             Dictionary<string, int> noaPerKC, string[] sheetKCList)
         {
-            var wsLog = CariSheet(_app.ActiveWorkbook, "Audit Log");
-            if (wsLog == null) return;
-
-            Excel.Range lastCell = (Excel.Range)wsLog.Cells[wsLog.Rows.Count, "A"];
-            Excel.Range endCell  = (Excel.Range)lastCell.End[Excel.XlDirection.xlUp];
-            int rowLog = (int)endCell.Row;
-            if (rowLog < 4) rowLog = 4;
-
-            double ts = DateTime.Now.ToOADate();
-
             foreach (var kc in sheetKCList)
             {
-                rowLog++;
                 int noa = noaPerKC.ContainsKey(kc) ? noaPerKC[kc] : 0;
-
-                Excel.Range cA = (Excel.Range)wsLog.Cells[rowLog, "A"];
-                cA.Value2 = ts;
-                cA.NumberFormat = "yyyy-mm-dd hh:mm:ss";
-
-                ((Excel.Range)wsLog.Cells[rowLog, "B"]).Value2 = "CKPN Individu - " + kc;
-                ((Excel.Range)wsLog.Cells[rowLog, "F"]).NumberFormat = "@";
-                ((Excel.Range)wsLog.Cells[rowLog, "F"]).Value2 = filePath;
-                ((Excel.Range)wsLog.Cells[rowLog, "H"]).Value2 = (noa == 0 ? "Kosong / cek" : "Sukses");
-                ((Excel.Range)wsLog.Cells[rowLog, "I"]).Value2 = noa;
+                LogProses.Catat("CKPN Individu", kc, noa == 0 ? LogProses.Peringatan : LogProses.OK,
+                    LogProses.R()
+                        .TambahBila(noa == 0, "Keterangan", "Kosong / cek")
+                        .Tambah("NOA kontrak", noa)
+                        .Tambah("File", filePath));
             }
+            LogProses.Catat("CKPN Individu", "Ringkasan", LogProses.OK, LogProses.R()
+                .Tambah("Top-N", topN)
+                .Tambah("OS Top-N", totalOS)
+                .Tambah("NOA semua KC", totalNOA)
+                .Tambah("KC", string.Join(",", sheetKCList))
+                .Tambah("File", filePath));
         }
 
         // ================================================================

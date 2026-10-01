@@ -62,6 +62,7 @@ namespace CKPNLibrary.Data
 
             var grup = new List<object>();
             double nf = 0, mig = 0, ppka = 0;
+            double nfInd = 0, nfKol = 0, migInd = 0, migKol = 0;   // Tahap 4g: pemisahan individu/kolektif
             int tersimpan = 0;
             Dictionary<string, object> ringkasTerbaru = null;
             string waktuTerbaru = "";
@@ -78,12 +79,16 @@ namespace CKPNLibrary.Data
                 double gNf = Periode.Nilai(rg, "nf_total"), gMig = Periode.Nilai(rg, "mig_total");
                 double gPpka = Convert.ToDouble(aktif["ppkaGrup"]);
                 nf += gNf; mig += gMig; ppka += gPpka;
+                double gNfInd = Periode.Nilai(rg, "nf_individu"), gNfKol = Periode.Nilai(rg, "nf_kolektif");
+                double gMigInd = Periode.Nilai(rg, "mig_individu"), gMigKol = Periode.Nilai(rg, "mig_kolektif");
+                nfInd += gNfInd; nfKol += gNfKol; migInd += gMigInd; migKol += gMigKol;
                 object lgd;
                 rg.TryGetValue("lgd_gabungan", out lgd);
                 grup.Add(new Dictionary<string, object>
                 {
                     { "nama", g.Nama }, { "kodeKC", g.KodeKC }, { "ada", true }, { "versi", aktif["versi"] },
-                    { "nf", gNf }, { "mig", gMig }, { "ppka", gPpka }, { "lgd", lgd }
+                    { "nf", gNf }, { "mig", gMig }, { "ppka", gPpka }, { "lgd", lgd },
+                    { "nfInd", gNfInd }, { "nfKol", gNfKol }, { "migInd", gMigInd }, { "migKol", gMigKol }
                 });
                 string w = Convert.ToString(aktif["waktu"]);
                 if (string.CompareOrdinal(w, waktuTerbaru) > 0) { waktuTerbaru = w; ringkasTerbaru = rg; }
@@ -120,7 +125,8 @@ namespace CKPNLibrary.Data
                 { "nf", totNf }, { "mig", totMig }, { "ppka", ppkaTampil }, { "ckpn", ckpn },
                 { "selisih", ckpn.HasValue ? ckpn.Value - ppkaTampil : (double?)null },
                 { "aba", new Dictionary<string, object> { { "ckpn", abaCkpn }, { "ppka", abaPpka } } },
-                { "jurnal", jurnal }, { "grup", grup }
+                { "jurnal", jurnal }, { "grup", grup },
+                { "nfInd", nfInd }, { "nfKol", nfKol }, { "migInd", migInd }, { "migKol", migKol }
             };
         }
     }

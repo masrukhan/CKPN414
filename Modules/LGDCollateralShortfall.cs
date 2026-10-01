@@ -119,7 +119,7 @@ namespace CKPNLibrary.Modules
             var wsLog = CariSheet(wb, SheetLog);
 
             if (ws    == null) throw new InvalidOperationException("Sheet '" + SheetOutput + "' tidak ditemukan.");
-            if (wsLog == null) throw new InvalidOperationException("Sheet '" + SheetLog    + "' tidak ditemukan.");
+            // Tahap 5: sheet "Audit Log" tidak wajib lagi — catatan ditulis ke log proses (file teks)
 
             // Parse konfigurasi file periode
             var periodes = ParsePeriodeCfg(fileConfigStr);
@@ -287,17 +287,16 @@ namespace CKPNLibrary.Modules
                 object v = ((Excel.Range)ws.Cells[r, "G"]).Value2;
                 if (v != null) { double d; if (double.TryParse(v.ToString(), out d)) totRecovery += d; }
             }
-            TulisLog(wsLog, logRow, "RINGKASAN",
-                     periodes[0].RefYear, periodes[periodes.Count - 1].RefYear,
-                     "Files: " + nOK + " OK, " + nSkip + " skipped",
-                     "Ringkasan", totRekMacet, lastOut - ROW_FIRST + 1, totBakiMacet);
-            // Kolom M: total recovery, N: scope KC
-            ((Excel.Range)wsLog.Cells[logRow, "M"]).Value2 = totRecovery;
-            ((Excel.Range)wsLog.Cells[logRow, "M"]).NumberFormat = "#,##0;(#,##0);-";
-            ((Excel.Range)wsLog.Cells[logRow, "N"]).Value2 = "KC: " + sheetKCList;
-            Excel.Range hlRow = (Excel.Range)wsLog.Range["A" + logRow, "T" + logRow];
-            hlRow.Interior.Color = CLR_YELLOW_SOFT;
-            hlRow.Font.Bold = true;
+            // Ringkasan ke log proses (Tahap 5 — dulu baris kuning di sheet Audit Log)
+            LogProses.Catat("LGD CS Macet", "Ringkasan", nSkip == 0 ? LogProses.OK : LogProses.Peringatan,
+                LogProses.R()
+                    .Tambah("Periode", periodes[0].RefYear + "-" + periodes[periodes.Count - 1].RefYear)
+                    .Tambah("File", nOK + " OK, " + nSkip + " dilewati")
+                    .Tambah("Rek macet + jaminan fisik (semua periode)", totRekMacet)
+                    .Tambah("Rekening macet selesai", lastOut - ROW_FIRST + 1)
+                    .Tambah("Total baki macet", totBakiMacet)
+                    .Tambah("Total recovery (kolom G)", totRecovery)
+                    .Tambah("KC", sheetKCList));
 
             Pemberitahu.Info("LGD Collateral Shortfall",
                 "Perhitungan LGD Collateral Shortfall (MACET) selesai.\n" +
@@ -694,7 +693,8 @@ namespace CKPNLibrary.Modules
         }
 
         // ================================================================
-        // Audit Log
+        // Log proses (Tahap 5) — dulu sheet "Audit Log", kini file teks.
+        // Nama & parameter method dipertahankan; wsLog dan row tidak dipakai lagi.
         // ================================================================
         private void TulisLog(
             Excel.Worksheet wsLog, int row,
@@ -702,29 +702,22 @@ namespace CKPNLibrary.Modules
             string pathFile, string status,
             int nRekAwal, int nRekAkhir, double totalBaki)
         {
-            ((Excel.Range)wsLog.Cells[row, "A"]).Value2 = DateTime.Now.ToOADate();
-            ((Excel.Range)wsLog.Cells[row, "A"]).NumberFormat = "m/d/yyyy h:mm";
-            ((Excel.Range)wsLog.Cells[row, "B"]).Value2 = "LGD-CS MACET";
-            ((Excel.Range)wsLog.Cells[row, "C"]).Value2 = periode;
-            if (tglAwal  > 0) { ((Excel.Range)wsLog.Cells[row, "D"]).Value2 = tglAwal;  ((Excel.Range)wsLog.Cells[row, "D"]).NumberFormat = "0"; }
-            if (tglAkhir > 0) { ((Excel.Range)wsLog.Cells[row, "E"]).Value2 = tglAkhir; ((Excel.Range)wsLog.Cells[row, "E"]).NumberFormat = "0"; }
-            ((Excel.Range)wsLog.Cells[row, "G"]).Value2 = pathFile;
-            ((Excel.Range)wsLog.Cells[row, "H"]).Value2 = status;
-            if (nRekAwal  > 0) ((Excel.Range)wsLog.Cells[row, "I"]).Value2 = nRekAwal;
-            if (nRekAkhir > 0) ((Excel.Range)wsLog.Cells[row, "J"]).Value2 = nRekAkhir;
-            if (totalBaki != 0)
-            {
-                ((Excel.Range)wsLog.Cells[row, "L"]).Value2 = totalBaki;
-                ((Excel.Range)wsLog.Cells[row, "L"]).NumberFormat = "#,##0;(#,##0);-";
-            }
+            bool ok = status == "OK";
+            string st = ok ? LogProses.OK
+                      : status.StartsWith("Skipped", StringComparison.OrdinalIgnoreCase) ? LogProses.Dilewati
+                      : LogProses.Peringatan;
+            LogProses.Catat("LGD CS Macet", periode, st, LogProses.R()
+                .TambahBila(!ok, "Keterangan", status)
+                .TambahBila(tglAwal > 0, "Tahun", tglAwal)
+                .Tambah("Rek di file", nRekAwal)
+                .Tambah("Rek macet + jaminan fisik", nRekAkhir)
+                .Tambah("Baki macet", totalBaki)
+                .Tambah("File", pathFile));
         }
 
         private static int NextAuditLogRow(Excel.Worksheet wsLog)
         {
-            Excel.Range lc = (Excel.Range)wsLog.Cells[wsLog.Rows.Count, "A"];
-            Excel.Range ec = (Excel.Range)lc.End[Excel.XlDirection.xlUp];
-            int last = (int)ec.Row;
-            return last < 4 ? 5 : last + 1;
+            return 0;   // tidak ada baris sheet lagi (Tahap 5)
         }
 
         // ================================================================

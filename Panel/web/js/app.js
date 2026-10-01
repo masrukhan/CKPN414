@@ -80,8 +80,8 @@
       var nama = b.getAttribute("data-tab");
       if (nama === "periode") { muatPeriode(); muatPenyesuaian(); if ($("db-kelola").open) muatInfoDatabase(); }
       if (nama === "overview" && !dataOverview) muatOverview();
-      if (nama === "riwayat") muatRiwayat();
-      if (nama === "analisis") muatSumberAnalisis();
+      if (nama === "riwayat") { muatRiwayat(); if ($("kartu-log").open) { muatLog($("lp-bulan").value); muatInfoAuditLog(); } }
+      if (nama === "analisis") { muatSumberAnalisis(); muatPenjelasan($("pj-periode").value); }
       Grafik.sembunyiTip();
       tombolTab.forEach(function (x) {
         var aktif = x.getAttribute("data-tab") === nama;
@@ -638,6 +638,7 @@
       gambarAlur(d);
       gambarGrup(d);
       gambarKonsolidasi(d);
+      sinkronBatch(d);
     }).catch(function (e) { teks("periode-info", e.message); });
   }
 
@@ -1615,6 +1616,7 @@
   // 8b. Hitung semua grup sekaligus (Tahap 4d)
   // =====================================================================
   var batchAktif = false, runTerakhirBatch = null;
+  var batchInfo = null;   // { tanggal, versiAwal: {kodeKC: versi aktif saat batch dimulai}, berhenti }
   var LABEL_BATCH = {
     "antre": "menunggu", "menghitung": "menghitung…", "tersimpan": "tersimpan", "perlu-review": "perlu review",
     "gagal": "gagal", "dibatalkan": "dibatalkan"
@@ -1640,6 +1642,10 @@
 
   onEvent("batchMulai", function (d) {
     batchAktif = true;
+    batchInfo = { tanggal: d.tanggal, versiAwal: {}, berhenti: d.berhentiBilaTemuan };
+    ((statusP && statusP.tanggal === d.tanggal && statusP.grup) || []).forEach(function (g) {
+      batchInfo.versiAwal[g.kodeKC] = g.aktif ? g.aktif.versi : 0;
+    });
     runTerakhirBatch = null;
     tampil("kartu-hasil", false);
     tampil("kartu-simpan", false);
@@ -1651,6 +1657,9 @@
     d.grup.forEach(function (g, i) {
       var li = el("li", "antre");
       li.id = "bg-" + i;
+      li.dataset.kode = g.kodeKC;
+      li.dataset.nama = g.nama;
+      li.dataset.status = "antre";
       var kepala = el("div", "baris-antara");
       var kiri = el("div");
       kiri.appendChild(el("div", "nama-grup", g.nama));
@@ -1669,6 +1678,7 @@
     var li = $("bg-" + (d.ke - 1));
     if (!li) return;
     li.className = d.status;
+    li.dataset.status = d.status;
     var chip = li.querySelector(".status-grup");
     chip.className = "status-grup " + (d.status === "tersimpan" ? "tersimpan" : d.status === "perlu-review" || d.status === "menghitung" ? "dihitung" : "");
     chip.textContent = LABEL_BATCH[d.status] + (d.versi ? " v" + d.versi : "");
@@ -1681,12 +1691,14 @@
 
   onEvent("batchSelesai", function (d) {
     batchAktif = false;
+    if (batchInfo) batchInfo.selesai = d;
     var n = { tersimpan: 0, review: 0 };
     (d.hasil || []).forEach(function (h) { if (h.status === "tersimpan") n.tersimpan++; if (h.status === "perlu-review") n.review++; });
     var w = $("batch-ringkas");
     w.innerHTML = "";
     var teksRingkas = n.tersimpan + " grup tersimpan otomatis" + (n.review ? " · " + n.review + " perlu review" : "") +
       (d.sisa ? " · " + d.sisa + " grup belum dihitung" : "");
+    tambahTombolBaris();
     if (d.status === "selesai") w.appendChild(el("div", "status-hasil ok", "Selesai · " + teksRingkas));
     else if (d.status === "perlu-review") {
       w.appendChild(el("div", "status-hasil batal", "Berhenti untuk review · " + teksRingkas));
@@ -1695,7 +1707,8 @@
     } else if (d.status === "dibatalkan") w.appendChild(el("div", "status-hasil batal", "Dibatalkan · " + teksRingkas));
     else w.appendChild(el("div", "status-hasil err", "Gagal: " + (d.error || "") + " · " + teksRingkas));
     if (n.review && d.status !== "perlu-review")
-      w.appendChild(el("div", "teks-kecil", "Grup bertanda perlu review: hitung satu per satu dari kartu grupnya (Hitung grup ini), review, lalu simpan."));
+      w.appendChild(el("div", "teks-kecil", "Langkah berikutnya: kerjakan grup bertanda satu per satu — tekan Hitung grup ini pada barisnya, " +
+        "review, lalu Simpan. Status di kartu ini ikut diperbarui. Tidak perlu menjalankan Hitung semua grup lagi."));
     tampil("btn-batch-tutup", true);
     // Grup tempat proses berhenti: tampilkan kartu hasil + review agar bisa langsung disimpan
     if (d.status === "perlu-review" && runTerakhirBatch) { tampilkanHasil(runTerakhirBatch); muatReview(); }
@@ -1703,6 +1716,57 @@
     muatPersiapan();
     segarkanPerGrup();
   });
+
+  // Setelah batch selesai: baris yang belum tersimpan diberi tombol "Hitung grup ini"
+  function tambahTombolBaris() {
+    document.querySelectorAll("#batch-daftar > li").forEach(function (li) {
+      var st = li.dataset.status;
+      if (st === "tersimpan" || st === "tersimpan-manual" || li.querySelector(".aksi-batch")) return;
+      var aksi = el("div", "aksi-grup aksi-batch");
+      aksi.appendChild(tombol("Hitung grup ini", "tombol-sekunder", function () {
+        hitungGrup({ nama: li.dataset.nama, kodeKC: li.dataset.kode, kc: li.dataset.kode.split(",") });
+      }));
+      li.appendChild(aksi);
+    });
+  }
+
+  // Selaraskan kartu "Hitung semua grup" dengan status grup terbaru (dipanggil tiap tab Per grup dimuat):
+  // grup bertanda yang kemudian dihitung/disimpan satu per satu ikut berubah statusnya.
+  function sinkronBatch(d) {
+    if (!batchInfo || batchAktif || $("kartu-batch").hidden || d.tanggal !== batchInfo.tanggal) return;
+    var sisaReview = 0, total = 0;
+    document.querySelectorAll("#batch-daftar > li").forEach(function (li) {
+      total++;
+      var g = null;
+      (d.grup || []).forEach(function (x) { if (x.kodeKC === li.dataset.kode) g = x; });
+      if (!g) { if (li.dataset.status !== "tersimpan") sisaReview++; return; }
+      var st = li.dataset.status;
+      if (st !== "tersimpan" && st !== "tersimpan-manual") {
+        var awal = batchInfo.versiAwal[li.dataset.kode] || 0;
+        var chip = li.querySelector(".status-grup");
+        if (g.aktif && g.aktif.versi > awal && (g.status === "tersimpan")) {
+          li.dataset.status = "tersimpan-manual";
+          li.className = "tersimpan";
+          chip.className = "status-grup tersimpan";
+          chip.textContent = "tersimpan v" + g.aktif.versi + " (per grup)";
+          var ul = li.querySelector(".batch-temuan");
+          ul.innerHTML = "";
+          ul.appendChild(el("li", "ok-ringan", "Direview & disimpan " + g.aktif.waktu + " oleh " + g.aktif.pengguna));
+          var ak = li.querySelector(".aksi-batch");
+          if (ak) ak.parentNode.removeChild(ak);
+        } else if (g.status === "dihitung" || g.status === "dihitung-ulang") {
+          chip.className = "status-grup dihitung";
+          chip.textContent = "dihitung — belum disimpan";
+        }
+      }
+      if (li.dataset.status !== "tersimpan" && li.dataset.status !== "tersimpan-manual") sisaReview++;
+    });
+    var w = $("batch-ringkas");
+    var info = w.querySelector(".sinkron-batch") || w.appendChild(el("div", "teks-kecil sinkron-batch"));
+    info.className = sisaReview ? "teks-kecil sinkron-batch" : "status-hasil ok sinkron-batch";
+    info.textContent = sisaReview ? "Status terkini: " + (total - sisaReview) + " dari " + total + " grup tersimpan · " + sisaReview + " belum."
+                                  : "Semua " + total + " grup sudah tersimpan — lanjut ke Konsolidasi vs PPKA.";
+  }
 
   // =====================================================================
   // 9. Tab Riwayat antarperiode (Tahap 4) — pengganti Dashboard CKPN
@@ -2100,6 +2164,424 @@
       if (!$("tab-riwayat").hidden && dataRw) gambarRiwayat();
       if (!$("tab-analisis").hidden && dataAn) { if (dataAn.migrasi) siapkanMigrasi(); if (dataAn.netflow) gambarNetFlow(); }
     }, 200);
+  });
+
+  // =====================================================================
+  // 10b. Mengapa CKPN berubah? (Tahap 4g)
+  //   Membandingkan periode terpilih dengan periode sebelumnya: CKPN (individu/kolektif),
+  //   PPKA, dan indikator portofolio dari snapshot Overview (OS, EAD, Kol 2–5, NPF).
+  // =====================================================================
+  var dataPj = null;
+  var fmtJt = new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 });
+  var AMBANG_PERSEN = 0.005;   // perubahan < 0,5% dianggap relatif tetap
+  var AMBANG_POIN = 0.0005;    // rasio: < 0,05 poin dianggap tetap
+
+  function jt(v) { return v === null || v === undefined || !isFinite(v) ? "—" : fmtJt.format(v / 1e6) + " jt"; }
+  function jtTanda(v) { return v === null || v === undefined || !isFinite(v) ? "—" : (v > 0 ? "+" : v < 0 ? "−" : "") + fmtJt.format(Math.abs(v) / 1e6) + " jt"; }
+  function poin(v) { return (v > 0 ? "+" : v < 0 ? "−" : "") + (Math.abs(v) * 100).toFixed(2).replace(".", ",") + " poin"; }
+
+  function muatPenjelasan(tanggal) {
+    teks("pj-info", "Memuat…");
+    return panggil("penjelasanCKPN", { tanggal: tanggal || "" }).then(function (d) {
+      dataPj = d;
+      var sel = $("pj-periode"), selG = $("pj-lingkup"), lamaG = selG.value;
+      sel.innerHTML = "";
+      (d.daftarPeriode || []).slice().reverse().forEach(function (t) {
+        var o = el("option", "", labelPeriode(t)); o.value = t; sel.appendChild(o);
+      });
+      if (d.kini) sel.value = d.kini.tanggal;
+      selG.innerHTML = "";
+      var b = el("option", "", "Bank (semua grup + ABA)"); b.value = ""; selG.appendChild(b);
+      (d.grup || []).forEach(function (g) { var o = el("option", "", g); o.value = g; selG.appendChild(o); });
+      selG.value = (d.grup || []).indexOf(lamaG) >= 0 ? lamaG : "";
+      gambarPenjelasan();
+    }).catch(function (e) { teks("pj-info", e.message); });
+  }
+
+  // Angka satu periode untuk lingkup terpilih (bank / satu grup)
+  function angkaPeriode(p, grup) {
+    if (!p) return null;
+    var r = p.riwayat, ov = p.overview, metode = r.metode || "nf", mig = metode === "mig";
+    var a = { metode: metode };
+    var kc;
+    if (!grup) {
+      a.ckpn = r.ckpn !== null && r.ckpn !== undefined ? r.ckpn : (mig ? r.mig : r.nf);
+      a.ind = mig ? r.migInd : r.nfInd;
+      a.kol = mig ? r.migKol : r.nfKol;
+      a.aba = r.aba ? r.aba.ckpn : 0;
+      a.ppka = r.ppka;
+      kc = ["KC0600", "KC0700", "KC0800", "KC0900", "KC1000", "KC1100"];
+    } else {
+      var g = null;
+      r.grup.forEach(function (x) { if (x.nama === grup && x.ada) g = x; });
+      if (!g) return { kosong: true };
+      a.ckpn = mig ? g.mig : g.nf;
+      a.ind = mig ? g.migInd : g.nfInd;
+      a.kol = mig ? g.migKol : g.nfKol;
+      a.ppka = g.ppka;
+      a.lgd = g.lgd;
+      kc = g.kodeKC.split(",");
+    }
+    a.kc = kc;
+    if (ov && ov.segmen) {
+      var os = 0, ead = 0, k25 = 0, npf = 0;
+      ov.segmen.forEach(function (s) {
+        if (kc.indexOf(s.kode) < 0) return;
+        os += s.totalOS || 0; ead += s.totalEAD || 0;
+        k25 += (s.os[1] || 0) + (s.os[2] || 0) + (s.os[3] || 0) + (s.os[4] || 0);
+        npf += (s.os[2] || 0) + (s.os[3] || 0) + (s.os[4] || 0);
+      });
+      a.os = os; a.ead = ead; a.k25 = k25; a.npf = npf;
+      a.npfPct = os ? npf / os : null; a.k25Pct = os ? k25 / os : null;
+    }
+    return a;
+  }
+
+  function arahNilai(lalu, kini) {
+    if (lalu === null || lalu === undefined || kini === null || kini === undefined) return 0;
+    var d = kini - lalu, basis = Math.abs(lalu) || Math.abs(kini) || 1;
+    return Math.abs(d) / basis < AMBANG_PERSEN ? 0 : (d > 0 ? 1 : -1);
+  }
+  function arahRasio(lalu, kini) {
+    if (lalu === null || lalu === undefined || kini === null || kini === undefined) return 0;
+    var d = kini - lalu;
+    return Math.abs(d) < AMBANG_POIN ? 0 : (d > 0 ? 1 : -1);
+  }
+  var PANAH = { "1": "▲ naik", "-1": "▼ turun", "0": "≈ tetap" };
+
+  function gambarPenjelasan() {
+    var d = dataPj, w = $("pj-isi");
+    w.innerHTML = "";
+    $("pj-ov").innerHTML = "";
+    if (!d || !d.kini) { teks("pj-info", "Belum ada periode dengan kiriman grup tersimpan."); return; }
+    var grup = $("pj-lingkup").value;
+    if (!d.lalu) {
+      teks("pj-info", labelPeriode(d.kini.tanggal) + " adalah periode pertama di database — belum ada pembanding.");
+      return;
+    }
+    teks("pj-info", labelPeriode(d.lalu.tanggal) + " → " + labelPeriode(d.kini.tanggal) + " · " + (grup || "bank") +
+      " · CKPN memakai metode tahunan periode masing-masing");
+
+    // ---- snapshot overview yang belum ada ----
+    var kurang = [d.lalu, d.kini].filter(function (p) { return !p.overview; });
+    if (kurang.length) {
+      var box = el("div", "peringatan-box");
+      box.appendChild(el("div", "", "Snapshot Overview belum ada untuk " + kurang.map(function (p) { return labelPeriode(p.tanggal); }).join(" dan ") +
+        ", sehingga OS, EAD, dan NPF belum bisa dibandingkan. Periode Master bisa diisi dengan membuka tab Overview › Muat data; " +
+        "periode lain dari file template-nya."));
+      if (d.bolehMenulis) kurang.forEach(function (p) {
+        box.appendChild(tombol("Ambil overview " + labelPeriode(p.tanggal) + " dari file template…", "tautan", function () {
+          panggil("overviewDariFile", { tanggal: p.tanggal }, 600000).then(function (r) {
+            if (!r.batal) muatPenjelasan($("pj-periode").value);
+          }).catch(function (e) { alert(e.message); });
+        }));
+      });
+      $("pj-ov").appendChild(box);
+    }
+
+    var A = angkaPeriode(d.lalu, grup), B = angkaPeriode(d.kini, grup);
+    if (!A || !B || A.kosong || B.kosong) {
+      w.appendChild(el("div", "teks-kecil", "Grup " + grup + " tidak tersimpan di salah satu periode."));
+      return;
+    }
+
+    // ---- tabel indikator ----
+    var baris = [
+      { label: "CKPN (" + (B.metode === "mig" ? "Migration" : "Net Flow") + ")", a: A.ckpn, b: B.ckpn, utama: true },
+      { label: "· CKPN Individu", a: A.ind, b: B.ind },
+      { label: "· CKPN Kolektif", a: A.kol, b: B.kol }
+    ];
+    if (!grup) baris.push({ label: "· CKPN ABA", a: A.aba, b: B.aba });
+    baris.push({ label: "PPKA OJK", a: A.ppka, b: B.ppka });
+    if (A.os !== undefined && B.os !== undefined) {
+      baris.push({ label: "OS pembiayaan", a: A.os, b: B.os, driver: "os" });
+      baris.push({ label: "EAD", a: A.ead, b: B.ead, driver: "ead" });
+      baris.push({ label: "OS Kol 2–5", a: A.k25, b: B.k25, driver: "k25" });
+      baris.push({ label: "OS NPF (Kol 3–5)", a: A.npf, b: B.npf, driver: "npf" });
+      baris.push({ label: "Kol 2–5 %", a: A.k25Pct, b: B.k25Pct, rasio: true, driver: "k25Pct" });
+      baris.push({ label: "NPF %", a: A.npfPct, b: B.npfPct, rasio: true, driver: "npfPct" });
+    }
+    if (grup) baris.push({ label: "LGD gabungan", a: A.lgd, b: B.lgd, rasio: true, driver: "lgd" });
+
+    var t = el("table", "tabel-kualitas tabel-pj");
+    var h = el("tr");
+    ["Indikator", labelPeriode(d.lalu.tanggal), labelPeriode(d.kini.tanggal), "Perubahan", ""].forEach(function (x) { h.appendChild(el("th", "", x)); });
+    t.appendChild(h);
+    baris.forEach(function (r) {
+      r.arah = r.rasio ? arahRasio(r.a, r.b) : arahNilai(r.a, r.b);
+      var tr = el("tr", r.utama ? "total" : "");
+      tr.appendChild(el("td", "", r.label));
+      tr.appendChild(el("td", "", r.rasio ? pct(r.a) : jt(r.a)));
+      tr.appendChild(el("td", "", r.rasio ? pct(r.b) : jt(r.b)));
+      var delta = r.a === null || r.b === null || r.a === undefined || r.b === undefined ? null : r.b - r.a;
+      tr.appendChild(el("td", "", delta === null ? "—" : r.rasio ? poin(delta) :
+        jtTanda(delta) + (r.a ? " (" + (delta >= 0 ? "+" : "−") + pct(Math.abs(delta / r.a)) + ")" : "")));
+      tr.appendChild(el("td", "arah arah" + r.arah, PANAH[String(r.arah)]));
+      t.appendChild(tr);
+    });
+
+    // ---- narasi ----
+    var nar = el("div", "narasi-pj");
+    var dC = B.ckpn - A.ckpn, arahC = arahNilai(A.ckpn, B.ckpn);
+    nar.appendChild(el("p", "narasi-judul", "CKPN " + (grup || "bank") + " " + (arahC > 0 ? "naik" : arahC < 0 ? "turun" : "relatif tetap") +
+      " " + jtTanda(dC) + (A.ckpn ? " (" + (dC >= 0 ? "+" : "−") + pct(Math.abs(dC / A.ckpn)) + ")" : "") +
+      " dari " + labelPeriode(d.lalu.tanggal) + " ke " + labelPeriode(d.kini.tanggal) + "."));
+    var ul = el("ul", "narasi-daftar");
+    function poinNarasi(s) { ul.appendChild(el("li", "", s)); }
+
+    // sumber perubahan: individu vs kolektif (vs ABA)
+    var dI = (B.ind || 0) - (A.ind || 0), dK = (B.kol || 0) - (A.kol || 0), dA = grup ? 0 : (B.aba || 0) - (A.aba || 0);
+    var komponen = [["Individu", dI], ["Kolektif", dK]].concat(grup ? [] : [["ABA", dA]]);
+    komponen.sort(function (x, y) { return Math.abs(y[1]) - Math.abs(x[1]); });
+    if (arahC !== 0)
+      poinNarasi("Sumber perubahan terbesar: CKPN " + komponen[0][0] + " " + jtTanda(komponen[0][1]) +
+        komponen.slice(1).map(function (k) { return "; " + k[0] + " " + jtTanda(k[1]); }).join("") + ".");
+
+    // indikator portofolio yang searah / berlawanan dengan arah CKPN
+    var nama = { os: "OS", ead: "EAD", k25: "OS Kol 2–5", npf: "OS NPF", k25Pct: "rasio Kol 2–5", npfPct: "NPF", lgd: "LGD" };
+    var searah = [], lawan = [];
+    baris.forEach(function (r) {
+      if (!r.driver || r.arah === 0) return;
+      var teksR = nama[r.driver] + " " + (r.arah > 0 ? "naik " : "turun ") +
+        (r.rasio ? poin(r.b - r.a).replace(/^[+−]/, "") + " (" + pct(r.a) + " → " + pct(r.b) + ")" : jtTanda(r.b - r.a).replace(/^[+−]/, "") +
+         (r.a ? " (" + pct(Math.abs((r.b - r.a) / r.a)) + ")" : ""));
+      if (arahC !== 0 && r.arah === arahC) searah.push(teksR); else lawan.push(teksR);
+    });
+    if (arahC !== 0 && searah.length) poinNarasi("Searah dengan " + (arahC > 0 ? "kenaikan" : "penurunan") + " CKPN: " + searah.join("; ") + ".");
+    if (lawan.length) poinNarasi((arahC !== 0 ? "Berlawanan / meredam: " : "Pergerakan indikator: ") + lawan.join("; ") + ".");
+    if (A.os === undefined || B.os === undefined) poinNarasi("Indikator OS/EAD/NPF belum tersedia — lengkapi snapshot Overview.");
+
+    // petunjuk sebab
+    var npfR = baris.filter(function (r) { return r.driver === "npfPct" || r.driver === "k25Pct" || r.driver === "npf" || r.driver === "k25"; });
+    var kualitasSearah = npfR.some(function (r) { return r.arah === arahC && arahC !== 0; });
+    if (arahC !== 0 && Math.abs(dK) >= Math.abs(dI) && !kualitasSearah && npfR.length)
+      poinNarasi("Perubahan kolektif tidak diikuti pergerakan kualitas (NPF / Kol 2–5) yang searah — kemungkinan berasal dari perubahan PD atau LGD. " +
+        "Cek sankey PD di bawah" + (grup ? " dan baris LGD." : "."));
+    if (arahC !== 0 && Math.abs(dI) > Math.abs(dK))
+      poinNarasi("Perubahan terutama dari CKPN Individu — lihat rincian kontrak di bawah (masuk/keluar Top-N atau perubahan agunan).");
+    nar.appendChild(ul);
+    w.appendChild(nar);
+    var gul = el("div", "gulir-x"); gul.appendChild(t); w.appendChild(gul);
+    w.appendChild(el("p", "teks-kecil", "Angka dalam juta Rp. ▲/▼ bila berubah ≥ 0,5% (rasio: ≥ 0,05 poin). " +
+      "OS, EAD, Kol 2–5, dan NPF dari snapshot Overview (template OJK), dijumlah untuk KC dalam lingkup."));
+
+    // ---- kontrak individu ----
+    var ind = (d.individu && d.individu.kontrak) || [];
+    var saring = grup ? A.kc.concat(B.kc) : null;
+    var adaKodeKc = ind.some(function (k) { return /^KC\d{4}$/.test(k.kc); });
+    var daftar = ind.filter(function (k) { return !saring || !adaKodeKc || saring.indexOf(k.kc) >= 0; })
+      .map(function (k) { k.delta = k.kini - k.lalu; return k; })
+      .filter(function (k) { return Math.abs(k.delta) >= 1; });
+    if (daftar.length) {
+      var masuk = daftar.filter(function (k) { return k.jenis === "masuk"; }), keluar = daftar.filter(function (k) { return k.jenis === "keluar"; });
+      var jml = function (l) { return l.reduce(function (s, k) { return s + k.delta; }, 0); };
+      var det = el("details", "jarak-atas");
+      det.appendChild(el("summary", "teks-kecil tautan-ringkas", "Rincian CKPN Individu: " + masuk.length + " kontrak masuk (" + jtTanda(jml(masuk)) + "), " +
+        keluar.length + " keluar (" + jtTanda(jml(keluar)) + "), " + (daftar.length - masuk.length - keluar.length) + " berubah"));
+      daftar.sort(function (x, y) { return Math.abs(y.delta) - Math.abs(x.delta); });
+      var ti = el("table", "tabel-kualitas tabel-pj");
+      var hi = el("tr");
+      ["Kontrak", "Status", "CKPN lalu", "CKPN kini", "Δ"].forEach(function (x) { hi.appendChild(el("th", "", x)); });
+      ti.appendChild(hi);
+      daftar.slice(0, 15).forEach(function (k) {
+        var tr = el("tr");
+        var c = el("td");
+        c.appendChild(el("div", "", k.nama || k.kontrak));
+        c.appendChild(el("div", "teks-kecil", k.kontrak + (k.kc ? " · " + k.kc : "")));
+        tr.appendChild(c);
+        tr.appendChild(el("td", "", k.jenis === "tetap" ? "berubah" : k.jenis));
+        tr.appendChild(el("td", "", jt(k.lalu)));
+        tr.appendChild(el("td", "", jt(k.kini)));
+        tr.appendChild(el("td", "", jtTanda(k.delta)));
+        ti.appendChild(tr);
+      });
+      var gul2 = el("div", "gulir-x"); gul2.appendChild(ti); det.appendChild(gul2);
+      if (daftar.length > 15) det.appendChild(el("p", "teks-kecil", "15 perubahan terbesar dari " + daftar.length + "."));
+      w.appendChild(det);
+    }
+  }
+
+  $("pj-periode").addEventListener("change", function () { muatPenjelasan(this.value); });
+  $("pj-lingkup").addEventListener("change", gambarPenjelasan);
+
+  // =====================================================================
+  // Log proses (Tahap 5) — pengganti sheet "Audit Log"
+  // File teks library\logs\proses\proses_{yyyy-MM}_{user}.txt, dibaca semua user per bulan
+  // =====================================================================
+  var dataLog = null, batasLog = 150, jalanLog = "";
+  var STATUS_LOG = { OK: "OK", GAGAL: "Gagal", PERINGATAN: "Peringatan", INFO: "Info", DILEWATI: "Dilewati" };
+
+  function muatLog(bulan) {
+    teks("lp-info", "Memuat…");
+    return panggil("logProses", { bulan: bulan || "" }).then(function (d) {
+      dataLog = d;
+      batasLog = 150;
+      isiFilterLog();
+      gambarLog();
+    }).catch(function (e) { teks("lp-info", e.message); });
+  }
+
+  function labelBulan(b) { return BULAN_SINGKAT[+b.substr(5, 2) - 1] + " " + b.substr(0, 4); }
+
+  function isiPilih(sel, nilai, labelSemua, fmtLabel) {
+    var lama = sel.value;
+    sel.innerHTML = "";
+    if (labelSemua !== null) { var o = el("option", "", labelSemua); o.value = ""; sel.appendChild(o); }
+    nilai.forEach(function (v) { var x = el("option", "", fmtLabel ? fmtLabel(v) : v); x.value = v; sel.appendChild(x); });
+    sel.value = nilai.indexOf(lama) >= 0 ? lama : (labelSemua !== null ? "" : (nilai[0] || ""));
+  }
+
+  function isiFilterLog() {
+    var bulan = dataLog.daftarBulan.slice();
+    if (bulan.indexOf(dataLog.bulan) < 0) bulan.unshift(dataLog.bulan);
+    isiPilih($("lp-bulan"), bulan, null, labelBulan);
+    $("lp-bulan").value = dataLog.bulan;
+    var proses = {}, user = {};
+    dataLog.entri.forEach(function (e) { proses[e.proses] = true; user[e.pengguna] = true; });
+    isiPilih($("lp-proses"), Object.keys(proses).sort(), "Semua");
+    isiPilih($("lp-pengguna"), Object.keys(user).sort(), "Semua");
+  }
+
+  function rincianLog(r) {
+    var hasil = [];
+    (r || "").split("; ").forEach(function (b) {
+      if (!b) return;
+      var i = b.indexOf("=");
+      hasil.push(i < 0 ? ["", b] : [b.substr(0, i), b.substr(i + 1)]);
+    });
+    return hasil;
+  }
+
+  function cocokLog(e) {
+    var st = $("lp-status").value, pr = $("lp-proses").value, us = $("lp-pengguna").value;
+    var cari = $("lp-cari").value.trim().toLowerCase();
+    if (jalanLog && e.jalan !== jalanLog) return false;
+    if (pr && e.proses !== pr) return false;
+    if (us && e.pengguna !== us) return false;
+    if (st === "masalah" && e.status !== "GAGAL" && e.status !== "PERINGATAN") return false;
+    if (st && st !== "masalah" && e.status !== st) return false;
+    if (cari) {
+      var semua = [e.proses, e.label, e.status, e.sumber, e.pengguna, e.periode, e.jalan, e.rincian].join(" ").toLowerCase();
+      if (semua.indexOf(cari) < 0) return false;
+    }
+    return true;
+  }
+
+  function gambarLog() {
+    if (!dataLog) return;
+    var list = dataLog.entri.filter(cocokLog);
+    var ol = $("lp-daftar");
+    ol.innerHTML = "";
+
+    var info = dataLog.entri.length === 0
+      ? "Belum ada catatan di " + NAMA_BULAN[+dataLog.bulan.substr(5, 2) - 1] + " " + dataLog.bulan.substr(0, 4) + "."
+      : list.length + " dari " + dataLog.entri.length + " catatan · " + dataLog.file.length + " file · " +
+        Math.max(1, Math.round(dataLog.ukuran / 1024)) + " KB";
+    if (dataLog.terpotong) info += " · hanya 5.000 catatan terbaru yang dimuat";
+    teks("lp-info", info);
+
+    var bj = $("lp-jalan");
+    bj.innerHTML = "";
+    bj.hidden = !jalanLog;
+    if (jalanLog) {
+      bj.appendChild(el("span", "", "Hanya jalan " + jalanLog + " "));
+      bj.appendChild(tombol("Tampilkan semua", "tautan", function () { jalanLog = ""; gambarLog(); }));
+    }
+
+    var hariLalu = "";
+    list.slice(0, batasLog).forEach(function (e) {
+      var hari = e.waktu.substr(0, 10);
+      if (hari !== hariLalu) {
+        hariLalu = hari;
+        ol.appendChild(el("li", "lp-tanggal", tanggalPanjang(hari)));
+      }
+      ol.appendChild(barisLog(e));
+    });
+    $("lp-lagi").hidden = list.length <= batasLog;
+  }
+
+  function barisLog(e) {
+    var li = el("li", "lp-item");
+    var det = el("details");
+    var sum = el("summary");
+    sum.appendChild(el("span", "lp-waktu", e.waktu.substr(11, 8)));
+    var judul = el("span", "lp-judul");
+    judul.appendChild(el("span", "lp-proses", e.proses));
+    if (e.label) judul.appendChild(el("span", "lp-label", " · " + e.label));
+    judul.appendChild(el("span", "lp-sumber", e.sumber + " · " + e.pengguna));
+    sum.appendChild(judul);
+    var kelas = (e.status || "").toLowerCase();
+    sum.appendChild(el("span", "lp-status " + kelas, STATUS_LOG[e.status] || e.status));
+    det.appendChild(sum);
+
+    var dl = el("dl", "detail lp-rinci");
+    function baris(k, v) { dl.appendChild(el("dt", "", k)); var dd = el("dd", "", v); dl.appendChild(dd); return dd; }
+    rincianLog(e.rincian).forEach(function (kv) {
+      var dd = baris(kv[0] || "—", kv[1]);
+      if (/^(file|snapshot|file awal|file akhir|file arsip)$/i.test(kv[0])) dd.className = "path";
+    });
+    if (e.periode) baris("Periode", tanggalPanjang(e.periode));
+    if (e.jalan) {
+      var dd = baris("Jalan", "");
+      dd.appendChild(tombol(e.jalan + " — tampilkan semua langkahnya", "tautan", function () {
+        jalanLog = e.jalan; batasLog = 500; gambarLog();
+        $("lp-jalan").scrollIntoView({ block: "nearest" });
+      }));
+    }
+    det.appendChild(dl);
+    li.appendChild(det);
+    return li;
+  }
+
+  function muatInfoAuditLog() {
+    return panggil("infoAuditLog").then(function (d) {
+      tampil("lp-lama", !!d.ada);
+      if (d.ada) {
+        teks("lp-lama-info", "Sheet Audit Log masih ada di workbook: " + fmt.format(d.baris) + " baris × " + d.kolom +
+          " kolom. Modul yang sudah dipatch tidak menulis ke sheet ini lagi, jadi isinya bisa diarsipkan lalu sheet-nya dihapus.");
+        tampil("lp-lama-arsip", true);
+      }
+    }).catch(function () { tampil("lp-lama", false); });
+  }
+
+  $("kartu-log").addEventListener("toggle", function () {
+    if (!this.open) return;
+    if (!dataLog) muatLog("");
+    muatInfoAuditLog();
+  });
+  $("lp-muat").addEventListener("click", function () { muatLog($("lp-bulan").value); muatInfoAuditLog(); });
+  $("lp-bulan").addEventListener("change", function () { jalanLog = ""; muatLog(this.value); });
+  ["lp-proses", "lp-status", "lp-pengguna"].forEach(function (id) {
+    $(id).addEventListener("change", function () { batasLog = 150; gambarLog(); });
+  });
+  $("lp-cari").addEventListener("input", function () { batasLog = 150; gambarLog(); });
+  $("lp-lagi").addEventListener("click", function () { batasLog += 300; gambarLog(); });
+
+  $("lp-lama-arsip").addEventListener("click", function () {
+    tampil("lp-lama-konfirmasi", true);
+    tampil("lp-lama-arsip", false);
+    $("lp-lama-hasil").textContent = "";
+  });
+  $("lp-lama-batal").addEventListener("click", function () {
+    tampil("lp-lama-konfirmasi", false);
+    tampil("lp-lama-arsip", true);
+  });
+  $("lp-lama-ya").addEventListener("click", function () {
+    var b = this;
+    b.disabled = true;
+    teks("lp-lama-hasil", "Mengarsipkan… (sheet besar bisa memerlukan beberapa menit)");
+    panggil("arsipAuditLog", {}, 600000).then(function (r) {
+      tampil("lp-lama-konfirmasi", false);
+      if (!r.ada) { teks("lp-lama-hasil", "Sheet Audit Log sudah tidak ada."); return; }
+      $("lp-lama-info").textContent = "";
+      teks("lp-lama-hasil", fmt.format(r.baris) + " baris diarsipkan ke " + r.file +
+        ". Sheet Audit Log sudah dihapus dari " + r.workbook + " — simpan workbook (Ctrl+S) agar ukuran file mengecil.");
+      muatLog($("lp-bulan").value);
+    }).catch(function (e) {
+      teks("lp-lama-hasil", e.message);
+      tampil("lp-lama-arsip", true);
+      tampil("lp-lama-konfirmasi", false);
+    }).then(function () { b.disabled = false; });
   });
 
   // =====================================================================

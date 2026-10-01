@@ -25,7 +25,7 @@ namespace CKPNLibrary.Data
     /// </summary>
     internal static class Database
     {
-        public const int VersiSkema = 6;
+        public const int VersiSkema = 7;
         private static bool _skemaSiap;
         private static readonly object _kunci = new object();
 
@@ -251,7 +251,18 @@ namespace CKPNLibrary.Data
                     }
                     CatatanLog.Tulis("Database: migrasi ke skema v6 selesai");
                 }
-                // Migrasi versi berikutnya ditambahkan di sini: if (versi < 7) { ... }
+                // ---- v7 (Tahap 4g): snapshot Overview Data per periode ----
+                if (versi < 7)
+                {
+                    using (var tx = con.BeginTransaction())
+                    {
+                        foreach (var sql in SkemaV7) Exec(con, sql);
+                        Exec(con, "INSERT OR REPLACE INTO meta(kunci,nilai) VALUES('versi_skema','7')");
+                        tx.Commit();
+                    }
+                    CatatanLog.Tulis("Database: migrasi ke skema v7 selesai");
+                }
+                // Migrasi versi berikutnya ditambahkan di sini: if (versi < 8) { ... }
 
                 _skemaSiap = true;
             }
@@ -471,6 +482,17 @@ namespace CKPNLibrary.Data
             "ALTER TABLE susunan_grup ADD COLUMN top_n INTEGER",
             // Nilai tahunan dari Tahap 4b (bila sudah diisi) menjadi nilai awal setiap grup tahun itu
             "UPDATE susunan_grup SET top_n=(SELECT t.top_n FROM susunan_tahun t WHERE t.tahun=susunan_grup.tahun) WHERE top_n IS NULL"
+        };
+
+        private static readonly string[] SkemaV7 =
+        {
+            // OS, EAD, PPKA per KC per kualitas + info keuangan (JSON dari DataOverviewBuilder)
+            @"CREATE TABLE IF NOT EXISTS overview_periode (
+                tanggal   TEXT PRIMARY KEY,
+                data      TEXT NOT NULL,
+                sumber    TEXT,
+                pengguna  TEXT,
+                waktu     TEXT)"
         };
 
         public static void CatatAktivitas(SQLiteConnection con, string periode, string aksi, string detail)

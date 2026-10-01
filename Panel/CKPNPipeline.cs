@@ -119,7 +119,9 @@ namespace CKPNLibrary.Panel
         // Mulai — dipanggil di konteks makro (QueueAsMacro dari PanelBridge)
         // ------------------------------------------------------------
         /// <returns>null bila berhasil dimulai; selain itu pesan penolakan.</returns>
-        public static string Mulai(Excel.Application app, IList<string> idDipilih, bool terapkanPenyesuaian = true)
+        /// <param name="sumberLog">label sumber di log proses, mis. "Panel · Grup Murabahah" (bawaan "Panel · Manual")</param>
+        public static string Mulai(Excel.Application app, IList<string> idDipilih, bool terapkanPenyesuaian = true,
+                                   string sumberLog = null)
         {
             if (SedangBerjalan) return "Perhitungan lain sedang berjalan.";
 
@@ -163,6 +165,19 @@ namespace CKPNLibrary.Panel
 
             CatatanLog.Tulis("=== RUN MULAI oleh " + Environment.UserName + " · periode " + p.BulanLaporan +
                              " · KC " + p.KCList + " · langkah: " + string.Join(",", Ids(antrian)));
+
+            // Log proses (Tahap 5): semua catatan modul selama run ini memakai id jalan yang sama
+            DateTime tglLog;
+            string periodeLog = ParameterMaster.BacaTanggalLaporan(wb, out tglLog) ? tglLog.ToString("yyyy-MM-dd") : "";
+            LogProses.MulaiJalan(string.IsNullOrEmpty(sumberLog) ? "Panel · Manual" : sumberLog, periodeLog);
+            var namaLangkah = new List<string>();
+            foreach (var l in antrian) namaLangkah.Add(l.Nama);
+            LogProses.Catat("Panel", "Jalan mulai", LogProses.Info, LogProses.R()
+                .Tambah("KC", p.KCList)
+                .Tambah("Bulan laporan", p.BulanLaporan)
+                .Tambah("Langkah", string.Join(", ", namaLangkah.ToArray()))
+                .Tambah("Penyesuaian tersimpan", terapkanPenyesuaian ? "diterapkan" : "tidak diterapkan (hasil sistem murni)")
+                .Tambah("Top-N Master!C10", ParameterMaster.BacaTopN(wb)));
             PanelBridge.Siarkan("runMulai", new Dictionary<string, object>
             {
                 { "langkah", daftar }, { "periode", p.BulanLaporan }, { "kc", p.KCList },
@@ -259,6 +274,9 @@ namespace CKPNLibrary.Panel
             PanelBridge.Siarkan("langkahSelesai", hasil);
             CatatanLog.Tulis("  " + l.Nama + " · " + (error == null ? "OK" : "GAGAL: " + error) +
                              " · " + (sw.ElapsedMilliseconds / 1000.0).ToString("0.0") + " dtk");
+            LogProses.Catat("Panel", "Langkah " + l.Nama, error == null ? LogProses.OK : LogProses.Gagal, LogProses.R()
+                .Tambah("Durasi", (sw.ElapsedMilliseconds / 1000.0).ToString("0.0", LogProses.Id) + " dtk")
+                .TambahBila(error != null, "Error", error));
 
             if (error != null) { Akhiri(app, "gagal", l.Nama + ": " + error); return; }
 
@@ -291,8 +309,17 @@ namespace CKPNLibrary.Panel
                 }
             }
 
+            string grupLog = kodeKC;
+            DateTime tglG;
+            if (ParameterMaster.BacaTanggalLaporan(wb, out tglG))
+            {
+                string nm;
+                Data.Periode.TopNGrup(tglG.Year, kodeKC, out nm);
+                if (!string.IsNullOrEmpty(nm)) grupLog = nm;
+            }
             var semua = new List<string>(IdLangkahHitung);
-            return Mulai(app, semua, terapkanPenyesuaian);
+            return Mulai(app, semua, terapkanPenyesuaian,
+                         (BatchGrup.Aktif ? "Panel · Semua grup · " : "Panel · Grup ") + grupLog);
         }
 
         private static void Akhiri(Excel.Application app, string status, string error)
@@ -322,6 +349,13 @@ namespace CKPNLibrary.Panel
 
             CatatanLog.Tulis("=== RUN " + status.ToUpperInvariant() + " · " + (durasi / 1000.0).ToString("0.0") + " dtk" +
                              (error == null ? "" : " · " + error));
+            LogProses.Catat("Panel", "Jalan " + status,
+                status == "selesai" ? LogProses.OK : status == "dibatalkan" ? LogProses.Dilewati : LogProses.Gagal,
+                LogProses.R()
+                    .Tambah("Durasi", (durasi / 1000.0).ToString("0.0", LogProses.Id) + " dtk")
+                    .Tambah("Langkah selesai", _hasilLangkah == null ? 0 : _hasilLangkah.Count)
+                    .TambahBila(error != null, "Error", error));
+            string jalanIni = LogProses.IdJalan;
 
             PanelBridge.Siarkan("runSelesai", new Dictionary<string, object>
             {
@@ -335,9 +369,12 @@ namespace CKPNLibrary.Panel
             SetelahSelesai = null;
             if (lanjut != null)
             {
+                // Lanjutan (mis. simpan otomatis Hitung semua grup) masih tercatat dengan id jalan ini
                 try { lanjut(app, status); }
                 catch (Exception ex) { CatatanLog.Tulis("Lanjutan setelah run gagal: " + ex.Message); }
             }
+            // Tutup konteks — kecuali lanjutan sudah memulai run baru (grup berikutnya) dengan id sendiri
+            if (LogProses.IdJalan == jalanIni) LogProses.SelesaiJalan();
         }
 
         // ------------------------------------------------------------

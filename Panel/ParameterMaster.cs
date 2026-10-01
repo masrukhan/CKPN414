@@ -486,7 +486,7 @@ namespace CKPNLibrary.Panel
         /// <summary>
         /// Meniru CStr(Value): tanggal → format tanggal pendek Windows,
         /// angka → representasi kultur aktif. Dipakai untuk label/tanggal ref
-        /// Net Flow yang hanya dicatat di Audit Log.
+        /// Net Flow yang hanya dicatat di log proses (dulu sheet Audit Log).
         /// </summary>
         private static string TeksCStr(object v)
         {

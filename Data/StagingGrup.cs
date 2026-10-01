@@ -283,6 +283,13 @@ namespace CKPNLibrary.Data
                                  " · " + r.Perubahan.Count + " perubahan penyesuaian");
 
                 double v;
+                LogProses.CatatPanel(r.TanggalStr, "Simpan grup", r.KodeKC + " v" + versi, LogProses.OK, LogProses.R()
+                    .Tambah("CKPN Net Flow", ringkasan.TryGetValue("nf_total", out v) ? (object)v : null)
+                    .Tambah("CKPN Migration", ringkasan.TryGetValue("mig_total", out v) ? (object)v : null)
+                    .Tambah("PPKA", ringkasan.TryGetValue("ppka_total", out v) ? (object)v : null)
+                    .Tambah("Perubahan penyesuaian", r.Perubahan.Count)
+                    .Tambah("Catatan", catatan)
+                    .Tambah("Snapshot", snapshot == null ? (pesanSnapshot ?? "-") : Path.GetFileName(snapshot)));
                 return new Dictionary<string, object>
                 {
                     { "runId", runId }, { "versi", versi }, { "kodeKC", r.KodeKC }, { "periode", r.BulanLaporan },

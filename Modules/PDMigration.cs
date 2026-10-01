@@ -198,7 +198,7 @@ namespace CKPNLibrary.Modules
 
             if (wsState  == null) throw new InvalidOperationException("Sheet '" + SheetState  + "' tidak ditemukan.");
             if (wsTarget == null) throw new InvalidOperationException("Sheet '" + SheetTarget + "' tidak ditemukan.");
-            if (wsLog    == null) throw new InvalidOperationException("Sheet '" + SheetLog    + "' tidak ditemukan.");
+            // Tahap 5: sheet "Audit Log" tidak wajib lagi — catatan ditulis ke log proses (file teks)
 
             // Tentukan baseRow dari triwulan
             int baseRow = TriwulanKeBaseRow(triwulan);
@@ -999,10 +999,9 @@ namespace CKPNLibrary.Modules
         }
 
         // ----------------------------------------------------------------
-        // TulisAuditLog: catat ringkasan perhitungan ke sheet Audit Log
-        //
-        // tglAwalStr / tglAkhirStr dicatat sebagai LABEL periode (Master
-        // B40:D43). Keduanya tidak lagi memengaruhi hasil perhitungan.
+        // TulisAuditLog: catat ringkasan perhitungan ke log proses (Tahap 5;
+        // dulu sheet "Audit Log"). Isinya sama dengan kolom Audit Log lama.
+        // tglAwalStr / tglAkhirStr hanya LABEL periode — tidak memengaruhi hasil.
         // ----------------------------------------------------------------
         private void TulisAuditLog(
             Excel.Worksheet wsLog,
@@ -1014,97 +1013,36 @@ namespace CKPNLibrary.Modules
             int topN, HasilTopN topNInfo, string sheetKCList,
             string diagWO, StatistikKlasifikasi stat)
         {
-            const int summaryStart = 5;
-            const int summaryMax   = 200;
-
-            int nextRow = summaryStart;
-            while (nextRow <= summaryMax)
-            {
-                string a = ToStr(((Excel.Range)wsLog.Cells[nextRow, 1]).Value2);
-                string b = ToStr(((Excel.Range)wsLog.Cells[nextRow, 2]).Value2);
-                if (string.IsNullOrEmpty(a) && string.IsNullOrEmpty(b)) break;
-                nextRow++;
-            }
-
-            double ts = DateTime.Now.ToOADate();
             double totalSA = 0, totalWO = 0;
             for (int i = 1; i <= 5; i++) { totalSA += totalSaldoAwal[i]; totalWO += matriks[i, 6]; }
 
-            // Konversi tglAwalStr / tglAkhirStr dari "yyyyMMdd" ke OADate
-            double oaAwal  = ParseTglToOADate(tglAwalStr);
-            double oaAkhir = ParseTglToOADate(tglAkhirStr);
-
-            ((Excel.Range)wsLog.Cells[nextRow,  1]).Value2 = ts;
-            ((Excel.Range)wsLog.Cells[nextRow,  1]).NumberFormat = "m/d/yyyy h:mm";
-            ((Excel.Range)wsLog.Cells[nextRow,  2]).Value2 = "PD Migration";
-            ((Excel.Range)wsLog.Cells[nextRow,  3]).Value2 = triwulan;
-            ((Excel.Range)wsLog.Cells[nextRow,  4]).Value2 = oaAwal  > 0 ? oaAwal  : (object)tglAwalStr;
-            ((Excel.Range)wsLog.Cells[nextRow,  4]).NumberFormat = oaAwal  > 0 ? "m/d/yyyy" : "@";
-            ((Excel.Range)wsLog.Cells[nextRow,  5]).Value2 = oaAkhir > 0 ? oaAkhir : (object)tglAkhirStr;
-            ((Excel.Range)wsLog.Cells[nextRow,  5]).NumberFormat = oaAkhir > 0 ? "m/d/yyyy" : "@";
-            ((Excel.Range)wsLog.Cells[nextRow,  6]).Value2 = pathAwal;
-            ((Excel.Range)wsLog.Cells[nextRow,  7]).Value2 = pathAkhir;
-            ((Excel.Range)wsLog.Cells[nextRow,  8]).Value2 = "OK";
-            ((Excel.Range)wsLog.Cells[nextRow,  9]).Value2 = nAwal;
-            ((Excel.Range)wsLog.Cells[nextRow, 10]).Value2 = nAkhir;
-            ((Excel.Range)wsLog.Cells[nextRow, 11]).Value2 = daftarWO.Count;
-            ((Excel.Range)wsLog.Cells[nextRow, 12]).Value2 = totalSA;
-            ((Excel.Range)wsLog.Cells[nextRow, 12]).NumberFormat = "#,##0;(#,##0);-";
-            ((Excel.Range)wsLog.Cells[nextRow, 13]).Value2 = topN;
-            ((Excel.Range)wsLog.Cells[nextRow, 14]).Value2 = topNInfo.JumlahRekSkip;
-            ((Excel.Range)wsLog.Cells[nextRow, 15]).Value2 = topNInfo.OSTopN;
-            ((Excel.Range)wsLog.Cells[nextRow, 15]).NumberFormat = "#,##0;(#,##0);-";
-            ((Excel.Range)wsLog.Cells[nextRow, 16]).Value2 = sheetKCList;
-            ((Excel.Range)wsLog.Cells[nextRow, 17]).NumberFormat = "@";
-            ((Excel.Range)wsLog.Cells[nextRow, 17]).Value2 = diagWO;
-            ((Excel.Range)wsLog.Cells[nextRow, 18]).NumberFormat = "@";
-            ((Excel.Range)wsLog.Cells[nextRow, 18]).Value2 =
-                daftarWO.CocokKetat + " / " + daftarWO.CocokLonggar;
-            ((Excel.Range)wsLog.Cells[nextRow, 19]).Value2 = totalWO;
-            ((Excel.Range)wsLog.Cells[nextRow, 19]).NumberFormat = "#,##0;(#,##0);-";
-
-            // ---- Ringkasan Top-N & klasifikasi (kolom 20-30) ----
-            ((Excel.Range)wsLog.Cells[nextRow, 20]).Value2 = topNInfo.DaftarCIF.Count;
-            ((Excel.Range)wsLog.Cells[nextRow, 21]).Value2 = topNInfo.JumlahCIF;
-            ((Excel.Range)wsLog.Cells[nextRow, 22]).Value2 = topNInfo.OSBruto;
-            ((Excel.Range)wsLog.Cells[nextRow, 22]).NumberFormat = "#,##0;(#,##0);-";
-            ((Excel.Range)wsLog.Cells[nextRow, 23]).Value2 = stat.RekBertahan;
-            ((Excel.Range)wsLog.Cells[nextRow, 24]).Value2 = stat.RekWO;
-            ((Excel.Range)wsLog.Cells[nextRow, 25]).Value2 = stat.RekLainnya;
-            ((Excel.Range)wsLog.Cells[nextRow, 26]).Value2 = stat.NominalLainnya;
-            ((Excel.Range)wsLog.Cells[nextRow, 26]).NumberFormat = "#,##0;(#,##0);-";
-            ((Excel.Range)wsLog.Cells[nextRow, 27]).NumberFormat = "@";
-            ((Excel.Range)wsLog.Cells[nextRow, 27]).Value2 = stat.RincianWO();
-            ((Excel.Range)wsLog.Cells[nextRow, 28]).Value2 = stat.RekWOTakTerpakai;
-            ((Excel.Range)wsLog.Cells[nextRow, 29]).Value2 = stat.NominalWOTakTerpakai;
-            ((Excel.Range)wsLog.Cells[nextRow, 29]).NumberFormat = "#,##0;(#,##0);-";
-            ((Excel.Range)wsLog.Cells[nextRow, 30]).NumberFormat = "@";
-            ((Excel.Range)wsLog.Cells[nextRow, 30]).Value2 = stat.RincianWOTakTerpakai();
-
-            // Header ditulis ulang setiap kali agar kolom baru selalu berlabel
-            TulisHeaderAuditLog(wsLog, summaryStart - 1);
-        }
-
-        private static void TulisHeaderAuditLog(Excel.Worksheet wsLog, int rowHeader)
-        {
-            ((Excel.Range)wsLog.Cells[rowHeader, 13]).Value2 = "Top-N (diminta)";
-            ((Excel.Range)wsLog.Cells[rowHeader, 14]).Value2 = "Rek Skip (Individu)";
-            ((Excel.Range)wsLog.Cells[rowHeader, 15]).Value2 = "OS Individu (Top-N)";
-            ((Excel.Range)wsLog.Cells[rowHeader, 16]).Value2 = "Ruang Lingkup KC";
-            ((Excel.Range)wsLog.Cells[rowHeader, 17]).Value2 = "Diagnostik KC2900";
-            ((Excel.Range)wsLog.Cells[rowHeader, 18]).Value2 = "Cocok WO (ketat/longgar)";
-            ((Excel.Range)wsLog.Cells[rowHeader, 19]).Value2 = "Nominal WO";
-            ((Excel.Range)wsLog.Cells[rowHeader, 20]).Value2 = "CIF Top-N (terpakai)";
-            ((Excel.Range)wsLog.Cells[rowHeader, 21]).Value2 = "Jml CIF Awal";
-            ((Excel.Range)wsLog.Cells[rowHeader, 22]).Value2 = "OS Awal Bruto";
-            ((Excel.Range)wsLog.Cells[rowHeader, 23]).Value2 = "Rek Bertahan";
-            ((Excel.Range)wsLog.Cells[rowHeader, 24]).Value2 = "Rek WO";
-            ((Excel.Range)wsLog.Cells[rowHeader, 25]).Value2 = "Rek Lainnya";
-            ((Excel.Range)wsLog.Cells[rowHeader, 26]).Value2 = "Nominal Lainnya";
-            ((Excel.Range)wsLog.Cells[rowHeader, 27]).Value2 = "Rincian WO per Kol";
-            ((Excel.Range)wsLog.Cells[rowHeader, 28]).Value2 = "Di KC2900 tapi bukan WO (rek)";
-            ((Excel.Range)wsLog.Cells[rowHeader, 29]).Value2 = "Di KC2900 tapi bukan WO (nominal)";
-            ((Excel.Range)wsLog.Cells[rowHeader, 30]).Value2 = "Rincian bukan-WO per Kol";
+            LogProses.Catat("PD Migration", triwulan, LogProses.OK, LogProses.R()
+                .Tambah("Tgl awal", tglAwalStr)
+                .Tambah("Tgl akhir", tglAkhirStr)
+                .Tambah("Baris awal", nAwal)
+                .Tambah("Baris akhir", nAkhir)
+                .Tambah("Rek KC2900 (WO unik)", daftarWO.Count)
+                .Tambah("Total saldo awal", totalSA)
+                .Tambah("Top-N diminta", topN)
+                .Tambah("CIF Top-N terpakai", topNInfo.DaftarCIF.Count)
+                .Tambah("Rek skip (Individu)", topNInfo.JumlahRekSkip)
+                .Tambah("OS Individu (Top-N)", topNInfo.OSTopN)
+                .Tambah("Jml CIF awal", topNInfo.JumlahCIF)
+                .Tambah("OS awal bruto", topNInfo.OSBruto)
+                .Tambah("Rek bertahan", stat.RekBertahan)
+                .Tambah("Rek WO", stat.RekWO)
+                .Tambah("Nominal WO", totalWO)
+                .Tambah("Rincian WO per Kol", stat.RincianWO())
+                .Tambah("Rek lainnya", stat.RekLainnya)
+                .Tambah("Nominal lainnya", stat.NominalLainnya)
+                .Tambah("Di KC2900 tapi bukan WO (rek)", stat.RekWOTakTerpakai)
+                .Tambah("Di KC2900 tapi bukan WO (nominal)", stat.NominalWOTakTerpakai)
+                .Tambah("Rincian bukan-WO per Kol", stat.RincianWOTakTerpakai())
+                .Tambah("Cocok WO ketat/longgar", daftarWO.CocokKetat + " / " + daftarWO.CocokLonggar)
+                .Tambah("Diagnostik KC2900", diagWO)
+                .Tambah("KC", sheetKCList)
+                .Tambah("File awal", pathAwal)
+                .Tambah("File akhir", pathAkhir));
         }
 
         // ================================================================

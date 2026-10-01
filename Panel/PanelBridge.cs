@@ -301,9 +301,59 @@ namespace CKPNLibrary.Panel
                             CKPNPipeline.MatikanGhostingSekali();
                             var kursor = app.Cursor;
                             app.Cursor = Excel.XlMousePointer.xlWait;
-                            try { return new CKPNLibrary.Modules.DataOverviewBuilder(app).UntukPanel(wbApp); }
+                            try
+                            {
+                                var ov = new CKPNLibrary.Modules.DataOverviewBuilder(app).UntukPanel(wbApp);
+                                // Tahap 4g: simpan sebagai snapshot periode (bahan penjelasan perubahan CKPN)
+                                ov["tersimpan"] = PenjelasanCKPN.SimpanOverview(Convert.ToString(ov["periode"]), ov, "Master!D14");
+                                return ov;
+                            }
                             finally { app.Cursor = kursor; }
                         });
+                        break;
+
+                    // ---- Tahap 4g: penjelasan perubahan CKPN ----
+                    case "penjelasanCKPN":
+                        Balas(host, id, PenjelasanCKPN.Data(Convert.ToString(Ambil(args, "tanggal") ?? "")));
+                        break;
+
+                    case "overviewDariFile":
+                        string tglOv = Convert.ToString(Ambil(args, "tanggal") ?? "");
+                        JalankanDiExcel(host, id, app =>
+                        {
+                            string info;
+                            if (!Database.BolehMenulis(out info)) throw new InvalidOperationException(info);
+                            if (CKPNPipeline.SedangBerjalan || BatchGrup.Aktif)
+                                throw new InvalidOperationException("Perhitungan sedang berjalan. Coba lagi setelah selesai.");
+                            string path;
+                            using (var dlg = new System.Windows.Forms.OpenFileDialog
+                            {
+                                Title = "Pilih file template CKPN periode " + tglOv,
+                                Filter = "File Excel|*.xlsx;*.xlsm;*.xls|Semua file|*.*"
+                            })
+                            {
+                                if (dlg.ShowDialog() != System.Windows.Forms.DialogResult.OK)
+                                    return new Dictionary<string, object> { { "batal", true } };
+                                path = dlg.FileName;
+                            }
+                            CKPNPipeline.MatikanGhostingSekali();
+                            var ov = new CKPNLibrary.Modules.DataOverviewBuilder(app).UntukFile(path, tglOv);
+                            PenjelasanCKPN.SimpanOverview(tglOv, ov, System.IO.Path.GetFileName(path));
+                            return new Dictionary<string, object> { { "batal", false }, { "file", System.IO.Path.GetFileName(path) } };
+                        });
+                        break;
+
+                    // ---- Tahap 5: log proses (pengganti sheet Audit Log) ----
+                    case "logProses":
+                        Balas(host, id, LogProses.Baca(Convert.ToString(Ambil(args, "bulan") ?? "")));
+                        break;
+
+                    case "infoAuditLog":
+                        JalankanDiExcel(host, id, InfoSheetAuditLog);
+                        break;
+
+                    case "arsipAuditLog":
+                        JalankanDiExcel(host, id, ArsipSheetAuditLog);
                         break;
 
                     default:
@@ -510,6 +560,53 @@ namespace CKPNLibrary.Panel
         }
 
         // ================================================================
+        // Sheet "Audit Log" lama (Tahap 5): cek ukuran, lalu arsipkan ke file teks & hapus
+        // ================================================================
+        private static object InfoSheetAuditLog(Excel.Application app)
+        {
+            Excel.Workbook wb = CariWorkbookAplikasi(app);
+            var d = new Dictionary<string, object> { { "workbook", wb != null }, { "ada", false } };
+            if (wb == null) return d;
+            Excel.Worksheet ws = ParameterMaster.CariSheet(wb, LogProses.NamaSheetLama);
+            if (ws == null) return d;
+            int baris, kolom;
+            LogProses.UkuranSheet(ws, out baris, out kolom);
+            d["ada"] = true;
+            d["baris"] = baris;
+            d["kolom"] = kolom;
+            return d;
+        }
+
+        private static object ArsipSheetAuditLog(Excel.Application app)
+        {
+            if (CKPNPipeline.SedangBerjalan || BatchGrup.Aktif)
+                throw new InvalidOperationException("Perhitungan sedang berjalan. Coba lagi setelah selesai.");
+            Excel.Workbook wb = CariWorkbookAplikasi(app);
+            if (wb == null) throw new InvalidOperationException("Workbook aplikasi CKPN tidak sedang terbuka.");
+            Excel.Worksheet ws = ParameterMaster.CariSheet(wb, LogProses.NamaSheetLama);
+            if (ws == null) return new Dictionary<string, object> { { "ada", false } };
+
+            CKPNPipeline.MatikanGhostingSekali();
+            int baris;
+            string file = LogProses.ArsipkanSheet(ws, out baris);   // gagal di sini → sheet tidak dihapus
+
+            // Hapus sheet: proteksi struktur workbook dibuka sementara di Protection.cs (password tidak disalin)
+            Protection.HapusSheet(wb, LogProses.NamaSheetLama);
+
+            DateTime tgl;
+            string periode = ParameterMaster.BacaTanggalLaporan(wb, out tgl) ? tgl.ToString("yyyy-MM-dd") : "";
+            LogProses.CatatPanel(periode, "Panel", "Arsip sheet Audit Log", LogProses.OK, LogProses.R()
+                .Tambah("Baris diarsipkan", baris)
+                .Tambah("File arsip", Path.GetFileName(file))
+                .Tambah("Workbook", wb.Name));
+            CatatanLog.Tulis("Sheet Audit Log diarsipkan ke " + file + " (" + baris + " baris) lalu dihapus dari " + wb.Name);
+            return new Dictionary<string, object>
+            {
+                { "ada", true }, { "baris", baris }, { "file", Path.GetFileName(file) }, { "workbook", wb.Name }
+            };
+        }
+
+        // ================================================================
         // bukaFolder — buka Windows Explorer (hanya folder yang dikenal add-in)
         // ================================================================
         private static void BukaFolder(string jenis)
@@ -520,6 +617,7 @@ namespace CKPNLibrary.Panel
                 case "data":  path = AppPaths.FolderData;  break;
                 case "logs":  path = Path.GetDirectoryName(CatatanLog.LokasiAktif); break;
                 case "lokal": path = AppPaths.FolderLokal; break;
+                case "proses": path = LogProses.FolderAktif; break;
                 default:      path = AppPaths.FolderLibrary; break;
             }
             if (!string.IsNullOrEmpty(path) && Directory.Exists(path))

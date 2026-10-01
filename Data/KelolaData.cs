@@ -110,6 +110,7 @@ namespace CKPNLibrary.Data
                 Database.Exec(con, "DELETE FROM hasil_lgdcs WHERE run_id IN " + runs, pid);
                 Database.Exec(con, "DELETE FROM run_grup WHERE periode_id=@p0", pid);
                 Database.Exec(con, "DELETE FROM periode WHERE id=@p0", pid);
+                Database.Exec(con, "DELETE FROM overview_periode WHERE tanggal=@p0", tanggal);
 
                 if (hapusPenyesuaian)
                 {
@@ -163,7 +164,7 @@ namespace CKPNLibrary.Data
                     nPeriode = Convert.ToInt32(Database.Scalar(con, "SELECT COUNT(*) FROM periode"));
                     nVersi = Convert.ToInt32(Database.Scalar(con, "SELECT COUNT(*) FROM run_grup"));
 
-                    foreach (var t in new[] { "keputusan_metode", "jurnal_ckpn", "ringkasan", "analisis_pd", "hasil_individu", "hasil_lgdcs", "run_grup", "periode" })
+                    foreach (var t in new[] { "keputusan_metode", "jurnal_ckpn", "ringkasan", "analisis_pd", "hasil_individu", "hasil_lgdcs", "run_grup", "periode", "overview_periode" })
                         Database.Exec(con, "DELETE FROM " + t);
                     if (sertakanPenyesuaian)
                     {
