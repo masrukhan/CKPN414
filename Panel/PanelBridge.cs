@@ -343,6 +343,16 @@ namespace CKPNLibrary.Panel
                         });
                         break;
 
+                    // ---- Tahap 5b: lihat & koreksi data tersimpan satu versi grup ----
+                    case "koreksiData":
+                        Balas(host, id, KoreksiRun.Data(Convert.ToInt64(Ambil(args, "runId"))));
+                        break;
+
+                    case "koreksiSimpan":
+                        Balas(host, id, KoreksiRun.Simpan(Convert.ToInt64(Ambil(args, "runId")),
+                            Ambil(args, "individu"), Ambil(args, "lgdcs"), Convert.ToString(Ambil(args, "alasan") ?? "")));
+                        break;
+
                     // ---- Tahap 5: log proses (pengganti sheet Audit Log) ----
                     case "logProses":
                         Balas(host, id, LogProses.Baca(Convert.ToString(Ambil(args, "bulan") ?? "")));

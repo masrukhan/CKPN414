@@ -213,6 +213,60 @@
       <div id="grup-isi"></div>
     </div>
 
+    <!-- Lihat & koreksi data tersimpan satu versi grup (Tahap 5b) -->
+    <div class="kartu" id="kartu-koreksi" hidden>
+      <div class="baris-antara">
+        <div>
+          <div class="judul-kartu" id="kr-judul">Data grup</div>
+          <div class="teks-kecil" id="kr-sub"></div>
+        </div>
+        <button id="kr-tutup" class="tautan" type="button">Tutup</button>
+      </div>
+      <div id="kr-tolak" class="peringatan-box" hidden></div>
+      <div class="segmen jarak-atas" role="group" aria-label="Tabel">
+        <button type="button" data-kr="individu" aria-pressed="true">CKPN Individu</button>
+        <button type="button" data-kr="lgdcs" aria-pressed="false">LGD CS</button>
+      </div>
+      <input id="kr-cari" class="isian jarak-atas" type="search" placeholder="Cari no. kontrak / rekening / nama" aria-label="Cari baris">
+      <div id="kr-info-tabel" class="teks-kecil jarak-atas"></div>
+      <div id="kr-tabel" class="kr-tabel"></div>
+      <div id="kr-tambah-wadah" hidden>
+        <button id="kr-tambah-buka" class="tombol-sekunder lebar" type="button">+ Tambah baris LGD CS</button>
+        <div id="kr-tambah" class="kotak-opsi" hidden>
+          <div class="dua-kolom">
+            <div><label class="label-isian" for="kr-t-rek">No. rekening</label><input id="kr-t-rek" class="isian" type="text"></div>
+            <div><label class="label-isian" for="kr-t-nama">Nama</label><input id="kr-t-nama" class="isian" type="text"></div>
+          </div>
+          <div class="dua-kolom">
+            <div><label class="label-isian" for="kr-t-pokok">Pokok awal (C)</label><input id="kr-t-pokok" class="isian angka" type="text" inputmode="numeric"></div>
+            <div><label class="label-isian" for="kr-t-agunan">Nilai agunan (D)</label><input id="kr-t-agunan" class="isian angka" type="text" inputmode="numeric"></div>
+          </div>
+          <div class="dua-kolom">
+            <div><label class="label-isian" for="kr-t-rec">Realisasi (G)</label><input id="kr-t-rec" class="isian angka" type="text" inputmode="numeric"></div>
+            <div><label class="label-isian" for="kr-t-thn">Thn diserahkan / eksekusi</label><input id="kr-t-thn" class="isian" type="text" placeholder="2023/2025"></div>
+          </div>
+          <div class="baris-tombol jarak-atas">
+            <button id="kr-t-ok" class="tombol-sekunder" type="button">Tambahkan</button>
+            <button id="kr-t-batal" class="tautan" type="button">Batal</button>
+          </div>
+          <div id="kr-t-pesan" class="teks-kecil"></div>
+        </div>
+      </div>
+
+      <div class="label-isian">Dampak ke Summary grup ini</div>
+      <div id="kr-dampak" class="gulir-x"></div>
+      <p id="kr-catatan" class="teks-kecil"></p>
+      <div id="kr-form">
+        <label class="label-isian" for="kr-alasan">Alasan koreksi (wajib)</label>
+        <input id="kr-alasan" class="isian" type="text" placeholder="Mis. appraisal ulang agunan PT ABC Agustus 2026">
+        <div class="baris-tombol jarak-atas">
+          <button id="kr-simpan" class="tombol-utama" type="button" disabled>Simpan sebagai versi baru</button>
+          <button id="kr-reset" class="tombol-sekunder" type="button">Batalkan perubahan</button>
+        </div>
+      </div>
+      <div id="kr-hasil" role="status"></div>
+    </div>
+
     <!-- Susunan grup (editor) -->
     <div class="kartu" id="kartu-susunan" hidden>
       <div class="judul-kartu" id="susunan-judul">Susunan grup</div>

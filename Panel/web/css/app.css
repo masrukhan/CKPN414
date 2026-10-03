@@ -396,3 +396,49 @@ details.kartu[open] > summary { margin-bottom: 8px; }
 .lp-lama .judul-kartu { font-size: 13px; }
 #lp-lama-hasil { overflow-wrap: anywhere; margin-top: 6px; }
 @media (max-width: 380px) { .lp-rinci { margin-left: 0; } }
+
+/* ---------------- Koreksi data versi grup (Tahap 5b) ---------------- */
+#kartu-koreksi { border-color: var(--aksen); }
+#kr-tolak[hidden], #kr-form[hidden], #kr-tambah-wadah[hidden] { display: none; }
+.kr-tabel { margin-top: 6px; max-height: 520px; overflow-y: auto; border-top: 1px solid var(--garis); }
+.kr-baris { border-bottom: 1px solid #EFEDE6; padding: 8px 4px; }
+.kr-baris.diubah { background: #FFF8EA; box-shadow: inset 3px 0 0 #D99A2B; }
+.kr-baris.dihapus { opacity: .55; }
+.kr-baris.dihapus .kr-kepala b { text-decoration: line-through; }
+.kr-baris.baru { background: #EEF5F3; box-shadow: inset 3px 0 0 var(--aksen); }
+.kr-kepala { font-size: 12px; overflow-wrap: anywhere; gap: 8px; }
+.kr-kepala .tautan { flex-shrink: 0; font-size: 12px; }
+.kr-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 6px; }
+.kr-sel-label { font-size: 10px; color: var(--teks-2); margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kr-sel-nilai { font-family: var(--mono); font-size: 11px; text-align: right; overflow-wrap: anywhere; padding-top: 4px; }
+.kr-hasil-sel .kr-sel-nilai { font-weight: 600; }
+.kr-isian { padding: 4px 6px; font-size: 11px; }
+.tabel-dampak td, .tabel-dampak th { white-space: nowrap; }
+.tabel-dampak tr.tebal td { font-weight: 600; }
+.tabel-dampak tr.metode td { background: #EEF5F3; }
+.tabel-dampak th.angka { text-align: right; }
+.tabel-dampak td.naik, .tabel-dampak td.turun { font-weight: 600; }   /* netral: naik/turun CKPN bukan baik/buruk */
+@media (max-width: 400px) { .kr-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* ---------------- Koreksi data versi grup (Tahap 5b) ---------------- */
+#kartu-koreksi { border-color: var(--aksen); }
+#kr-tolak[hidden], #kr-form[hidden], #kr-tambah-wadah[hidden] { display: none; }
+.kr-tabel { margin-top: 6px; max-height: 520px; overflow-y: auto; border-top: 1px solid var(--garis); }
+.kr-baris { border-bottom: 1px solid #EFEDE6; padding: 8px 4px; }
+.kr-baris.diubah { background: #FFF8EA; box-shadow: inset 3px 0 0 #D99A2B; }
+.kr-baris.dihapus { opacity: .55; }
+.kr-baris.dihapus .kr-kepala b { text-decoration: line-through; }
+.kr-baris.baru { background: #EEF5F3; box-shadow: inset 3px 0 0 var(--aksen); }
+.kr-kepala { font-size: 12px; overflow-wrap: anywhere; gap: 8px; }
+.kr-kepala .tautan { flex-shrink: 0; font-size: 12px; }
+.kr-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 6px; }
+.kr-sel-label { font-size: 10px; color: var(--teks-2); margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kr-sel-nilai { font-family: var(--mono); font-size: 11px; text-align: right; overflow-wrap: anywhere; padding-top: 4px; }
+.kr-hasil-sel .kr-sel-nilai { font-weight: 600; }
+.kr-isian { padding: 4px 6px; font-size: 11px; }
+.tabel-dampak td, .tabel-dampak th { white-space: nowrap; }
+.tabel-dampak tr.tebal td { font-weight: 600; }
+.tabel-dampak tr.metode td { background: #EEF5F3; }
+.tabel-dampak th.angka { text-align: right; }
+.tabel-dampak td.naik, .tabel-dampak td.turun { font-weight: 600; }   /* netral: naik/turun CKPN bukan baik/buruk */
+@media (max-width: 400px) { .kr-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

@@ -203,6 +203,7 @@ namespace CKPNLibrary.Data
                 var ringkasan = BacaRingkasan(wb);
                 string analisisJson = AnalisisPD.BacaWorkbookJson(wb);   // Tahap 4: bahan sankey
                 ParameterCKPN param = ParameterMaster.Baca(wb);
+                if (param.LgdCs != null) ringkasan["lgd_cs_haircut"] = param.LgdCs.Haircut;   // Tahap 5b: prefill realisasi saat koreksi
 
                 // ---- c. Tulis database dalam satu transaksi ----
                 Database.Cadangkan();
@@ -756,6 +757,18 @@ namespace CKPNLibrary.Data
                     if (c is double) hasil["lgd_cs"] = (double)c;
                     if (d is double) hasil["lgd_er"] = (double)d;
                     if (e is double) hasil["lgd_gabungan"] = (double)e;
+
+                    // Tahap 5b: total di atasnya (Total WO, Total Recovery) — bahan koreksi LGD CS dari panel
+                    for (int r2 = r - 1; r2 >= r - 3 && r2 >= 5; r2--)
+                    {
+                        string lab = Teks(((Excel.Range)cs.Cells[r2, "B"]).Value2);
+                        string akhiran = lab == "Total WO" ? "_wo" : lab == "Total Recovery" ? "_rec" : null;
+                        if (akhiran == null) continue;
+                        object vc = ((Excel.Range)cs.Cells[r2, "C"]).Value2;
+                        object vd = ((Excel.Range)cs.Cells[r2, "D"]).Value2;
+                        if (vc is double) hasil["lgd_cs" + akhiran] = (double)vc;
+                        if (vd is double) hasil["lgd_er" + akhiran] = (double)vd;
+                    }
                     break;
                 }
             }
