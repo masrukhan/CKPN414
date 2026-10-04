@@ -2914,8 +2914,8 @@
       $("d-jembatan").innerHTML = '<span class="ok">Terhubung</span>';
       teks("lencana-versi", "v" + d.versiAddin);
       teks("d-excel", d.versiExcel + " · " + d.arsitektur);
-      teks("d-webview", d.webview2);
-      teks("d-user", d.user + " @ " + d.komputer);
+      teks("d-user", d.user);
+      teks("d-hak", d.bolehMenulis ? "Lihat & simpan" : "Hanya lihat (nama user belum ada di config\\pengirim.txt)");
       teks("d-library", d.folderLibrary);
       teks("d-log", d.fileLog);
       teks("d-db", (d.databaseAda ? "Ada · " : "Belum ada (dibuat saat Simpan grup pertama) · ") + d.fileDatabase);

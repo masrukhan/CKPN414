@@ -424,6 +424,13 @@ namespace CKPNLibrary.Panel
             });
         }
 
+        /// <summary>Hak simpan user ini (dari config\pengirim.txt) untuk ditampilkan di panel.</summary>
+        private static bool BolehMenulisAman()
+        {
+            try { string info; return Database.BolehMenulis(out info); }
+            catch { return false; }
+        }
+
         // ================================================================
         // ping — informasi lingkungan (tanpa Excel COM)
         // ================================================================
@@ -446,6 +453,7 @@ namespace CKPNLibrary.Panel
                 { "databaseAda",   File.Exists(AppPaths.FileDatabase) },
                 { "fileDatabase",  AppPaths.FileDatabase },
                 { "user",          Environment.UserName },
+                { "bolehMenulis",  BolehMenulisAman() },
                 { "komputer",      Environment.MachineName }
             };
         }
