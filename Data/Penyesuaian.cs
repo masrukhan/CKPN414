@@ -348,6 +348,25 @@ namespace CKPNLibrary.Data
             finally { _dasarCs = null; _reviewCsManual = 0; }
         }
 
+        /// <summary>
+        /// Tahap 5e: LGD CS tidak dihitung pada run ini (mode setahun sekali, LGD memakai acuan
+        /// Desember). Info review LGD CS dari run sebelumnya — mungkin milik grup lain — diganti
+        /// supaya tidak muncul sebagai temuan.
+        /// </summary>
+        public static void LewatiLgdCs(string keterangan)
+        {
+            _reviewCs = new Dictionary<string, object>
+            {
+                { "waktu", Database.Sekarang() },
+                { "lewati", true }, { "keterangan", keterangan },
+                { "penyesuaianDiterapkan", Aktif },
+                { "jumlahSistem", 0 }, { "dikecualikan", 0 }, { "diubah", 0 }, { "ditambah", 0 },
+                { "baru", new List<object>() },
+                { "dikenalTersedia", true },
+                { "masalah", null }
+            };
+        }
+
         // =================================================================
         // Info review untuk panel
         // =================================================================

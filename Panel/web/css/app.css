@@ -442,3 +442,95 @@ details.kartu[open] > summary { margin-bottom: 8px; }
 .tabel-dampak th.angka { text-align: right; }
 .tabel-dampak td.naik, .tabel-dampak td.turun { font-weight: 600; }   /* netral: naik/turun CKPN bukan baik/buruk */
 @media (max-width: 400px) { .kr-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* ---------------- Acuan PD & LGD tahunan (Tahap 5e) ---------------- */
+#pg-acuan { margin-top: 8px; }
+#acuan-pilihan[hidden] { display: none; }
+.acuan-grup { margin: 6px 0 0; padding-left: 18px; }
+.acuan-grup li { margin: 2px 0; }
+.acuan-grup li.kurang { color: var(--peringatan); }
+
+/* =====================================================================
+   Tahap 5f: susunan menu baru
+   Header: pemilih periode global · tab Ringkasan / Hitung / Tetapkan / Analisis + ⚙
+   ===================================================================== */
+.periode-global { margin-top: 10px; border: 1px solid var(--garis); border-radius: 10px; padding: 4px 10px 6px; background: #FAFAF7; }
+.pilih-periode { width: 100%; border: none; background: transparent; font: inherit; font-size: 15px; font-weight: 600;
+  color: var(--teks); padding: 3px 0; cursor: pointer; }
+.pilih-periode:focus-visible { outline: 2px solid var(--aksen); outline-offset: 1px; border-radius: 4px; }
+.periode-global-sub { display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  font-size: 12px; color: var(--teks-2); }
+.periode-global-sub #hp-sub { min-width: 0; overflow-wrap: anywhere; }
+.chip-status { font-size: 11px; padding: 1px 8px; border-radius: 999px; white-space: nowrap; flex-shrink: 0; }
+.chip-status.terbuka { background: #E7F2EC; color: var(--sukses); }
+.chip-status.final { background: var(--aksen); color: #fff; }
+.chip-status[hidden] { display: none; }
+
+.tab { align-items: stretch; }
+.tab .tab-gigi { margin-left: auto; padding: 6px 8px; display: flex; align-items: center; }
+.ikon-gigi { width: 18px; height: 18px; display: block; }
+
+.sub-nav { display: flex; margin-top: 0; }
+.sub-nav button { flex: 1; padding: 7px 6px; }
+.isi-sub { display: flex; flex-direction: column; gap: 12px; }
+.isi-sub[hidden] { display: none; }
+
+/* Ringkasan: langkah berikutnya */
+.kotak-berikut { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 8px 0;
+  padding: 10px 12px; border-radius: 8px; background: #EEF5F3; border: 1px solid #CFE0DC; font-size: 13px; }
+.kotak-berikut[hidden] { display: none; }
+.kotak-berikut .tombol-sekunder { flex-shrink: 0; border-color: var(--aksen); color: var(--aksen); font-weight: 600; }
+
+/* Hitung › Per grup: baris grup ringkas */
+.baris-grup { border: 1px solid var(--garis); border-radius: 10px; margin-top: 8px; background: #fff; }
+.baris-grup.di-workbook { border-color: var(--aksen); box-shadow: inset 3px 0 0 var(--aksen); }
+.baris-grup > summary { list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  padding: 9px 12px; cursor: pointer; }
+.baris-grup > summary::-webkit-details-marker { display: none; }
+.baris-grup > summary:focus-visible { outline: 2px solid var(--aksen); outline-offset: -2px; border-radius: 10px; }
+.baris-grup > summary:hover { background: #FAFAF7; border-radius: 10px; }
+.bg-kiri { display: flex; flex-direction: column; min-width: 0; }
+.bg-kiri .nama-grup { font-weight: 600; font-size: 14px; }
+.bg-kanan { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.bg-kanan::after { content: "⋯"; color: var(--teks-2); font-size: 14px; width: 14px; text-align: center; }
+.baris-grup[open] > summary .bg-kanan::after { content: "▴"; font-size: 11px; }
+.bg-angka { font-family: var(--mono); font-size: 12px; }
+.bg-isi { padding: 2px 12px 10px; border-top: 1px dashed #EFEDE6; }
+.bg-isi .aksi-grup .tautan { padding: 0 4px; }
+
+/* Tetapkan: syarat penetapan */
+.daftar-syarat { list-style: none; margin: 6px 0 0; padding: 0; }
+.syarat { display: flex; gap: 10px; align-items: flex-start; padding: 6px 0; border-bottom: 1px solid #EFEDE6; font-size: 13px; }
+.syarat:last-child { border-bottom: none; }
+.syarat-ikon { width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0; margin-top: 1px; display: flex; align-items: center;
+  justify-content: center; font-size: 11px; font-weight: 700; color: #fff; }
+.syarat.s-ok .syarat-ikon { background: var(--sukses); }
+.syarat.s-belum .syarat-ikon { background: #8A908D; }
+.syarat.s-awas .syarat-ikon { background: #B7791F; }
+
+/* Analisis › Versi */
+.blok-versi { padding: 8px 0; border-top: 1px solid #EFEDE6; }
+.blok-versi:first-child { border-top: none; }
+.blok-versi .nama-grup { font-weight: 600; font-size: 13px; color: var(--teks); }
+.tabel-rw tr.baris-klik { cursor: pointer; }
+.tabel-rw tr.baris-klik:hover td { background: #F6F8F7; }
+.tabel-rw tr.baris-klik:focus-visible { outline: 2px solid var(--aksen); outline-offset: -2px; }
+.tabel-rw tr.terpilih td:first-child { box-shadow: inset 3px 0 0 var(--aksen); }
+.tabel-rw tr.terpilih td:first-child > div:first-child { font-weight: 600; }
+
+/* ⚙ Pengaturan */
+.daftar-atur { padding: 0; overflow: hidden; }
+.baris-atur { display: flex; width: 100%; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 14px;
+  background: none; border: none; border-bottom: 1px solid #EFEDE6; text-align: left; font: inherit; color: var(--teks); cursor: pointer; }
+.baris-atur:last-child { border-bottom: none; }
+button.baris-atur:hover { background: #FAFAF7; }
+button.baris-atur:focus-visible { outline: 2px solid var(--aksen); outline-offset: -2px; }
+.baris-atur.statis { cursor: default; }
+.atur-teks { display: flex; flex-direction: column; min-width: 0; }
+.atur-nama { font-weight: 600; font-size: 13px; }
+.atur-nilai { font-size: 12px; color: var(--teks-2); overflow-wrap: anywhere; }
+.atur-ubah { color: var(--aksen); font-size: 12px; flex-shrink: 0; white-space: nowrap; }
+.baris-atur.statis .atur-ubah { color: var(--teks-2); }
+#pt-pengirim-info { margin: 0 14px 12px; }
+#pt-pengirim-info p { margin: 0 0 8px; }
+#tab-pengaturan > .label-kecil { margin-top: 4px; }

@@ -329,6 +329,25 @@ namespace CKPNLibrary.Modules
                     double os = SumBucket(allData, specs, setSkip, b.Lo, b.Hi);
                     ((Excel.Range)wsKol.Cells[b.Row, "U"]).Value2 = os;
                 }
+
+                // Tahap 5e: OS per kualitas AKTUAL (populasi sama, Top-N dikecualikan) → U24:U28, dibaca C38:C42
+                var osKual = new double[6];
+                foreach (var spec in specs)
+                {
+                    if (!allData.ContainsKey(spec.SheetName)) continue;
+                    foreach (var rec in allData[spec.SheetName])
+                    {
+                        if (!rec.Masuk || setSkip.Contains(spec.SheetName + "|" + rec.NoRek)) continue;
+                        osKual[rec.Kual >= 1 && rec.Kual <= 5 ? rec.Kual : 0] += HitungOS(rec, spec.Mode);
+                    }
+                }
+                for (int k = 1; k <= 5; k++) ((Excel.Range)wsKol.Cells[23 + k, "U"]).Value2 = osKual[k];
+                ((Excel.Range)wsKol.Range["T29"]).Value2 = osKual[0] > 0 ? "Kualitas tidak dikenal (tidak masuk C38:C42)" : null;
+                ((Excel.Range)wsKol.Range["U29"]).Value2 = osKual[0] > 0 ? (object)osKual[0] : null;
+
+                // Acuan PD & LGD (Tahap 5e) hanya berlaku bila panel menuliskannya SETELAH langkah ini
+                ((Excel.Range)wsKol.Range["Z3"]).ClearContents();
+                ((Excel.Range)wsKol.Range["AB3"]).ClearContents();
             }
             finally
             {
@@ -345,6 +364,7 @@ namespace CKPNLibrary.Modules
             public string CIF, NoRek, Nama;
             public double Hari1, Nom1, Hari2, Nom2;
             public bool   Masuk;
+            public int    Kual;   // Tahap 5e: kualitas 1–5 (0 = tidak dikenal)
         }
 
         private Dictionary<string, List<RowRecord>> BacaSemueSheet(
@@ -370,6 +390,7 @@ namespace CKPNLibrary.Modules
             string[] cifArr  = ExcelHelper.BacaKolomString(ws, spec.ColCIF,   dataStart, lastRow);
             string[] rekArr  = ExcelHelper.BacaKolomString(ws, spec.ColNoRek, dataStart, lastRow);
             string[] namaArr = ExcelHelper.BacaKolomString(ws, spec.ColNama,  dataStart, lastRow);
+            string[] kualArr = ExcelHelper.BacaKolomString(ws, spec.ColKualitas, dataStart, lastRow);   // Tahap 5e
             double[] h1Arr, n1Arr;
             double[] h2Arr = null, n2Arr = null;
 
@@ -425,7 +446,8 @@ namespace CKPNLibrary.Modules
                         masuk = !string.IsNullOrEmpty(nama);
                         break;
                 }
-                list.Add(new RowRecord { CIF=cif, NoRek=rek, Nama=nama, Hari1=h1, Nom1=n1, Hari2=h2, Nom2=n2, Masuk=masuk });
+                list.Add(new RowRecord { CIF=cif, NoRek=rek, Nama=nama, Hari1=h1, Nom1=n1, Hari2=h2, Nom2=n2, Masuk=masuk,
+                                         Kual = NormKualitas(i < kualArr.Length ? kualArr[i] : "") });
             }
             return list;
         }
@@ -503,6 +525,17 @@ namespace CKPNLibrary.Modules
                 }
             }
             return total;
+        }
+
+        // Tahap 5e: "1", "1 - Lancar", "05" → 1..5; selain itu 0
+        private static int NormKualitas(string val)
+        {
+            if (string.IsNullOrWhiteSpace(val)) return 0;
+            string s = val.Trim();
+            int i = 0;
+            while (i < s.Length && char.IsDigit(s[i])) i++;
+            int n;
+            return (i > 0 && int.TryParse(s.Substring(0, i), out n) && n >= 1 && n <= 5) ? n : 0;
         }
 
         private static double HitungOS(RowRecord rec, SheetMode mode)

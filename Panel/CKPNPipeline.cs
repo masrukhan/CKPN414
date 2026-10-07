@@ -60,6 +60,20 @@ namespace CKPNLibrary.Panel
             new Langkah { Id = "summary",   Nama = "Refresh Summary & PPKA",   SheetDitulis = "Summary",                   Jalankan = JalankanSummary   },
         };
 
+        /// <summary>
+        /// Langkah khusus mode setahun sekali (Tahap 5e): menulis PD &amp; LGD Desember tahun lalu
+        /// (acuan) ke sheet kolektif. Tidak tampil di tab Manual; disisipkan setelah CKPN Individu
+        /// bila run memakai acuan, menggantikan Net Flow, Migration, LGD ER, dan LGD CS.
+        /// </summary>
+        private static readonly Langkah LangkahAcuan = new Langkah
+        {
+            Id = "acuan", Nama = "PD & LGD acuan Desember", SheetDitulis = AcuanTahunan.SheetKol, Jalankan = JalankanAcuan
+        };
+        private static AcuanTahunan.Acuan _acuan;
+
+        /// <summary>Keputusan acuan pada MulaiGrup terakhir (untuk BatchGrup/panel); null = tidak relevan.</summary>
+        public static string CatatanAcuan { get; private set; }
+
         /// <summary>Id langkah hitung (dipakai ParameterMaster untuk error umum).</summary>
         public static IEnumerable<string> IdLangkahHitung
         {
@@ -121,7 +135,7 @@ namespace CKPNLibrary.Panel
         /// <returns>null bila berhasil dimulai; selain itu pesan penolakan.</returns>
         /// <param name="sumberLog">label sumber di log proses, mis. "Panel · Grup Murabahah" (bawaan "Panel · Manual")</param>
         public static string Mulai(Excel.Application app, IList<string> idDipilih, bool terapkanPenyesuaian = true,
-                                   string sumberLog = null)
+                                   string sumberLog = null, AcuanTahunan.Acuan acuan = null)
         {
             if (SedangBerjalan) return "Perhitungan lain sedang berjalan.";
 
@@ -140,12 +154,15 @@ namespace CKPNLibrary.Panel
                 if (!pilih.Contains(l.Id)) continue;
                 if (!p.Siap(l.Id)) masalah.Add(l.Nama + ": " + string.Join("; ", p.Error[l.Id].ToArray()));
                 antrian.Add(l);
+                if (l.Id == "individu" && acuan != null) antrian.Add(LangkahAcuan);   // acuan ditulis setelah Individu
             }
+            if (acuan != null && !pilih.Contains("individu")) return "Acuan PD & LGD hanya dapat dipakai bersama CKPN Individu.";
             if (antrian.Count == 0) return "Belum ada langkah yang dipilih.";
             if (masalah.Count > 0) return "Parameter belum lengkap:\n- " + string.Join("\n- ", masalah.ToArray());
 
             _wbApp        = wb;
             _param        = p;
+            _acuan        = acuan;
             _antrian      = antrian;
             _indeks       = -1;          // -1 = langkah pemeriksaan proteksi
             _mintaBatal   = false;
@@ -177,7 +194,8 @@ namespace CKPNLibrary.Panel
                 .Tambah("Bulan laporan", p.BulanLaporan)
                 .Tambah("Langkah", string.Join(", ", namaLangkah.ToArray()))
                 .Tambah("Penyesuaian tersimpan", terapkanPenyesuaian ? "diterapkan" : "tidak diterapkan (hasil sistem murni)")
-                .Tambah("Top-N Master!C10", ParameterMaster.BacaTopN(wb)));
+                .Tambah("Top-N Master!C10", ParameterMaster.BacaTopN(wb))
+                .TambahBila(acuan != null, "PD & LGD", acuan == null ? null : "acuan " + acuan.Label + " (Net Flow, Migration, LGD ER, LGD CS dilewati)"));
             PanelBridge.Siarkan("runMulai", new Dictionary<string, object>
             {
                 { "langkah", daftar }, { "periode", p.BulanLaporan }, { "kc", p.KCList },
@@ -212,6 +230,14 @@ namespace CKPNLibrary.Panel
                 finally { DiDalamLangkah = false; }
 
                 if (!ok) { Akhiri(app, "gagal", "Pemeriksaan proteksi file gagal (lihat dialog yang muncul)."); return; }
+
+                // PD & LGD dihitung penuh pada run ini → acuan lama (bila ada) tidak boleh terpakai lagi.
+                // Sekalian memastikan rumus mode setahun terpasang di sheet kolektif (Tahap 5e).
+                if (_acuan == null && _antrian.Exists(x => x.Id == "netflow" || x.Id == "migration" || x.Id == "lgder" || x.Id == "lgdcs"))
+                {
+                    try { AcuanTahunan.Kosongkan(_wbApp); }
+                    catch (Exception ex) { CatatanLog.Tulis("Kosongkan acuan PD & LGD gagal: " + PesanError(ex)); }
+                }
                 _indeks = 0;
                 JadwalkanBerikut();
                 return;
@@ -288,8 +314,11 @@ namespace CKPNLibrary.Panel
         /// Hitung satu grup dari tab Periode: centang KC di Master diubah sesuai
         /// grup, lalu seluruh langkah dijalankan (penyesuaian tersimpan diterapkan).
         /// </summary>
-        public static string MulaiGrup(Excel.Application app, string kodeKC, bool terapkanPenyesuaian)
+        /// <param name="pakaiAcuan">mode setahun sekali, laporan Jan–Nov: pakai PD &amp; LGD Desember tahun lalu
+        /// dari database bila tersedia (bila tidak, grup dihitung penuh — lihat <see cref="CatatanAcuan"/>)</param>
+        public static string MulaiGrup(Excel.Application app, string kodeKC, bool terapkanPenyesuaian, bool pakaiAcuan = false)
         {
+            CatatanAcuan = null;
             if (SedangBerjalan) return "Perhitungan lain sedang berjalan.";
             Excel.Workbook wb = PanelBridge.CariWorkbookAplikasi(app);
             if (wb == null) return "Workbook aplikasi CKPN tidak sedang terbuka.";
@@ -318,8 +347,24 @@ namespace CKPNLibrary.Panel
                 if (!string.IsNullOrEmpty(nm)) grupLog = nm;
             }
             var semua = new List<string>(IdLangkahHitung);
+            AcuanTahunan.Acuan acuan = null;
+            int? thAcuan = null;
+            if (pakaiAcuan && ParameterMaster.BacaTanggalLaporan(wb, out tglG) && AcuanTahunan.ModeTahunan(wb))
+                thAcuan = AcuanTahunan.TahunAcuan(tglG);
+            if (thAcuan.HasValue)
+            {
+                string masalahAcuan;
+                try { acuan = AcuanTahunan.Cari(thAcuan.Value, kodeKC, out masalahAcuan); }
+                catch (Exception ex) { masalahAcuan = PesanError(ex); }
+                if (acuan != null)
+                {
+                    semua = new List<string> { "individu", "summary" };
+                    CatatanAcuan = "PD & LGD acuan " + acuan.Label;
+                }
+                else CatatanAcuan = "Acuan Desember " + thAcuan.Value + " tidak tersedia (" + masalahAcuan + ") — dihitung penuh.";
+            }
             return Mulai(app, semua, terapkanPenyesuaian,
-                         (BatchGrup.Aktif ? "Panel · Semua grup · " : "Panel · Grup ") + grupLog);
+                         (BatchGrup.Aktif ? "Panel · Semua grup · " : "Panel · Grup ") + grupLog, acuan);
         }
 
         private static void Akhiri(Excel.Application app, string status, string error)
@@ -363,7 +408,7 @@ namespace CKPNLibrary.Panel
                 { "langkah", _hasilLangkah }, { "pesan", pesanModul }
             });
 
-            _antrian = null; _param = null; _wbApp = null;
+            _antrian = null; _param = null; _wbApp = null; _acuan = null;
 
             var lanjut = SetelahSelesai;
             SetelahSelesai = null;
@@ -459,6 +504,22 @@ namespace CKPNLibrary.Panel
         private static void JalankanLgdCs(Excel.Application app, ParameterCKPN p)
         {
             new LGDCollateralShortfall(app).Hitung(p.LgdCs.FileConfigStr, p.LgdCs.Haircut, p.KCList);
+        }
+
+        private static void JalankanAcuan(Excel.Application app, ParameterCKPN p)
+        {
+            AcuanTahunan.Tulis(_wbApp ?? PanelBridge.CariWorkbookAplikasi(app), _acuan);
+            Data.Penyesuaian.LewatiLgdCs("LGD memakai acuan " + _acuan.Label);
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("Mode setahun sekali: PD & LGD memakai versi " + _acuan.Label + " (status periode " + _acuan.Status + ").");
+            sb.AppendLine("Net Flow, Migration, LGD ER, dan LGD CS tidak dihitung ulang.");
+            sb.Append("LGD weighted " + (_acuan.Lgd.Value * 100).ToString("0.00", LogProses.Id) + "% · PD Migration Kol 1–5: ");
+            for (int i = 0; i < 5; i++) sb.Append((i > 0 ? " / " : "") + (_acuan.PdMig[i].Value * 100).ToString("0.00", LogProses.Id) + "%");
+            Pemberitahu.Info("PD & LGD acuan Desember", sb.ToString());
+            LogProses.Catat("PD & LGD acuan", _acuan.Label, LogProses.OK, LogProses.R()
+                .Tambah("Versi acuan", _acuan.RunId)
+                .Tambah("Status periode acuan", _acuan.Status)
+                .Tambah("LGD weighted", (_acuan.Lgd.Value * 100).ToString("0.00", LogProses.Id) + "%"));
         }
 
         private static void JalankanSummary(Excel.Application app, ParameterCKPN p)

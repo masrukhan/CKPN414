@@ -86,6 +86,7 @@ namespace CKPNLibrary.Data
             public List<string>    Peringatan = new List<string>();
             public int VersiBerikut = 1;
             public HashSet<string> KontrakBerPenyesuaian = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            public AcuanTahunan.Acuan Acuan;   // Tahap 5e: PD & LGD memakai acuan Desember (LGD CS tidak dihitung)
         }
 
         // ================================================================
@@ -144,6 +145,7 @@ namespace CKPNLibrary.Data
                 { "perubahan", daftar }, { "peringatan", r.Peringatan },
                 { "bolehMenulis", boleh && statusPeriode != "Final" && tolakTopN == null }, { "infoPengirim", alasanTulis },
                 { "topN", ParameterMaster.BacaTopN(r.Wb) },
+                { "acuan", r.Acuan == null ? null : "PD & LGD memakai acuan " + r.Acuan.Label + " (LGD CS tidak dihitung bulan ini)" },
                 { "berjalan", CKPNPipeline.SedangBerjalan }
             };
         }
@@ -204,6 +206,19 @@ namespace CKPNLibrary.Data
                 string analisisJson = AnalisisPD.BacaWorkbookJson(wb);   // Tahap 4: bahan sankey
                 ParameterCKPN param = ParameterMaster.Baca(wb);
                 if (param.LgdCs != null) ringkasan["lgd_cs_haircut"] = param.LgdCs.Haircut;   // Tahap 5b: prefill realisasi saat koreksi
+
+                // Tahap 5e: mode acuan — LGD & bahan analisis PD milik versi Desember, bukan isi sheet B1/B2/B4
+                if (r.Acuan != null)
+                {
+                    foreach (var k in new List<string>(ringkasan.Keys))
+                        if (k.StartsWith("lgd", StringComparison.OrdinalIgnoreCase)) ringkasan.Remove(k);
+                    foreach (var kv in r.Acuan.RingkasanLgd) ringkasan[kv.Key] = kv.Value;
+                    ringkasan["lgd_gabungan"] = r.Acuan.Lgd.Value;
+                    ringkasan["acuan_run_id"] = r.Acuan.RunId;
+                    ringkasan["acuan_versi"] = r.Acuan.Versi;
+                    if (!string.IsNullOrEmpty(r.Acuan.AnalisisJson)) analisisJson = r.Acuan.AnalisisJson;
+                    catatan = (string.IsNullOrEmpty(catatan) ? "" : catatan + " · ") + "PD & LGD acuan " + r.Acuan.Label;
+                }
 
                 // ---- c. Tulis database dalam satu transaksi ----
                 Database.Cadangkan();
@@ -375,7 +390,20 @@ namespace CKPNLibrary.Data
             Excel.Worksheet wsI = ParameterMaster.CariSheet(r.Wb, SheetIndv);
             Excel.Worksheet wsC = ParameterMaster.CariSheet(r.Wb, SheetCs);
             if (wsI != null) r.Indv = BacaIndividu(wsI);
-            if (wsC != null) r.Cs   = BacaLgdCs(wsC);
+
+            // Tahap 5e: mode setahun sekali dengan acuan Desember → sheet B4 bukan milik run ini
+            string masalahAcuan;
+            r.Acuan = AcuanTahunan.AktifDiWorkbook(r.Wb, out masalahAcuan);
+            if (masalahAcuan != null)
+                throw new InvalidOperationException("Acuan PD & LGD di sheet kolektif tidak dapat dibaca: " + masalahAcuan +
+                                                    " Hitung ulang grup ini.");
+            if (r.Acuan != null)
+            {
+                if (!string.Equals(r.Acuan.KodeKC, r.KodeKC, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("Acuan PD & LGD di sheet milik grup " + r.Acuan.KodeKC +
+                                                        ", sedangkan KC yang dicentang " + r.KodeKC + ". Hitung ulang grup ini.");
+            }
+            else if (wsC != null) r.Cs = BacaLgdCs(wsC);
 
             // Penyesuaian tersimpan (read-only). Database belum ada = kosong.
             var ovInd = new Dictionary<string, PenyesuaianIndividu>(StringComparer.OrdinalIgnoreCase);
@@ -395,7 +423,7 @@ namespace CKPNLibrary.Data
 
             foreach (var k in ovInd.Keys) r.KontrakBerPenyesuaian.Add(k);
             BandingkanIndividu(r, ovInd);
-            BandingkanLgdCs(r, ovCs);
+            if (r.Acuan == null) BandingkanLgdCs(r, ovCs);   // mode acuan: LGD CS tidak dihitung → tidak ada perubahan
             return r;
         }
 

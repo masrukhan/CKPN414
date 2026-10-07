@@ -331,6 +331,35 @@ namespace CKPNLibrary
         }
 
         // ----------------------------------------------------------------
+        // UbahSheet (Tahap 5e): jalankan aksi pada satu sheet dengan proteksi
+        // dibuka sementara, lalu dikunci ulang dengan opsi standar.
+        // ----------------------------------------------------------------
+        internal static void UbahSheet(Excel.Workbook wb, string namaSheet, Action<Excel.Worksheet> aksi)
+        {
+            Excel.Worksheet ws = null;
+            foreach (Excel.Worksheet sh in wb.Worksheets)
+                if (sh.Name.Equals(namaSheet, StringComparison.OrdinalIgnoreCase)) { ws = sh; break; }
+            if (ws == null) throw new InvalidOperationException("Sheet '" + namaSheet + "' tidak ditemukan.");
+
+            bool terkunci = ws.ProtectContents;
+            if (terkunci) ws.Unprotect(PasswordMaster);
+            try
+            {
+                aksi(ws);
+            }
+            finally
+            {
+                if (terkunci)
+                    ws.Protect(
+                        Password:          PasswordMaster,
+                        DrawingObjects:    true,
+                        Contents:          true,
+                        Scenarios:         true,
+                        UserInterfaceOnly: false);
+            }
+        }
+
+        // ----------------------------------------------------------------
         // Helper: tampilkan pesan error
         // ----------------------------------------------------------------
         private static void TampilkanError(string pesan)

@@ -1,6 +1,6 @@
 // =====================================================================
 // Panel CKPN — logika sisi panel
-// Tab: Overview · Manual (jalankan langkah pilihan) · Per grup (alur periode) · Riwayat · Analisis
+// Tab (Tahap 5f): Ringkasan · Hitung (Per grup / Manual / Penyesuaian) · Tetapkan · Analisis (Tren / Komposisi / Versi) · ⚙ Pengaturan
 // Kartu progres/hasil/simpan berada di area proses bersama, sehingga terlihat dari tab mana pun.
 //
 // Komunikasi dengan C# (PanelBridge.cs):
@@ -73,23 +73,75 @@
     gagal:    '<svg class="ikon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="9" fill="#A1321F"/><path d="M7 7l6 6M13 7l-6 6" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>'
   };
 
-  // ---------------- Tab ----------------
+  // ---------------- Tab (Tahap 5f) ----------------
+  //   Ringkasan · Hitung (Per grup / Manual / Penyesuaian) · Tetapkan · Analisis (Tren / Komposisi / Versi) · ⚙ Pengaturan
+  //   Periode yang ditampilkan dipilih sekali di header (#pilih-periode) dan berlaku untuk semua tab.
   var tombolTab = document.querySelectorAll('.tab [role="tab"]');
+  var tabAktif = "ringkasan", tabSebelum = "ringkasan";
+  var subAktif = { hitung: "pergrup", analisis: "tren" };
+
+  // Periode terpilih untuk dimuat ulang: "" = ikuti Master!C4 (bila yang tampil memang periode Master)
+  function periodeTerpilih() {
+    if (!statusP) return "";
+    return statusP.tanggal === statusP.tanggalMaster ? "" : statusP.tanggal;
+  }
+
+  function muatSub(grup, nama) {
+    if (grup === "hitung") {
+      if (nama === "penyesuaian") muatPenyesuaian();
+      if (nama === "manual" && !dataLangkah.length) muatPersiapan();
+    } else if (grup === "analisis") {
+      if (nama === "tren") muatRiwayat();
+      if (nama === "komposisi") {
+        muatSumberAnalisis();
+        muatPenjelasan($("pj-periode").value || (statusP ? statusP.tanggal : ""));
+      }
+      if (nama === "versi" && $("kartu-log").open) { muatLog($("lp-bulan").value); muatInfoAuditLog(); }
+    }
+  }
+
+  function pindahSub(grup, nama, tanpaMuat) {
+    subAktif[grup] = nama;
+    document.querySelectorAll('.sub-nav[data-grup="' + grup + '"] [data-sub]').forEach(function (b) {
+      var aktif = b.getAttribute("data-sub") === nama;
+      b.setAttribute("aria-pressed", aktif ? "true" : "false");
+      $("sub-" + b.getAttribute("data-sub")).hidden = !aktif;
+    });
+    Grafik.sembunyiTip();
+    if (!tanpaMuat) muatSub(grup, nama);
+  }
+
+  function pindahTab(nama, sub, tanpaMuat) {
+    if (nama !== tabAktif && tabAktif !== "pengaturan") tabSebelum = tabAktif;
+    tabAktif = nama;
+    tombolTab.forEach(function (x) {
+      var aktif = x.getAttribute("data-tab") === nama;
+      x.setAttribute("aria-selected", aktif ? "true" : "false");
+      $("tab-" + x.getAttribute("data-tab")).hidden = !aktif;
+    });
+    Grafik.sembunyiTip();
+    if (sub) pindahSub(nama, sub, true);
+    if (tanpaMuat) return;
+    if (nama === "ringkasan") { muatPeriode(periodeTerpilih()); if (!dataOverview) muatOverview(); }
+    if (nama === "hitung" || nama === "tetapkan") muatPeriode(periodeTerpilih());
+    if (nama === "pengaturan") {
+      muatPeriode(periodeTerpilih());
+      muatDiagnostik();
+      if ($("db-kelola").open) muatInfoDatabase();
+    }
+    if (nama === "analisis" && subAktif.analisis === "versi") muatPeriode(periodeTerpilih());
+    if (subAktif[nama]) muatSub(nama, subAktif[nama]);
+  }
+
   tombolTab.forEach(function (b) {
+    b.addEventListener("click", function () { pindahTab(b.getAttribute("data-tab")); });
+  });
+  document.querySelectorAll(".sub-nav [data-sub]").forEach(function (b) {
     b.addEventListener("click", function () {
-      var nama = b.getAttribute("data-tab");
-      if (nama === "periode") { muatPeriode(); muatPenyesuaian(); if ($("db-kelola").open) muatInfoDatabase(); }
-      if (nama === "overview" && !dataOverview) muatOverview();
-      if (nama === "riwayat") { muatRiwayat(); if ($("kartu-log").open) { muatLog($("lp-bulan").value); muatInfoAuditLog(); } }
-      if (nama === "analisis") { muatSumberAnalisis(); muatPenjelasan($("pj-periode").value); }
-      Grafik.sembunyiTip();
-      tombolTab.forEach(function (x) {
-        var aktif = x.getAttribute("data-tab") === nama;
-        x.setAttribute("aria-selected", aktif ? "true" : "false");
-        $("tab-" + x.getAttribute("data-tab")).hidden = !aktif;
-      });
+      pindahSub(b.parentNode.getAttribute("data-grup"), b.getAttribute("data-sub"));
     });
   });
+  $("btn-pengaturan-kembali").addEventListener("click", function () { pindahTab(tabSebelum || "ringkasan"); });
 
   // =====================================================================
   // 1. Persiapan: baca Master & validasi setiap langkah
@@ -108,7 +160,7 @@
       if (d.topNTahun && d.topNMaster !== d.topNTahun)
         ti.appendChild(el("div", "peringatan-box", "Top-N di Master!C10 = " + d.topNMaster + ", sedangkan ketetapan grup " + d.namaGrup + " tahun " + d.tahun +
           " = " + d.topNTahun + ". Hitung manual tetap bisa dijalankan, tetapi hasilnya tidak dapat disimpan ke staging. " +
-          "Hitung dari tab Per grup untuk memakai Top-N tahunan secara otomatis."));
+          "Hitung dari Hitung › Per grup untuk memakai Top-N tahunan secara otomatis."));
       else if (d.topNTahun)
         ti.appendChild(el("div", "teks-kecil", "Top-N " + d.topNMaster + " sesuai ketetapan grup " + d.namaGrup + " tahun " + d.tahun + "."));
       teks("wb-nama", d.namaFile);
@@ -285,10 +337,10 @@
     setPersen((run.selesai / (run.langkah.length || 1)) * 100);
   });
 
-  // Status kartu grup (tab Per grup) disegarkan setiap kali isi workbook/database berubah:
+  // Status kartu grup (Hitung › Per grup) disegarkan setiap kali isi workbook/database berubah:
   // selesai hitung, selesai simpan, dan saat kartu hasil/simpan ditutup — tanpa perlu pindah tab.
   function segarkanPerGrup() {
-    if (!statusP) return;   // tab Per grup belum pernah dibuka; akan dimuat saat dibuka
+    if (!statusP) return;   // periode belum pernah dimuat
     muatPeriode(statusP.tanggal === statusP.tanggalMaster ? "" : statusP.tanggal);
   }
 
@@ -411,6 +463,13 @@
       wadah.appendChild(b1);
     }
 
+    if (cs && cs.lewati) {
+      var b0 = el("div", "blok-review");
+      b0.appendChild(el("h4", "", "LGD Collateral Shortfall"));
+      b0.appendChild(el("div", "teks-kecil", "Tidak dihitung bulan ini — " + (cs.keterangan || "LGD memakai acuan Desember") + "."));
+      wadah.appendChild(b0);
+      cs = null;
+    }
     if (cs) {
       var b2 = el("div", "blok-review");
       b2.appendChild(el("h4", "", "LGD Collateral Shortfall — cek ke remedial"));
@@ -470,6 +529,7 @@
         " · akan disimpan sebagai versi " + d.versi +
         " · " + d.jumlahIndividu + " kontrak individu, " + d.jumlahLgdCs + " baris LGD CS");
       var pw = $("simpan-peringatan");
+      if (d.acuan) pw.appendChild(el("div", "info-box", d.acuan));
       (d.peringatan || []).forEach(function (t) { pw.appendChild(el("div", "peringatan-box", t)); });
       if (!d.bolehMenulis) pw.appendChild(el("div", "peringatan-box", d.infoPengirim));
       else if (d.infoPengirim) pw.appendChild(el("div", "teks-kecil", d.infoPengirim));
@@ -565,12 +625,12 @@
         box.appendChild(b);
       }
       if (r.pesanSnapshot) box.appendChild(el("div", "peringatan-box", r.pesanSnapshot));
-      var ke = el("button", "tombol-sekunder lebar", "Lihat grup berikutnya (tab Per grup)");
+      var ke = el("button", "tombol-sekunder lebar", "Lihat grup berikutnya (Hitung › Per grup)");
       ke.type = "button";
       ke.addEventListener("click", function () {
         tampil("kartu-simpan", false);
         tampil("kartu-langkah", true);
-        document.querySelector('.tab [data-tab="periode"]').click();
+        pindahTab("hitung", "pergrup");
       });
       box.appendChild(ke);
       (r.pesan || []).forEach(function (p) {
@@ -630,43 +690,87 @@
     "dihitung-ulang": "Dihitung ulang — belum disimpan"
   };
 
+  var nomorMuatPeriode = 0;   // hanya balasan terbaru yang digambar (tab bisa memicu beberapa muat berurutan)
   function muatPeriode(tanggal) {
-    teks("periode-info", "Memuat…");
-    panggil("statusPeriode", { tanggal: tanggal || "" }).then(function (d) {
+    var nomor = ++nomorMuatPeriode;
+    if (!statusP) teks("periode-info", "Memuat…");
+    return panggil("statusPeriode", { tanggal: tanggal || "" }).then(function (d) {
+      if (nomor !== nomorMuatPeriode) return;
       statusP = d;
+      muatAcuan();
       gambarPilihPeriode(d);
+      gambarHeader(d);
       gambarAlur(d);
+      gambarBerikut(d);
       gambarGrup(d);
+      gambarSyarat(d);
       gambarKonsolidasi(d);
+      gambarVersi(d);
+      gambarPengaturan();
       sinkronBatch(d);
-    }).catch(function (e) { teks("periode-info", e.message); });
+      document.querySelectorAll("#rw-tabel tr[data-tanggal]").forEach(function (tr) {
+        tr.classList.toggle("terpilih", tr.dataset.tanggal === d.tanggal);
+      });
+    }).catch(function (e) {
+      if (nomor !== nomorMuatPeriode) return;
+      teks("periode-info", e.message);
+      teks("hp-sub", e.message);
+    });
   }
 
+  // Pemilih periode global di header (Tahap 5f)
   function gambarPilihPeriode(d) {
     var sel = $("pilih-periode");
     sel.innerHTML = "";
     var ada = {};
     (d.daftarPeriode || []).forEach(function (p) { ada[p.tanggal] = p; });
     if (d.tanggalMaster && !ada[d.tanggalMaster]) ada[d.tanggalMaster] = { tanggal: d.tanggalMaster, status: "Terbuka", jumlahGrup: 0 };
+    if (d.tanggal && !ada[d.tanggal]) ada[d.tanggal] = { tanggal: d.tanggal, status: d.status, jumlahGrup: 0 };
     Object.keys(ada).sort().reverse().forEach(function (t) {
       var p = ada[t];
-      var o = el("option", "", t + (t === d.tanggalMaster ? " (Master)" : "") + " · " + p.jumlahGrup + " grup" +
-                                    (p.status === "Final" ? " · Final" : ""));
+      var o = el("option", "", tanggalPanjang(t) + (t === d.tanggalMaster ? " · Master" : "") +
+                               (p.status === "Final" ? " · Final" : "") + " · " + p.jumlahGrup + " grup");
       o.value = t;
       if (t === d.tanggal) o.selected = true;
       sel.appendChild(o);
     });
   }
-  $("pilih-periode").addEventListener("change", function () { muatPeriode(this.value); });
+  $("pilih-periode").addEventListener("change", function () {
+    var t = this.value;
+    muatPeriode(t);
+    // Analisis › Komposisi mengikuti periode header bila periode itu punya data
+    if (dataPj && (dataPj.daftarPeriode || []).indexOf(t) >= 0 && (dataPj.kini || {}).tanggal !== t) muatPenjelasan(t);
+  });
+
+  // Periode dari tempat lain (mis. baris tabel Analisis › Tren) → pemilih periode header ikut pindah
+  function pilihPeriodeGlobal(t) {
+    if (!t || (statusP && statusP.tanggal === t)) return;
+    muatPeriode(t);
+  }
+
+  function gambarHeader(d) {
+    var final = d.status === "Final";
+    var bagian = [];
+    if (d.periodeMaster) bagian.push(d.kodeKCMaster ? "Workbook " + d.kodeKCMaster : "Workbook: belum ada KC dicentang");
+    else bagian.push("Hanya-baca · Master!C4 = " + (d.tanggalMaster ? tanggalPanjang(d.tanggalMaster) : "kosong"));
+    bagian.push(d.metode ? NAMA_METODE[d.metode] : "metode belum ditetapkan");
+    bagian.push(d.grupTersimpan + "/" + d.jumlahGrup + " grup tersimpan");
+    teks("hp-sub", bagian.join(" · "));
+    var chip = $("hp-status");
+    chip.hidden = false;
+    chip.className = "chip-status " + (final ? "final" : "terbuka");
+    chip.textContent = final ? "Final" : "Terbuka";
+    teks("rs-tanggal", tanggalPanjang(d.tanggal));
+  }
 
   var NAMA_BULAN = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
   function tanggalPanjang(t) { return t ? (+t.substr(8, 2)) + " " + NAMA_BULAN[+t.substr(5, 2) - 1] + " " + t.substr(0, 4) : ""; }
 
   // =====================================================================
-  // Tahap 4e: periode Master selalu terbaca di tab Per grup
+  // Tahap 4e: periode Master selalu terbaca (Hitung › Per grup)
   //   - header menampilkan Master!C4 dan tombol "Periksa ulang Master";
   //   - saat user kembali ke panel (fokus) setelah mengubah Master di Excel, periode & centang KC
-  //     dicek; bila berubah, tab Per grup dan tab Manual dimuat ulang otomatis.
+  //     dicek; bila berubah, seluruh panel dan Hitung › Manual dimuat ulang otomatis.
   // =====================================================================
   var sedangCekMaster = false, cekTerakhir = 0;
   function cekMaster(paksa) {
@@ -678,9 +782,8 @@
       if (!m.ditemukan) { teks("pg-master", "Workbook aplikasi CKPN tidak terbuka"); return; }
       var berubah = !statusP || m.tanggal !== statusP.tanggalMaster || m.kodeKC !== statusP.kodeKCMaster;
       if (paksa || berubah) {
-        if (!$("tab-periode").hidden || paksa) muatPeriode();   // "" = ikuti Master!C4
-        else if (statusP) statusP = null;                       // dimuat ulang saat tab dibuka
-        muatPersiapan();                                        // tab Manual ikut segar
+        muatPeriode();     // "" = ikuti Master!C4; header, Ringkasan, Hitung, Tetapkan ikut pindah
+        muatPersiapan();   // Hitung › Manual ikut segar
       }
     }).catch(function () {}).then(function () { sedangCekMaster = false; });
   }
@@ -690,6 +793,9 @@
 
   function gambarAlur(d) {
     teks("pg-master", d.tanggalMaster ? tanggalPanjang(d.tanggalMaster) : "Master!C4 belum diisi");
+    $("pg-master-ket").textContent = d.periodeMaster ? "" :
+      "Header menampilkan " + tanggalPanjang(d.tanggal) + " (hanya-baca). Hitung & simpan selalu memakai periode Master!C4 — " +
+      "pilih periode Master di header atau ubah Master!C4 untuk menghitung periode lain.";
     var final = d.status === "Final";
     var tahap = [
       ["Susunan grup", d.susunanDitetapkan],
@@ -720,11 +826,15 @@
     if (d.susunanDitetapkan) baris.push(d.metode
       ? "Metode konsolidasi " + d.tahun + ": " + NAMA_METODE[d.metode] + (d.metodeTahun && d.metodeTahun !== d.tahun ? " (mengikuti " + d.metodeTahun + ")" : "") +
         ((d.grup || []).some(function (g) { return !g.topN; }) ? " · Top-N sebagian grup belum ditetapkan" : "")
-      : "Metode konsolidasi belum ditetapkan — buka Atur susunan grup.");
+      : "Metode konsolidasi belum ditetapkan — buka ⚙ Pengaturan › Susunan grup.");
     if (d.infoPengirim && d.bolehMenulis) baris.push(d.infoPengirim);
     if (!d.bolehMenulis) baris.push(d.infoPengirim);
     baris.forEach(function (b) { info.appendChild(el("div", "", b)); });
   }
+
+  // ---------------- Hitung › Per grup: baris grup ringkas yang bisa dibuka (Tahap 5f) ----------------
+  var grupTerbuka = {};   // kodeKC → true/false (pilihan user dipertahankan saat daftar digambar ulang)
+  var LABEL_STATUS_SINGKAT = { "belum": "Belum", "dihitung": "Dihitung", "tersimpan": "Tersimpan", "dihitung-ulang": "Dihitung ulang" };
 
   function gambarGrup(d) {
     var w = $("grup-isi");
@@ -736,30 +846,52 @@
     $("btn-batch-opsi").title = bolehSemua ? "" : "Tersedia untuk periode Master yang belum Final, setelah susunan grup ditetapkan, bagi user pengirim.";
     if (!bolehSemua) tampil("kartu-batch-opsi", false);
 
-    (d.grup || []).forEach(function (g) {
-      var k = el("div", "kartu-grup" + (g.diWorkbook ? " di-workbook" : ""));
-      var head = el("div", "kepala-grup");
-      var kiri = el("div");
-      kiri.appendChild(el("div", "nama-grup", g.nama));
-      kiri.appendChild(el("div", "teks-kecil", g.kc.join(", ") + (g.topN ? " · Top-N " + g.topN : "") + (g.diWorkbook ? " · sedang di workbook" : "")));
-      head.appendChild(kiri);
-      var labelStatus = LABEL_STATUS[g.status] + (g.aktif ? " v" + g.aktif.versi : "");
-      head.appendChild(el("span", "status-grup " + g.status, labelStatus));
-      k.appendChild(head);
+    var grup = d.grup || [];
+    var nWb = grup.filter(function (g) { return g.diWorkbook; }).length;
+    var nBelumSimpan = grup.filter(function (g) { return g.status === "dihitung" || g.status === "dihitung-ulang"; }).length;
+    $("grup-ringkas").textContent = grup.length + " grup · " + d.grupTersimpan + " tersimpan" +
+      (nWb ? " · " + nWb + " di workbook" : "") + (nBelumSimpan ? " · " + nBelumSimpan + " belum disimpan" : "") +
+      (final ? " · periode Final" : !d.periodeMaster ? " · hanya-baca" : "");
+    var kunciTotal = d.metode === "mig" ? "mig_total" : "nf_total";
 
+    grup.forEach(function (g) {
+      var det = el("details", "baris-grup" + (g.diWorkbook ? " di-workbook" : ""));
+      var bawaanBuka = g.diWorkbook || g.status === "dihitung" || g.status === "dihitung-ulang";
+      det.open = grupTerbuka[g.kodeKC] !== undefined ? grupTerbuka[g.kodeKC] : bawaanBuka;
+      det.addEventListener("toggle", function () { grupTerbuka[g.kodeKC] = det.open; });
+
+      var sum = el("summary");
+      var kiri = el("span", "bg-kiri");
+      kiri.appendChild(el("span", "nama-grup", g.nama));
+      kiri.appendChild(el("span", "teks-kecil", g.kc.join(", ") + (g.topN ? " · Top-N " + g.topN : " · Top-N belum ditetapkan") +
+        (g.diWorkbook ? " · di workbook" : "")));
+      sum.appendChild(kiri);
+      var kanan = el("span", "bg-kanan");
+      var rg0 = g.aktif ? (g.aktif.ringkasan || {}) : null;
+      kanan.appendChild(el("span", "bg-angka", rg0 ? jt(rg0[kunciTotal]) : "—"));
+      var chip = el("span", "status-grup " + g.status,
+        g.status === "tersimpan" ? "v" + g.aktif.versi : LABEL_STATUS_SINGKAT[g.status] + (g.aktif ? " · v" + g.aktif.versi : ""));
+      chip.title = LABEL_STATUS[g.status] + (g.aktif ? " · versi aktif v" + g.aktif.versi : "");
+      kanan.appendChild(chip);
+      sum.appendChild(kanan);
+      det.appendChild(sum);
+
+      var isi = el("div", "bg-isi");
+      isi.appendChild(el("div", "teks-kecil", LABEL_STATUS[g.status] + (g.aktif ? " v" + g.aktif.versi : "")));
       if (g.aktif) {
         var rg = g.aktif.ringkasan || {};
         var angka = el("div", "angka-grup");
-        [["Net Flow", rg.nf_total], ["Migration", rg.mig_total], ["PPKA", g.aktif.ppkaGrup]].forEach(function (x) {
+        [["Net Flow" + (d.metode === "nf" ? " ★" : ""), rg.nf_total], ["Migration" + (d.metode === "mig" ? " ★" : ""), rg.mig_total],
+         ["PPKA", g.aktif.ppkaGrup]].forEach(function (x) {
           var c = el("div", "", x[0]); c.appendChild(el("b", "", rp(x[1]))); angka.appendChild(c);
         });
-        k.appendChild(angka);
-        k.appendChild(el("div", "teks-kecil", "Disimpan " + g.aktif.waktu + " oleh " + g.aktif.pengguna));
+        isi.appendChild(angka);
+        isi.appendChild(el("div", "teks-kecil", "Disimpan " + g.aktif.waktu + " oleh " + g.aktif.pengguna));
       } else if (g.dihitungDiPC) {
-        k.appendChild(el("div", "teks-kecil", "Dihitung " + g.waktuHitung + " di PC ini"));
+        isi.appendChild(el("div", "teks-kecil", "Dihitung " + g.waktuHitung + " di PC ini"));
       }
 
-      // ---- aksi ----
+      // ---- aksi (sama seperti sebelumnya) ----
       var aksi = el("div", "aksi-grup");
       if (bolehHitung) {
         if (g.status === "dihitung" || g.status === "dihitung-ulang") {
@@ -781,20 +913,160 @@
         bData.title = "Tabel CKPN Individu & LGD CS versi aktif — koreksi tanpa proses ulang";
         aksi.appendChild(bData);
       }
-      if (aksi.childNodes.length) k.appendChild(aksi);
-
-      if (g.versi && g.versi.length) k.appendChild(daftarVersi(g.versi, d, final));
-      w.appendChild(k);
+      if (g.versi && g.versi.length) {
+        var bv = tombol("Riwayat versi (" + g.versi.length + ")", "tautan", function () { pindahTab("analisis", "versi"); });
+        aksi.appendChild(bv);
+      }
+      if (aksi.childNodes.length) isi.appendChild(aksi);
+      det.appendChild(isi);
+      w.appendChild(det);
     });
 
+    if ((d.runLuarSusunan || []).length)
+      w.appendChild(el("div", "teks-kecil jarak-atas", (d.runLuarSusunan.length) +
+        " kiriman di luar susunan grup (tidak ikut konsolidasi) — lihat Analisis › Versi."));
+  }
+
+  // ---------------- Ringkasan: langkah berikutnya (Tahap 5f) ----------------
+  function gambarBerikut(d) {
+    var w = $("ringkas-berikut");
+    w.innerHTML = "";
+    var final = d.status === "Final";
+    var grup = d.grup || [];
+    var belumSimpan = grup.filter(function (g) { return g.status === "dihitung" || g.status === "dihitung-ulang"; });
+    var belum = grup.filter(function (g) { return !g.aktif; });
+    var pesan = "", cta = "", aksi = null;
+    function nama(list) { return list.map(function (g) { return g.nama; }).join(", "); }
+
+    if (final) {
+      pesan = "Periode sudah ditetapkan (Final) oleh " + d.dikunciOleh + ". Konsolidasi dan usulan jurnal tersimpan.";
+      cta = "Lihat Tetapkan →"; aksi = function () { pindahTab("tetapkan"); };
+    } else if (!d.susunanDitetapkan || !d.metode) {
+      pesan = "Tetapkan susunan grup, metode konsolidasi, dan Top-N tahun " + d.tahun + ".";
+      cta = "Buka Pengaturan →"; aksi = function () { bukaSusunan(); };
+    } else if (!d.periodeMaster && !d.siapKonsolidasi) {
+      pesan = "Periode ini belum lengkap (" + d.grupTersimpan + "/" + d.jumlahGrup + " grup tersimpan). Untuk menghitungnya, " +
+        "ubah Master!C4 ke " + tanggalPanjang(d.tanggal) + ".";
+    } else if (belumSimpan.length && d.periodeMaster) {
+      pesan = "Review & simpan hasil hitung di workbook: " + nama(belumSimpan) + ".";
+      cta = "Hitung →"; aksi = function () { pindahTab("hitung", "pergrup"); };
+    } else if (belum.length) {
+      pesan = "Hitung & simpan " + belum.length + " grup lagi: " + nama(belum) + ".";
+      cta = "Hitung →"; aksi = function () { pindahTab("hitung", "pergrup"); };
+    } else if (d.siapKonsolidasi) {
+      pesan = "Semua grup tersimpan. Cek konsolidasi vs PPKA dan usulan jurnal, lalu tetapkan periode.";
+      cta = "Tetapkan →"; aksi = function () { pindahTab("tetapkan"); };
+    }
+    w.hidden = !pesan;
+    if (!pesan) return;
+    var kiri = el("div");
+    kiri.appendChild(el("div", "label-kecil", "Berikutnya"));
+    kiri.appendChild(el("div", "", pesan));
+    w.appendChild(kiri);
+    if (cta) w.appendChild(tombol(cta, "tombol-sekunder", aksi));
+  }
+
+  // ---------------- Tetapkan: syarat penetapan (Tahap 5f) ----------------
+  function gambarSyarat(d) {
+    var ul = $("syarat-isi");
+    ul.innerHTML = "";
+    var final = d.status === "Final";
+    var grup = d.grup || [];
+    function item(status, label, rinci) {
+      var li = el("li", "syarat s-" + status);
+      li.appendChild(el("span", "syarat-ikon", status === "ok" ? "✓" : status === "awas" ? "!" : "✕"));
+      var t = el("div");
+      t.appendChild(el("div", "", label));
+      if (rinci) t.appendChild(el("div", "teks-kecil", rinci));
+      li.appendChild(t);
+      ul.appendChild(li);
+    }
+    if (final) item("ok", "Periode Final", "Dikunci oleh " + d.dikunciOleh + " · " + d.dikunciWaktu);
+    item(d.susunanDitetapkan ? "ok" : "belum", "Susunan grup tahun " + d.tahun + " ditetapkan",
+      d.susunanDitetapkan ? (d.susunanTahun !== d.tahun ? "Mengikuti susunan " + d.susunanTahun : (d.susunanDasar || "")) : "Atur di ⚙ Pengaturan.");
+    item(d.metode ? "ok" : "belum", "Metode konsolidasi ditetapkan", d.metode ? NAMA_METODE[d.metode] + " + LGD weighted" : "Atur di ⚙ Pengaturan.");
+    var tanpaTopN = grup.filter(function (g) { return !g.topN; });
+    item(tanpaTopN.length ? "awas" : "ok", "Top-N CKPN Individu per grup",
+      tanpaTopN.length ? "Belum ditetapkan: " + tanpaTopN.map(function (g) { return g.nama; }).join(", ") : "");
+    item(d.siapKonsolidasi ? "ok" : "belum", d.grupTersimpan + "/" + d.jumlahGrup + " grup tersimpan",
+      d.siapKonsolidasi ? "" : "Simpan grup yang belum: " + grup.filter(function (g) { return !g.aktif; }).map(function (g) { return g.nama; }).join(", "));
+    var belumSimpan = grup.filter(function (g) { return g.status === "dihitung" || g.status === "dihitung-ulang"; });
+    if (belumSimpan.length)
+      item("awas", "Hasil hitung di workbook belum disimpan: " + belumSimpan.map(function (g) { return g.nama; }).join(", "),
+        "Konsolidasi memakai versi yang tersimpan, bukan isi sheet saat ini.");
+    if ((d.runLuarSusunan || []).length)
+      item("awas", d.runLuarSusunan.length + " kiriman di luar susunan grup", "Tidak ikut konsolidasi. Lihat Analisis › Versi.");
+    if (!final) item(d.bolehMenulis ? "ok" : "belum", "Hak menetapkan", d.bolehMenulis ? "" : (d.infoPengirim || "User ini hanya bisa melihat."));
+  }
+
+  // ---------------- Analisis › Versi: riwayat versi semua grup (Tahap 5f) ----------------
+  function gambarVersi(d) {
+    var w = $("versi-isi");
+    w.innerHTML = "";
+    var final = d.status === "Final";
+    teks("versi-judul", "Riwayat versi · " + tanggalPanjang(d.tanggal));
+    $("versi-sub").textContent = "Pilih periode lain di header. Data = lihat isi versi; xlsx = snapshot saat disimpan." +
+      (final ? " Periode Final: versi tidak bisa dihapus." : "");
+    var ada = false;
+    (d.grup || []).forEach(function (g) {
+      var blok = el("div", "blok-versi");
+      blok.appendChild(el("div", "nama-grup", g.nama));
+      blok.appendChild(el("div", "teks-kecil", g.kc.join(", ") + " · " + LABEL_STATUS[g.status]));
+      if (g.versi && g.versi.length) {
+        ada = true;
+        var det = daftarVersi(g.versi, d, final);
+        det.open = true;
+        det.querySelector("summary").textContent = g.versi.length + " versi";
+        blok.appendChild(det);
+      } else blok.appendChild(el("div", "teks-kecil", "Belum ada versi tersimpan."));
+      w.appendChild(blok);
+    });
     if ((d.runLuarSusunan || []).length) {
-      var luar = el("div", "kartu-grup");
+      var luar = el("div", "blok-versi");
       luar.appendChild(el("div", "nama-grup", "Di luar susunan grup"));
       luar.appendChild(el("div", "teks-kecil", "Kiriman dengan kombinasi KC yang tidak ada di susunan — tidak ikut konsolidasi."));
       luar.appendChild(daftarVersi(d.runLuarSusunan, d, final, true));
       w.appendChild(luar);
+      ada = true;
     }
+    if (!ada && !(d.grup || []).length) w.textContent = "Belum ada grup.";
   }
+
+  // ---------------- ⚙ Pengaturan: ringkasan nilai (Tahap 5f) ----------------
+  var infoPing = null;
+  function gambarPengaturan() {
+    var d = statusP;
+    if (d) {
+      var grup = d.grup || [];
+      teks("pt-tahun-judul", "Tahun " + d.tahun);
+      teks("pt-susunan", d.susunanDitetapkan
+        ? grup.length + " grup" + (d.susunanTahun !== d.tahun ? " · mengikuti " + d.susunanTahun : "") + " · " +
+          grup.map(function (g) { return g.nama; }).join(", ")
+        : "Belum ditetapkan");
+      teks("pt-metode", d.metode ? NAMA_METODE[d.metode] + " + LGD weighted" +
+        (d.metodeTahun && d.metodeTahun !== d.tahun ? " · mengikuti " + d.metodeTahun : "") : "Belum ditetapkan");
+      teks("pt-topn", grup.map(function (g) { return g.nama + " " + (g.topN || "—"); }).join(" · "));
+      teks("pt-dasar", d.susunanDasar || "Belum diisi");
+      var adaFinal = (d.daftarPeriode || []).some(function (p) { return p.status === "Final" && p.tanggal.substr(0, 4) === String(d.tahun); });
+      var k = $("pt-kunci");
+      k.className = adaFinal ? "peringatan-box" : "teks-kecil";
+      k.textContent = adaFinal
+        ? "Ada periode Final di tahun " + d.tahun + ": metode konsolidasi dan Top-N terkunci sampai kunci periode tersebut dibuka."
+        : "Metode konsolidasi dan Top-N terkunci setelah ada periode Final di tahun ini.";
+    }
+    teks("pt-pdlgd", !infoAcuan ? "—" : !infoAcuan.tahunan ? "Dihitung setiap bulan" :
+      "Setahun sekali · " + (infoAcuan.desember || !infoAcuan.tahunAcuan ? "Desember dihitung penuh" : "acuan Desember " + infoAcuan.tahunAcuan));
+    var boleh = infoPing && infoPing.bolehMenulis !== undefined ? infoPing.bolehMenulis : d ? d.bolehMenulis : null;
+    teks("pt-pengirim", boleh === null ? "—" : boleh ? "Anda: lihat & simpan" : "Anda: hanya lihat");
+    $("pt-pengirim-user").textContent = infoPing
+      ? "User Windows Anda: " + infoPing.user + " — " + (boleh ? "boleh menyimpan." : "belum terdaftar; tambahkan nama ini ke pengirim.txt agar bisa menyimpan.")
+      : "";
+  }
+  $("btn-atur-pengirim").addEventListener("click", function () {
+    var buka = $("pt-pengirim-info").hidden;
+    tampil("pt-pengirim-info", buka);
+    this.setAttribute("aria-expanded", buka ? "true" : "false");
+  });
 
   function tombol(label, cls, fn) {
     var b = el("button", cls, label);
@@ -838,12 +1110,13 @@
   }
 
   function hitungGrup(g, untukEdit) {
+    var pakai = pakaiAcuan();
     var pesan = (untukEdit ? "Buka " + g.nama + " untuk diedit.\n\n" : "Hitung " + g.nama + ".\n\n") +
       "Centang KC di Master akan diubah menjadi: " + g.kc.join(", ") + "\n" +
-      "Semua langkah (Individu s.d. Summary) dijalankan dengan penyesuaian tersimpan.\n" +
+      (pakai ? teksAcuanGrup(g.kodeKC) + "\n" : "Semua langkah (Individu s.d. Summary) dijalankan dengan penyesuaian tersimpan.\n") +
       "Isi sheet hasil saat ini akan ditimpa. Lanjutkan?";
     if (!window.confirm(pesan)) return;
-    panggil("hitungGrup", { kodeKC: g.kodeKC, terapkanPenyesuaian: true }).then(function () {
+    panggil("hitungGrup", { kodeKC: g.kodeKC, terapkanPenyesuaian: true, pakaiAcuan: pakai }).then(function () {
       window.scrollTo(0, 0);   // progres tampil di area proses (atas)
     }).catch(function (e) { alert(e.message); });
   }
@@ -895,7 +1168,7 @@
     if (!k.metode) {
       var p = el("div", "peringatan-box", "Metode konsolidasi tahun " + k.tanggal.substring(0, 4) +
         " belum ditetapkan. Metode dipilih sekali setahun di susunan grup, lalu berlaku untuk semua grup.");
-      var t = tombol("Atur susunan grup", "tautan", function () { $("btn-atur-susunan").click(); });
+      var t = tombol("Atur di ⚙ Pengaturan", "tautan", function () { bukaSusunan("susunan-metode"); });
       p.appendChild(t);
       w.appendChild(p);
       return;
@@ -1044,9 +1317,25 @@
     }));
   }
 
-  // ---------------- Susunan grup ----------------
-  $("btn-atur-susunan").addEventListener("click", function () {
-    if (!statusP) return;
+  // ---------------- Susunan grup (editor di ⚙ Pengaturan) ----------------
+  function bukaSusunan(fokus) {
+    if (tabAktif !== "pengaturan") pindahTab("pengaturan");
+    if (!statusP) {
+      muatPeriode().then(function () { if (statusP) bukaSusunan(fokus); });
+      return;
+    }
+    isiEditorSusunan();
+    var target = fokus === "susunan-metode" ? document.querySelector('input[name="susunan-metode"]').closest("fieldset")
+               : fokus ? $(fokus) : null;
+    (target || $("kartu-susunan")).scrollIntoView({ block: "start" });
+    if (fokus === "susunan-dasar") $("susunan-dasar").focus();
+  }
+  $("btn-atur-susunan").addEventListener("click", function () { bukaSusunan(); });
+  document.querySelectorAll('[data-atur="susunan"]').forEach(function (b) {
+    b.addEventListener("click", function () { bukaSusunan(b.getAttribute("data-fokus")); });
+  });
+
+  function isiEditorSusunan() {
     teks("susunan-judul", "Susunan grup tahun " + statusP.tahun);
     var w = $("susunan-isi");
     w.innerHTML = "";
@@ -1072,7 +1361,7 @@
     $("susunan-hasil").innerHTML = "";
     $("btn-susunan-simpan").disabled = !statusP.bolehMenulis;
     tampil("kartu-susunan", true);
-  });
+  }
   $("btn-susunan-perkc").addEventListener("click", function () {
     ["KC0600", "KC0700", "KC0800", "KC0900", "KC1000", "KC1100"].forEach(function (kc) { $("sg-" + kc).value = kc; });
     gambarTopNGrup();
@@ -1624,7 +1913,7 @@
   var batchAktif = false, runTerakhirBatch = null;
   var batchInfo = null;   // { tanggal, versiAwal: {kodeKC: versi aktif saat batch dimulai}, berhenti }
   var LABEL_BATCH = {
-    "antre": "menunggu", "menghitung": "menghitung…", "tersimpan": "tersimpan", "perlu-review": "perlu review",
+    "antre": "menunggu", "menghitung": "menghitung…", "tersimpan": "tersimpan", "tersimpan-temuan": "tersimpan · cek temuan", "perlu-review": "perlu review",
     "gagal": "gagal", "dibatalkan": "dibatalkan"
   };
 
@@ -1637,9 +1926,12 @@
     var berhenti = document.querySelector('input[name="batch-temuan"]:checked').value === "berhenti";
     if (!window.confirm("Hitung semua grup periode " + (statusP ? statusP.tanggal : "") + "?\n\n" +
         "Centang KC dan Top-N di Master akan diubah untuk setiap grup, dan isi sheet hasil ditimpa. " +
-        "Grup tanpa temuan langsung disimpan sebagai versi baru.")) return;
+        (berhenti ? "Grup tanpa temuan langsung disimpan; proses berhenti di grup pertama yang punya temuan."
+                  : "SEMUA grup langsung disimpan sebagai versi baru, termasuk yang punya temuan (cek & koreksi sesudahnya).") +
+        (pakaiAcuan() ? "\n\nMetode PD & LGD setahun sekali: " + ringkasAcuan() : "")))
+      return;
     b.disabled = true;
-    panggil("hitungSemuaGrup", { lewatiTersimpan: $("batch-lewati").checked, berhentiBilaTemuan: berhenti })
+    panggil("hitungSemuaGrup", { lewatiTersimpan: $("batch-lewati").checked, berhentiBilaTemuan: berhenti, pakaiAcuan: pakaiAcuan() })
       .then(function () { tampil("kartu-batch-opsi", false); window.scrollTo(0, 0); })
       .catch(function (e) { alert(e.message); })
       .then(function () { b.disabled = false; });
@@ -1657,7 +1949,8 @@
     tampil("kartu-simpan", false);
     tampil("btn-batch-tutup", false);
     teks("batch-judul", "Hitung semua grup · " + d.tanggal);
-    teks("batch-sub", d.grup.length + " grup · " + (d.berhentiBilaTemuan ? "berhenti bila ada temuan" : "tandai temuan lalu lanjut"));
+    teks("batch-sub", d.grup.length + " grup · " + (d.berhentiBilaTemuan ? "review dulu bila ada temuan" : "simpan semua otomatis") +
+      (d.pakaiAcuan ? " · PD & LGD acuan Desember" : ""));
     var ol = $("batch-daftar");
     ol.innerHTML = "";
     d.grup.forEach(function (g, i) {
@@ -1686,26 +1979,43 @@
     li.className = d.status;
     li.dataset.status = d.status;
     var chip = li.querySelector(".status-grup");
-    chip.className = "status-grup " + (d.status === "tersimpan" ? "tersimpan" : d.status === "perlu-review" || d.status === "menghitung" ? "dihitung" : "");
+    chip.className = "status-grup " + (d.status === "tersimpan" ? "tersimpan" :
+      d.status === "perlu-review" || d.status === "menghitung" || d.status === "tersimpan-temuan" ? "dihitung" : "");
     chip.textContent = LABEL_BATCH[d.status] + (d.versi ? " v" + d.versi : "");
     var ul = li.querySelector(".batch-temuan");
     ul.innerHTML = "";
     (d.temuan || []).forEach(function (t) { ul.appendChild(el("li", "", t)); });
-    if (d.status === "tersimpan" && (d.nfTotal !== undefined || d.migTotal !== undefined))
+    if (d.acuan && d.status !== "menghitung") ul.appendChild(el("li", "ok-ringan", d.acuan));
+    if ((d.status === "tersimpan" || d.status === "tersimpan-temuan") && (d.nfTotal !== undefined || d.migTotal !== undefined))
       ul.appendChild(el("li", "ok-ringan", "Net Flow " + rp(d.nfTotal) + " · Migration " + rp(d.migTotal)));
+    if (d.status === "tersimpan-temuan" && d.runId) {
+      var aksi = el("div", "aksi-grup aksi-batch-data");
+      aksi.appendChild(tombol("Lihat / koreksi data", "tombol-sekunder", function () { bukaKoreksiDariBatch(d.runId, d.nama); }));
+      li.appendChild(aksi);
+    }
   });
 
   onEvent("batchSelesai", function (d) {
     batchAktif = false;
     if (batchInfo) batchInfo.selesai = d;
-    var n = { tersimpan: 0, review: 0 };
-    (d.hasil || []).forEach(function (h) { if (h.status === "tersimpan") n.tersimpan++; if (h.status === "perlu-review") n.review++; });
+    var n = { tersimpan: 0, temuan: 0, review: 0, gagal: 0 };
+    (d.hasil || []).forEach(function (h) {
+      if (h.status === "tersimpan" || h.status === "tersimpan-temuan") n.tersimpan++;
+      if (h.status === "tersimpan-temuan") n.temuan++;
+      if (h.status === "perlu-review") n.review++;
+      if (h.status === "gagal") n.gagal++;
+    });
     var w = $("batch-ringkas");
     w.innerHTML = "";
-    var teksRingkas = n.tersimpan + " grup tersimpan otomatis" + (n.review ? " · " + n.review + " perlu review" : "") +
+    var teksRingkas = n.tersimpan + " grup tersimpan otomatis" + (n.temuan ? " (" + n.temuan + " dengan temuan)" : "") +
+      (n.review ? " · " + n.review + " perlu review" : "") + (n.gagal ? " · " + n.gagal + " gagal" : "") +
       (d.sisa ? " · " + d.sisa + " grup belum dihitung" : "");
     tambahTombolBaris();
-    if (d.status === "selesai") w.appendChild(el("div", "status-hasil ok", "Selesai · " + teksRingkas));
+    if (d.status === "selesai") w.appendChild(el("div", "status-hasil " + (n.gagal ? "batal" : "ok"), "Selesai · " + teksRingkas));
+    if (n.temuan)
+      w.appendChild(el("div", "teks-kecil", "Grup bertanda \"cek temuan\" sudah tersimpan. Cek kontrak/debitur yang disebut di temuannya lewat " +
+        "Lihat / koreksi data; bila nilai agunan, biaya, atau baris LGD CS perlu diubah, simpan sebagai versi baru di sana. " +
+        "Agar berlaku juga untuk bulan berikutnya, isi pula Data penyesuaian."));
     else if (d.status === "perlu-review") {
       w.appendChild(el("div", "status-hasil batal", "Berhenti untuk review · " + teksRingkas));
       w.appendChild(el("div", "teks-kecil", "Sheet berisi grup yang perlu direview. Cek temuan di bawah, edit bila perlu, lalu simpan. " +
@@ -1723,11 +2033,17 @@
     segarkanPerGrup();
   });
 
+  // Grup tersimpan dengan temuan → buka editor koreksi di Hitung › Per grup
+  function bukaKoreksiDariBatch(runId, nama) {
+    if (tabAktif !== "hitung" || subAktif.hitung !== "pergrup") pindahTab("hitung", "pergrup");
+    bukaKoreksi(runId, nama);
+  }
+
   // Setelah batch selesai: baris yang belum tersimpan diberi tombol "Hitung grup ini"
   function tambahTombolBaris() {
     document.querySelectorAll("#batch-daftar > li").forEach(function (li) {
       var st = li.dataset.status;
-      if (st === "tersimpan" || st === "tersimpan-manual" || li.querySelector(".aksi-batch")) return;
+      if (st === "tersimpan" || st === "tersimpan-temuan" || st === "tersimpan-manual" || li.querySelector(".aksi-batch")) return;
       var aksi = el("div", "aksi-grup aksi-batch");
       aksi.appendChild(tombol("Hitung grup ini", "tombol-sekunder", function () {
         hitungGrup({ nama: li.dataset.nama, kodeKC: li.dataset.kode, kc: li.dataset.kode.split(",") });
@@ -1736,7 +2052,7 @@
     });
   }
 
-  // Selaraskan kartu "Hitung semua grup" dengan status grup terbaru (dipanggil tiap tab Per grup dimuat):
+  // Selaraskan kartu "Hitung semua grup" dengan status grup terbaru (dipanggil tiap status periode dimuat):
   // grup bertanda yang kemudian dihitung/disimpan satu per satu ikut berubah statusnya.
   function sinkronBatch(d) {
     if (!batchInfo || batchAktif || $("kartu-batch").hidden || d.tanggal !== batchInfo.tanggal) return;
@@ -1745,9 +2061,10 @@
       total++;
       var g = null;
       (d.grup || []).forEach(function (x) { if (x.kodeKC === li.dataset.kode) g = x; });
-      if (!g) { if (li.dataset.status !== "tersimpan") sisaReview++; return; }
       var st = li.dataset.status;
-      if (st !== "tersimpan" && st !== "tersimpan-manual") {
+      var simpan = st === "tersimpan" || st === "tersimpan-temuan" || st === "tersimpan-manual";
+      if (!g) { if (!simpan) sisaReview++; return; }
+      if (!simpan) {
         var awal = batchInfo.versiAwal[li.dataset.kode] || 0;
         var chip = li.querySelector(".status-grup");
         if (g.aktif && g.aktif.versi > awal && (g.status === "tersimpan")) {
@@ -1765,7 +2082,8 @@
           chip.textContent = "dihitung — belum disimpan";
         }
       }
-      if (li.dataset.status !== "tersimpan" && li.dataset.status !== "tersimpan-manual") sisaReview++;
+      st = li.dataset.status;
+      if (st !== "tersimpan" && st !== "tersimpan-temuan" && st !== "tersimpan-manual") sisaReview++;
     });
     var w = $("batch-ringkas");
     var info = w.querySelector(".sinkron-batch") || w.appendChild(el("div", "teks-kecil sinkron-batch"));
@@ -1896,7 +2214,15 @@
       .forEach(function (x) { h.appendChild(el("th", "", x)); });
     t.appendChild(h);
     list.slice().reverse().forEach(function (p) {
-      var tr = el("tr");
+      // Tahap 5f: ketuk baris → pemilih periode header pindah ke periode itu
+      var tr = el("tr", "baris-klik" + (statusP && statusP.tanggal === p.tanggal ? " terpilih" : ""));
+      tr.dataset.tanggal = p.tanggal;
+      tr.tabIndex = 0;
+      tr.title = "Tampilkan " + tanggalPanjang(p.tanggal) + " di seluruh panel";
+      tr.addEventListener("click", function () { pilihPeriodeGlobal(p.tanggal); });
+      tr.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pilihPeriodeGlobal(p.tanggal); }
+      });
       var c1 = el("td");
       c1.appendChild(el("div", "", labelPeriode(p.tanggal)));
       c1.appendChild(el("div", "teks-kecil", p.status + (p.metode ? " · " + (p.metode === "nf" ? "NF" : "Mig") : "") +
@@ -1917,7 +2243,8 @@
       t.appendChild(tr);
     });
     $("rw-tabel").appendChild(t);
-    if (!grup) $("rw-tabel").appendChild(el("p", "teks-kecil", "Kolom yang disorot = metode terpakai. Selisih positif berarti PPKA lebih kecil dari CKPN."));
+    $("rw-tabel").appendChild(el("p", "teks-kecil", (grup ? "" : "Kolom yang disorot = metode terpakai. Selisih positif berarti PPKA lebih kecil dari CKPN. ") +
+      "Ketuk baris periode untuk menampilkannya di seluruh panel (pemilih periode di atas ikut pindah)."));
   }
 
   $("rw-tahun").addEventListener("change", gambarRiwayat);
@@ -2167,8 +2494,9 @@
     clearTimeout(tundaUkur);
     tundaUkur = setTimeout(function () {
       Grafik.sembunyiTip();
-      if (!$("tab-riwayat").hidden && dataRw) gambarRiwayat();
-      if (!$("tab-analisis").hidden && dataAn) { if (dataAn.migrasi) siapkanMigrasi(); if (dataAn.netflow) gambarNetFlow(); }
+      var analisis = !$("tab-analisis").hidden;
+      if (analisis && !$("sub-tren").hidden && dataRw) gambarRiwayat();
+      if (analisis && !$("sub-komposisi").hidden && dataAn) { if (dataAn.migrasi) siapkanMigrasi(); if (dataAn.netflow) gambarNetFlow(); }
     }, 200);
   });
 
@@ -2273,7 +2601,7 @@
     if (kurang.length) {
       var box = el("div", "peringatan-box");
       box.appendChild(el("div", "", "Snapshot Overview belum ada untuk " + kurang.map(function (p) { return labelPeriode(p.tanggal); }).join(" dan ") +
-        ", sehingga OS, EAD, dan NPF belum bisa dibandingkan. Periode Master bisa diisi dengan membuka tab Overview › Muat data; " +
+        ", sehingga OS, EAD, dan NPF belum bisa dibandingkan. Periode Master bisa diisi dengan membuka Ringkasan › Muat data; " +
         "periode lain dari file template-nya."));
       if (d.bolehMenulis) kurang.forEach(function (p) {
         box.appendChild(tombol("Ambil overview " + labelPeriode(p.tanggal) + " dari file template…", "tautan", function () {
@@ -2411,6 +2739,65 @@
   $("pj-lingkup").addEventListener("change", gambarPenjelasan);
 
   // =====================================================================
+  // Mode PD & LGD setahun sekali (Tahap 5e) — acuan Desember tahun lalu
+  // =====================================================================
+  var infoAcuan = null;
+
+  function muatAcuan() {
+    return panggil("infoAcuan").then(function (d) { infoAcuan = d; gambarAcuan(); gambarPengaturan(); })
+      .catch(function () { infoAcuan = null; gambarAcuan(); gambarPengaturan(); });
+  }
+
+  function acuanGrup(kode) {
+    var g = null;
+    ((infoAcuan && infoAcuan.grup) || []).forEach(function (x) { if (x.kodeKC === kode) g = x; });
+    return g;
+  }
+
+  function pakaiAcuan() {
+    if (!infoAcuan || !infoAcuan.tahunan || infoAcuan.desember || !infoAcuan.tahunAcuan) return false;
+    var r = document.querySelector('input[name="acuan-mode"]:checked');
+    return !!r && r.value === "acuan";
+  }
+
+  function teksAcuanGrup(kode) {
+    var g = acuanGrup(kode);
+    if (g && g.acuan) return "PD & LGD: acuan " + g.acuan.label + " (status " + g.acuan.status + ") — hanya CKPN Individu & Summary yang dihitung.";
+    return "PD & LGD: acuan Desember " + infoAcuan.tahunAcuan + " belum ada untuk grup ini — semua langkah dihitung penuh.";
+  }
+
+  function ringkasAcuan() {
+    var ada = 0, tidak = [];
+    ((infoAcuan && infoAcuan.grup) || []).forEach(function (g) { if (g.acuan) ada++; else tidak.push(g.nama); });
+    return ada + " grup memakai acuan Desember " + infoAcuan.tahunAcuan +
+      (tidak.length ? "; dihitung penuh (acuan belum ada): " + tidak.join(", ") : "") + ".";
+  }
+
+  function gambarAcuan() {
+    var d = infoAcuan, kotak = $("pg-acuan");
+    if (!d || !d.tahunan) { kotak.hidden = true; return; }
+    kotak.hidden = false;
+    var ul = $("acuan-grup");
+    ul.innerHTML = "";
+    if (d.desember || !d.tahunAcuan) {
+      teks("acuan-judul", "Metode PD & LGD: setahun sekali · Desember");
+      tampil("acuan-pilihan", false);
+      ul.appendChild(el("li", "", "Laporan Desember: PD & LGD dihitung penuh. Hasilnya menjadi acuan PD & LGD untuk Januari–November tahun berikutnya."));
+      return;
+    }
+    teks("acuan-judul", "Metode PD & LGD: setahun sekali (Master!D17) · acuan Desember " + d.tahunAcuan);
+    tampil("acuan-pilihan", true);
+    (d.grup || []).forEach(function (g) {
+      var li = el("li", g.acuan ? "" : "kurang");
+      li.appendChild(el("b", "", g.nama + ": "));
+      li.appendChild(el("span", "", g.acuan
+        ? "acuan " + g.acuan.label + " · " + g.acuan.status + " · LGD " + (g.acuan.lgd * 100).toFixed(2).replace(".", ",") + "%"
+        : (g.masalah || "acuan belum ada") + " → dihitung penuh"));
+      ul.appendChild(li);
+    });
+  }
+
+  // =====================================================================
   // Lihat & koreksi data tersimpan satu versi grup (Tahap 5b)
   //   Individu : CKPN = PN "Ya" ? MAX(0, OS − (agunan − biaya)) : 0   (kolom K sheet)
   //   LGD CS   : LGD = 1 − ΣG/ΣC; gabungan = 1 − (ΣG + rec ER)/(ΣC + WO ER)
@@ -2420,6 +2807,8 @@
   var kr = null;
 
   function bukaKoreksi(runId, nama) {
+    // editor ada di Hitung › Per grup; dibuka juga dari Analisis › Versi dan kartu Hitung semua grup
+    if (tabAktif !== "hitung" || subAktif.hitung !== "pergrup") pindahTab("hitung", "pergrup", true);
     tampil("kartu-koreksi", true);
     teks("kr-judul", "Data " + (nama || ""));
     teks("kr-sub", "Memuat…");
@@ -2911,6 +3300,9 @@
   // =====================================================================
   function muatDiagnostik() {
     return panggil("ping").then(function (d) {
+      infoPing = d;
+      tampil("banner-koneksi", false);
+      gambarPengaturan();
       $("d-jembatan").innerHTML = '<span class="ok">Terhubung</span>';
       teks("lencana-versi", "v" + d.versiAddin);
       teks("d-excel", d.versiExcel + " · " + d.arsitektur);
@@ -2922,6 +3314,15 @@
     }).catch(function (err) {
       $("d-jembatan").innerHTML = '<span class="err">Gagal</span> ' + err.message;
       $("diag").open = true;
+      // Diagnostik kini ada di ⚙ Pengaturan, jadi kegagalan koneksi juga diumumkan di atas setiap tab
+      var b = $("banner-koneksi");
+      b.innerHTML = "";
+      b.appendChild(document.createTextNode("Panel belum terhubung ke Excel: " + err.message + " "));
+      b.appendChild(tombol("Lihat diagnostik", "tautan", function () {
+        pindahTab("pengaturan");
+        $("diag").scrollIntoView({ block: "start" });
+      }));
+      tampil("banner-koneksi", true);
     });
   }
 
@@ -2933,4 +3334,5 @@
 
   muatDiagnostik();
   muatPersiapan();
+  muatPeriode();   // header (pemilih periode) & Ringkasan › Status periode
 })();

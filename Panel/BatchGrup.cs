@@ -24,11 +24,12 @@ namespace CKPNLibrary.Panel
     ///       atau perubahan penyesuaian yang terdeteksi
     ///
     ///   Tanpa temuan  → grup langsung disimpan (versi baru, snapshot .xlsx seperti biasa).
-    ///   Ada temuan    → grup TIDAK disimpan. Sesuai pilihan user:
-    ///                   "berhenti"  : proses berhenti di grup itu; sheet masih berisi grup
-    ///                                 tersebut sehingga bisa langsung direview & disimpan;
-    ///                   "lanjut"    : grup ditandai perlu review, grup berikutnya tetap dihitung
-    ///                                 (sheet akan tertimpa; grup bertanda dibuka lagi satu per satu).
+    ///   Ada temuan    → sesuai pilihan user:
+    ///                   "berhenti"  (Review dulu): grup TIDAK disimpan, proses berhenti di grup itu;
+    ///                                 sheet masih berisi grup tersebut untuk direview & disimpan;
+    ///                   "lanjut"    (Simpan semua otomatis, Tahap 5d): grup TETAP disimpan, temuan
+    ///                                 dicatat di catatan versi & log proses, lalu grup berikutnya
+    ///                                 dihitung. Cek/koreksi lewat Per grup › Lihat / koreksi data.
     ///
     /// Hitung per grup satu per satu tidak berubah sama sekali.
     /// </summary>
@@ -36,11 +37,11 @@ namespace CKPNLibrary.Panel
     {
         public static bool Aktif { get; private set; }
 
-        private class Item { public string Nama, KodeKC; public int? TopN; }
+        private class Item { public string Nama, KodeKC; public int? TopN; public string CatatanAcuan; }
 
         private static List<Item> _antrian;
         private static int _indeks;
-        private static bool _berhentiBilaTemuan, _mintaBatal;
+        private static bool _berhentiBilaTemuan, _mintaBatal, _pakaiAcuan;
         private static string _tanggal;
         private static List<Dictionary<string, object>> _hasil;
         private static System.Windows.Forms.Timer _timer;
@@ -48,7 +49,8 @@ namespace CKPNLibrary.Panel
         /// <param name="lewatiTersimpan">true = hanya grup yang belum punya versi tersimpan di periode ini</param>
         /// <param name="berhentiBilaTemuan">true = berhenti di grup pertama yang punya temuan</param>
         /// <returns>null bila dimulai; selain itu pesan penolakan</returns>
-        public static string Mulai(Excel.Application app, bool lewatiTersimpan, bool berhentiBilaTemuan)
+        /// <param name="pakaiAcuan">Tahap 5e: mode setahun sekali, Jan–Nov — PD &amp; LGD dari Desember tahun lalu</param>
+        public static string Mulai(Excel.Application app, bool lewatiTersimpan, bool berhentiBilaTemuan, bool pakaiAcuan = false)
         {
             if (Aktif || CKPNPipeline.SedangBerjalan) return "Perhitungan lain sedang berjalan.";
             Excel.Workbook wb = PanelBridge.CariWorkbookAplikasi(app);
@@ -84,6 +86,7 @@ namespace CKPNLibrary.Panel
             _indeks = 0;
             _tanggal = tanggal;
             _berhentiBilaTemuan = berhentiBilaTemuan;
+            _pakaiAcuan = pakaiAcuan;
             _mintaBatal = false;
             _hasil = new List<Dictionary<string, object>>();
             Aktif = true;
@@ -92,16 +95,16 @@ namespace CKPNLibrary.Panel
             foreach (var it in antrian)
                 daftar.Add(new Dictionary<string, object> { { "nama", it.Nama }, { "kodeKC", it.KodeKC }, { "topN", it.TopN } });
             CatatanLog.Tulis("=== HITUNG SEMUA GRUP · periode " + tanggal + " · " + antrian.Count + " grup · " +
-                             (berhentiBilaTemuan ? "berhenti bila ada temuan" : "lanjut bila ada temuan"));
+                             (berhentiBilaTemuan ? "review dulu bila ada temuan" : "simpan semua otomatis"));
             var namaAntrian = new List<string>();
             foreach (var it in antrian) namaAntrian.Add(it.Nama);
             LogProses.CatatPanel(tanggal, "Hitung semua grup", "Mulai", LogProses.Info, LogProses.R()
                 .Tambah("Grup", string.Join(", ", namaAntrian.ToArray()))
-                .Tambah("Bila ada temuan", berhentiBilaTemuan ? "berhenti di grup itu" : "tandai lalu lanjut")
+                .Tambah("Bila ada temuan", berhentiBilaTemuan ? "review dulu (berhenti di grup itu)" : "simpan semua otomatis")
                 .Tambah("Lewati grup tersimpan", lewatiTersimpan ? "ya" : "tidak"));
             PanelBridge.Siarkan("batchMulai", new Dictionary<string, object>
             {
-                { "tanggal", tanggal }, { "grup", daftar }, { "berhentiBilaTemuan", berhentiBilaTemuan }
+                { "tanggal", tanggal }, { "grup", daftar }, { "berhentiBilaTemuan", berhentiBilaTemuan }, { "pakaiAcuan", pakaiAcuan }
             });
 
             MulaiGrupBerikut();
@@ -124,7 +127,8 @@ namespace CKPNLibrary.Panel
             var it = _antrian[_indeks];
             Kabar(it, "menghitung", null, null);
             CKPNPipeline.SetelahSelesai = GrupSelesai;
-            string tolak = CKPNPipeline.MulaiGrup(app, it.KodeKC, true);
+            string tolak = CKPNPipeline.MulaiGrup(app, it.KodeKC, true, _pakaiAcuan);
+            it.CatatanAcuan = CKPNPipeline.CatatanAcuan;
             if (tolak != null)
             {
                 CKPNPipeline.SetelahSelesai = null;
@@ -145,13 +149,42 @@ namespace CKPNLibrary.Panel
             }
 
             List<string> temuan;
-            try { temuan = PeriksaTemuan(app); }
-            catch (Exception ex) { temuan = new List<string> { "Pemeriksaan hasil gagal: " + ex.Message }; }
+            bool adaPerubahan = false;
+            try { temuan = PeriksaTemuan(app, out adaPerubahan); }
+            catch (Exception ex) { temuan = new List<string> { "Pemeriksaan hasil gagal: " + ex.Message }; adaPerubahan = true; }
 
-            if (temuan.Count > 0)
+            // Perubahan penyesuaian di sheet (atau pemeriksaan gagal) tidak pernah disimpan otomatis:
+            // menyimpannya akan mengubah penyesuaian untuk bulan-bulan berikutnya.
+            if (temuan.Count > 0 && !_berhentiBilaTemuan && adaPerubahan)
             {
+                temuan.Insert(0, "Tidak disimpan otomatis: ada perubahan penyesuaian di sheet — hitung ulang grup ini lalu Simpan manual.");
                 Kabar(it, "perlu-review", temuan, null);
-                if (_berhentiBilaTemuan) { Selesai("perlu-review", null); return; }
+            }
+            else if (temuan.Count > 0 && _berhentiBilaTemuan)
+            {
+                // Opsi "Review dulu": berhenti, sheet tetap berisi grup ini untuk direview & disimpan manual
+                Kabar(it, "perlu-review", temuan, null);
+                Selesai("perlu-review", null);
+                return;
+            }
+            else if (temuan.Count > 0)
+            {
+                // Opsi "Simpan semua otomatis" (Tahap 5d): grup bertemuan tetap disimpan. Temuan dicatat di
+                // catatan versi & log; user mengecek/mengoreksi lewat Per grup › Lihat / koreksi data.
+                string ringkasTemuan = string.Join(" | ", temuan.ToArray());
+                if (ringkasTemuan.Length > 400) ringkasTemuan = ringkasTemuan.Substring(0, 400) + "…";
+                try
+                {
+                    var r = StagingGrup.Simpan(app, null, "Hitung semua grup (otomatis, ada temuan: " + ringkasTemuan + ")", false);
+                    Kabar(it, "tersimpan-temuan", temuan, r);
+                }
+                catch (Exception ex)
+                {
+                    // Mis. Top-N di Master berbeda: grup ini gagal disimpan, grup berikutnya tetap dihitung
+                    var t = new List<string>(temuan);
+                    t.Insert(0, "Simpan gagal: " + ex.Message);
+                    Kabar(it, "gagal", t, null);
+                }
             }
             else
             {
@@ -174,8 +207,9 @@ namespace CKPNLibrary.Panel
         }
 
         /// <summary>Daftar temuan yang membuat grup tidak boleh disimpan otomatis (kosong = aman).</summary>
-        private static List<string> PeriksaTemuan(Excel.Application app)
+        private static List<string> PeriksaTemuan(Excel.Application app, out bool adaPerubahan)
         {
+            adaPerubahan = false;
             var t = new List<string>();
             var rv = Penyesuaian.InfoReview();
             var ind = rv["individu"] as Dictionary<string, object>;
@@ -204,7 +238,7 @@ namespace CKPNLibrary.Panel
             foreach (var s in (IEnumerable)p["peringatan"]) t.Add(Convert.ToString(s));
             int nPerubahan = 0;
             foreach (var o in (IEnumerable)p["perubahan"]) nPerubahan++;
-            if (nPerubahan > 0) t.Add(nPerubahan + " perubahan penyesuaian terdeteksi di sheet.");
+            if (nPerubahan > 0) { t.Add(nPerubahan + " perubahan penyesuaian terdeteksi di sheet."); adaPerubahan = true; }
             if (!(bool)p["bolehMenulis"] && t.Count == 0) t.Add("Grup ini tidak dapat disimpan (" + p["infoPengirim"] + ").");
             return t;
         }
@@ -226,23 +260,26 @@ namespace CKPNLibrary.Panel
             var d = new Dictionary<string, object>
             {
                 { "ke", _indeks + 1 }, { "dari", _antrian.Count }, { "nama", it.Nama }, { "kodeKC", it.KodeKC },
-                { "status", status }, { "temuan", temuan ?? new List<string>() }
+                { "status", status }, { "temuan", temuan ?? new List<string>() },
+                { "acuan", it.CatatanAcuan }
             };
             if (simpan != null)
             {
                 d["versi"] = simpan["versi"];
                 d["nfTotal"] = simpan["nfTotal"];
                 d["migTotal"] = simpan["migTotal"];
+                d["runId"] = simpan["runId"];
             }
             if (status != "menghitung") _hasil.Add(d);
             CatatanLog.Tulis("  [semua grup] " + it.Nama + " · " + status + (temuan != null && temuan.Count > 0 ? " · " + string.Join(" | ", temuan.ToArray()) : ""));
             if (status != "menghitung")
                 LogProses.CatatPanel(_tanggal, "Hitung semua grup", it.Nama,
-                    status == "tersimpan" ? LogProses.OK : status == "perlu-review" ? LogProses.Peringatan
+                    status == "tersimpan" ? LogProses.OK : status == "perlu-review" || status == "tersimpan-temuan" ? LogProses.Peringatan
                         : status == "dibatalkan" ? LogProses.Dilewati : LogProses.Gagal,
                     LogProses.R()
                         .Tambah("Status", status)
                         .Tambah("KC", it.KodeKC)
+                        .TambahBila(it.CatatanAcuan != null, "PD & LGD", it.CatatanAcuan)
                         .TambahBila(simpan != null, "Versi", simpan == null ? null : simpan["versi"])
                         .TambahBila(temuan != null && temuan.Count > 0, "Temuan",
                                     temuan == null ? "" : string.Join(" | ", temuan.ToArray())));

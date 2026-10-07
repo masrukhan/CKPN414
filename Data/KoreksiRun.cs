@@ -152,6 +152,13 @@ namespace CKPNLibrary.Data
                 else if (i.WoCs == 0)
                     i.Masalah = "Versi ini tidak punya baris LGD CS dan total LGD ER tidak tersimpan. Simpan ulang grup ini sekali dari sheet agar totalnya tercatat.";
             }
+            double? acuan = Rg(r, "acuan_versi");
+            if (acuan.HasValue)
+            {
+                i.Masalah = "PD & LGD versi ini memakai acuan Desember (v" + acuan.Value.ToString("0", CultureInfo.InvariantCulture) +
+                            "); LGD CS tidak dihitung bulan ini. Koreksi LGD CS dilakukan di versi Desember tersebut.";
+                return i;
+            }
             if (i.SumberEr == null && i.Masalah == null)
                 i.Masalah = "Total LGD ER (hapus buku & recovery) versi ini tidak dapat diketahui. Simpan ulang grup ini sekali dari sheet agar totalnya tercatat.";
 

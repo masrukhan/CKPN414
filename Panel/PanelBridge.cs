@@ -233,10 +233,11 @@ namespace CKPNLibrary.Panel
                     case "hitungGrup":
                         string kodeGrup = Convert.ToString(Ambil(args, "kodeKC") ?? "");
                         bool terapkanG = !(Ambil(args, "terapkanPenyesuaian") is bool) || (bool)Ambil(args, "terapkanPenyesuaian");
+                        bool acuanG = Ambil(args, "pakaiAcuan") is bool && (bool)Ambil(args, "pakaiAcuan");
                         JalankanDiExcel(host, id, app =>
                         {
                             if (BatchGrup.Aktif) throw new InvalidOperationException("Hitung semua grup sedang berjalan.");
-                            string tolak = CKPNPipeline.MulaiGrup(app, kodeGrup, terapkanG);
+                            string tolak = CKPNPipeline.MulaiGrup(app, kodeGrup, terapkanG, acuanG);
                             if (tolak != null) throw new InvalidOperationException(tolak);
                             return new Dictionary<string, object> { { "diterima", true } };
                         });
@@ -246,9 +247,10 @@ namespace CKPNLibrary.Panel
                     case "hitungSemuaGrup":
                         bool lewati = !(Ambil(args, "lewatiTersimpan") is bool) || (bool)Ambil(args, "lewatiTersimpan");
                         bool berhenti = !(Ambil(args, "berhentiBilaTemuan") is bool) || (bool)Ambil(args, "berhentiBilaTemuan");
+                        bool acuanB = Ambil(args, "pakaiAcuan") is bool && (bool)Ambil(args, "pakaiAcuan");
                         JalankanDiExcel(host, id, app =>
                         {
-                            string tolak = BatchGrup.Mulai(app, lewati, berhenti);
+                            string tolak = BatchGrup.Mulai(app, lewati, berhenti, acuanB);
                             if (tolak != null) throw new InvalidOperationException(tolak);
                             return new Dictionary<string, object> { { "diterima", true } };
                         });
@@ -341,6 +343,11 @@ namespace CKPNLibrary.Panel
                             PenjelasanCKPN.SimpanOverview(tglOv, ov, System.IO.Path.GetFileName(path));
                             return new Dictionary<string, object> { { "batal", false }, { "file", System.IO.Path.GetFileName(path) } };
                         });
+                        break;
+
+                    // ---- Tahap 5e: mode PD & LGD setahun sekali — status acuan Desember per grup ----
+                    case "infoAcuan":
+                        JalankanDiExcel(host, id, app => AcuanTahunan.Info(app));
                         break;
 
                     // ---- Tahap 5b: lihat & koreksi data tersimpan satu versi grup ----
