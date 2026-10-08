@@ -307,11 +307,32 @@ namespace CKPNLibrary.Panel
                             {
                                 var ov = new CKPNLibrary.Modules.DataOverviewBuilder(app).UntukPanel(wbApp);
                                 // Tahap 4g: simpan sebagai snapshot periode (bahan penjelasan perubahan CKPN)
-                                ov["tersimpan"] = PenjelasanCKPN.SimpanOverview(Convert.ToString(ov["periode"]), ov, "Master!D14");
+                                ov["tersimpan"] = PenjelasanCKPN.SimpanOverview(Convert.ToString(ov["periode"]), ov, "Ringkasan · " + Convert.ToString(ov["fileTemplate"]));
                                 return ov;
                             }
                             finally { app.Cursor = kursor; }
                         });
+                        break;
+
+                    // ---- Tahap 5h: parameter PD & LGD ABA per tahun (⚙ Pengaturan) ----
+                    case "parameterAba":
+                        int tahunAba = Convert.ToInt32(Ambil(args, "tahun"));
+                        JalankanDiExcel(host, id, app => ParameterAba.Info(tahunAba, app));
+                        break;
+
+                    case "simpanParameterAba":
+                        Balas(host, id, ParameterAba.Simpan(Convert.ToInt32(Ambil(args, "tahun")),
+                            Convert.ToDouble(Ambil(args, "pd")), Convert.ToDouble(Ambil(args, "lgdDijamin")),
+                            Convert.ToDouble(Ambil(args, "lgdAtas")), Convert.ToString(Ambil(args, "dasar") ?? "")));
+                        break;
+
+                    case "hapusParameterAba":
+                        Balas(host, id, ParameterAba.Hapus(Convert.ToInt32(Ambil(args, "tahun")), Convert.ToString(Ambil(args, "alasan") ?? "")));
+                        break;
+
+                    // ---- Tahap 5g: snapshot Overview tersimpan (tanpa membuka template) ----
+                    case "overviewTersimpan":
+                        Balas(host, id, PenjelasanCKPN.OverviewTersimpan(Convert.ToString(Ambil(args, "tanggal") ?? "")));
                         break;
 
                     // ---- Tahap 4g: penjelasan perubahan CKPN ----

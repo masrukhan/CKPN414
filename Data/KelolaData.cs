@@ -179,6 +179,7 @@ namespace CKPNLibrary.Data
                     {
                         Database.Exec(con, "DELETE FROM susunan_grup");
                         Database.Exec(con, "DELETE FROM susunan_tahun");
+                        Database.Exec(con, "DELETE FROM parameter_aba");   // Tahap 5h: ketetapan tahunan juga
                     }
                     Database.CatatAktivitas(con, "", "kosongkan-database",
                         nPeriode + " periode, " + nVersi + " versi" +

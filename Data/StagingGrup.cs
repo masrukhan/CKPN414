@@ -41,6 +41,7 @@ namespace CKPNLibrary.Data
             { "B13", "mig_individu"  }, { "B14", "mig_kolektif"  }, { "B15", "mig_total" },
             { "C6",  "tpl_individu"  }, { "C7",  "tpl_kolektif"  }, { "C8",  "tpl_total" },
             { "C18", "aba_dijamin"   }, { "C19", "aba_di_atas_plafon" }, { "C26", "aba_ckpn" },
+            { "C21", "aba_pd" }, { "C22", "aba_lgd_dijamin" }, { "C23", "aba_lgd_atas" },   // Tahap 5h
             { "H2",  "ppka_KC0500" }, { "H3", "ppka_KC0600" }, { "H4", "ppka_KC0700" }, { "H5", "ppka_KC0800" },
             { "H6",  "ppka_KC0900" }, { "H7", "ppka_KC1000" }, { "H8", "ppka_KC1100" }, { "H9", "ppka_total" }
         };
@@ -136,6 +137,10 @@ namespace CKPNLibrary.Data
             string tolakTopN = CekTopN(r);
             if (tolakTopN != null) r.Peringatan.Add(tolakTopN);
 
+            // Tahap 5h: PD/LGD ABA di Summary vs parameter tahunan (diterapkan otomatis saat Simpan)
+            string bedaAba = ParameterAba.CekBeda(r.Wb);
+            if (bedaAba != null) r.Peringatan.Add(bedaAba);
+
             return new Dictionary<string, object>
             {
                 { "namaGrup", namaGrup }, { "statusPeriode", statusPeriode },
@@ -187,6 +192,8 @@ namespace CKPNLibrary.Data
                     try { new RefreshSummary(app).Refresh(p0.Summary.FilePath, p0.KCList); }
                     finally { pesanModul.AddRange(Pemberitahu.SelesaiModePanel()); }
                 }
+                // Tahap 5h: PD & LGD ABA mengikuti parameter tahunan sebelum angka Summary dibaca
+                ParameterAba.Terapkan(wb);
                 try { app.Calculate(); } catch { }
 
                 // ---- b. Susun ulang rencana dari kondisi sheet terkini ----
@@ -348,6 +355,7 @@ namespace CKPNLibrary.Data
                 Pemberitahu.MulaiModePanel();
                 try { new RefreshSummary(app).Refresh(p.Summary.FilePath, p.KCList); }
                 finally { pesan = Pemberitahu.SelesaiModePanel(); }
+                ParameterAba.Terapkan(wb);   // Tahap 5h
                 try { app.Calculate(); } catch { }
             }
             finally

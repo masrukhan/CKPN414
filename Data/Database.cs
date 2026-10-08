@@ -25,7 +25,7 @@ namespace CKPNLibrary.Data
     /// </summary>
     internal static class Database
     {
-        public const int VersiSkema = 7;
+        public const int VersiSkema = 8;
         private static bool _skemaSiap;
         private static readonly object _kunci = new object();
 
@@ -262,7 +262,18 @@ namespace CKPNLibrary.Data
                     }
                     CatatanLog.Tulis("Database: migrasi ke skema v7 selesai");
                 }
-                // Migrasi versi berikutnya ditambahkan di sini: if (versi < 8) { ... }
+                // ---- v8 (Tahap 5h): parameter PD & LGD ABA per tahun (menimpa Summary C21:C23) ----
+                if (versi < 8)
+                {
+                    using (var tx = con.BeginTransaction())
+                    {
+                        foreach (var sql in SkemaV8) Exec(con, sql);
+                        Exec(con, "INSERT OR REPLACE INTO meta(kunci,nilai) VALUES('versi_skema','8')");
+                        tx.Commit();
+                    }
+                    CatatanLog.Tulis("Database: migrasi ke skema v8 selesai");
+                }
+                // Migrasi versi berikutnya ditambahkan di sini: if (versi < 9) { ... }
 
                 _skemaSiap = true;
             }
@@ -493,6 +504,19 @@ namespace CKPNLibrary.Data
                 sumber    TEXT,
                 pengguna  TEXT,
                 waktu     TEXT)"
+        };
+
+        private static readonly string[] SkemaV8 =
+        {
+            // Rasio 0–1. pd = Summary!C21, lgd_dijamin = C22, lgd_atas = C23
+            @"CREATE TABLE IF NOT EXISTS parameter_aba (
+                tahun        INTEGER PRIMARY KEY,
+                pd           REAL NOT NULL CHECK (pd BETWEEN 0 AND 1),
+                lgd_dijamin  REAL NOT NULL CHECK (lgd_dijamin BETWEEN 0 AND 1),
+                lgd_atas     REAL NOT NULL CHECK (lgd_atas BETWEEN 0 AND 1),
+                dasar        TEXT,
+                pengguna     TEXT,
+                waktu        TEXT)"
         };
 
         public static void CatatAktivitas(SQLiteConnection con, string periode, string aksi, string detail)

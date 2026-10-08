@@ -123,9 +123,9 @@
     <div class="kartu">
       <div class="baris-antara">
         <div class="judul-kartu">Portofolio · overview data</div>
-        <button id="btn-ov-muat" class="tombol-sekunder" type="button">Muat data</button>
+        <button id="btn-ov-muat" class="tombol-sekunder" type="button">Muat dari template</button>
       </div>
-      <div id="ov-info" class="teks-kecil">Dibaca dari file template di Master!D14 untuk periode Master!C4.</div>
+      <div id="ov-info" class="teks-kecil">Snapshot overview periode terpilih dari database; diambil dari file template Master!D14 bila belum ada.</div>
       <div class="baris-antara jarak-atas">
         <span id="ov-satuan-ket" class="teks-kecil">Angka dalam juta Rp</span>
         <select id="ov-satuan" class="pilih" aria-label="Satuan angka">
@@ -586,6 +586,9 @@
       <button type="button" class="baris-atur" data-atur="susunan" data-fokus="susunan-dasar">
         <span class="atur-teks"><span class="atur-nama">Dasar kebijakan / SOP</span><span class="atur-nilai" id="pt-dasar">—</span></span>
         <span class="atur-ubah">Ubah ›</span></button>
+      <button type="button" class="baris-atur" id="btn-atur-aba">
+        <span class="atur-teks"><span class="atur-nama">PD &amp; LGD ABA (Summary C21:C23)</span><span class="atur-nilai" id="pt-aba">—</span></span>
+        <span class="atur-ubah">Ubah ›</span></button>
       <div class="baris-atur statis">
         <span class="atur-teks"><span class="atur-nama">Metode PD &amp; LGD (Master!D17)</span><span class="atur-nilai" id="pt-pdlgd">—</span></span>
         <span class="atur-ubah teks-kecil">di sheet Master</span></div>
@@ -617,6 +620,31 @@
         <button id="btn-susunan-batal" class="tombol-sekunder" type="button">Batal</button>
       </div>
       <div id="susunan-hasil"></div>
+    </div>
+
+    <!-- Tahap 5h: parameter PD & LGD Aset Antar Bank per tahun -->
+    <div class="kartu" id="kartu-aba" hidden>
+      <div class="judul-kartu" id="aba-judul">PD &amp; LGD ABA</div>
+      <p class="teks-kecil">Nilai ini <b>menimpa Summary C21:C23</b> (PD industri, LGD porsi dijamin LPS, LGD porsi di atas plafon)
+        untuk semua periode di tahun ini. Diterapkan otomatis di awal setiap perhitungan panel, sesudah Refresh Summary,
+        dan sebelum Simpan grup. Isi sesuai kebijakan / addendum ABA yang berlaku.</p>
+      <div id="aba-sheet" class="teks-kecil"></div>
+      <div class="tiga-kolom">
+        <div><label class="label-isian" for="aba-pd">PD industri (C21)</label>
+          <div class="isian-persen"><input id="aba-pd" class="isian angka" type="text" inputmode="decimal" autocomplete="off"><span>%</span></div></div>
+        <div><label class="label-isian" for="aba-lgd1">LGD dijamin (C22)</label>
+          <div class="isian-persen"><input id="aba-lgd1" class="isian angka" type="text" inputmode="decimal" autocomplete="off"><span>%</span></div></div>
+        <div><label class="label-isian" for="aba-lgd2">LGD di atas plafon (C23)</label>
+          <div class="isian-persen"><input id="aba-lgd2" class="isian angka" type="text" inputmode="decimal" autocomplete="off"><span>%</span></div></div>
+      </div>
+      <label class="label-isian" for="aba-dasar">Dasar penetapan (wajib)</label>
+      <input id="aba-dasar" class="isian" type="text" placeholder="Mis. ADD-CKPN-001 / memo direksi">
+      <div class="baris-tombol jarak-atas">
+        <button id="btn-aba-simpan" class="tombol-utama" type="button">Simpan parameter ABA</button>
+        <button id="btn-aba-batal" class="tombol-sekunder" type="button">Batal</button>
+      </div>
+      <button id="btn-aba-hapus" class="tautan hapus jarak-atas" type="button" hidden>Hapus parameter tahun ini (Summary C21:C23 kembali diisi manual)</button>
+      <div id="aba-hasil" role="status"></div>
     </div>
 
     <div class="label-kecil">Data &amp; sistem</div>

@@ -122,7 +122,7 @@
     Grafik.sembunyiTip();
     if (sub) pindahSub(nama, sub, true);
     if (tanpaMuat) return;
-    if (nama === "ringkasan") { muatPeriode(periodeTerpilih()); if (!dataOverview) muatOverview(); }
+    if (nama === "ringkasan") muatPeriode(periodeTerpilih());   // overview ikut dimuat dari snapshot (Tahap 5g)
     if (nama === "hitung" || nama === "tetapkan") muatPeriode(periodeTerpilih());
     if (nama === "pengaturan") {
       muatPeriode(periodeTerpilih());
@@ -351,12 +351,14 @@
       runTerakhirBatch = d;
       tampil("kartu-progres", false);
       run = null;
+      ovStatus.ada = null;
       segarkanPerGrup();
       return;
     }
     tampilkanHasil(d);
     if (d.status === "selesai") muatReview();
     run = null;
+    ovStatus.ada = null;   // langkah "Data overview" mungkin baru menyimpan snapshot
     muatPersiapan();   // segarkan status langkah untuk run berikutnya
     segarkanPerGrup();
   });
@@ -708,6 +710,8 @@
       gambarVersi(d);
       gambarPengaturan();
       sinkronBatch(d);
+      muatOverviewPeriode(d);
+      if (!infoAba || infoAba.tahun !== d.tahun || tabAktif === "pengaturan") muatAba(d.tahun);
       document.querySelectorAll("#rw-tabel tr[data-tanggal]").forEach(function (tr) {
         tr.classList.toggle("terpilih", tr.dataset.tanggal === d.tanggal);
       });
@@ -996,6 +1000,13 @@
         "Konsolidasi memakai versi yang tersimpan, bukan isi sheet saat ini.");
     if ((d.runLuarSusunan || []).length)
       item("awas", d.runLuarSusunan.length + " kiriman di luar susunan grup", "Tidak ikut konsolidasi. Lihat Analisis › Versi.");
+    if (infoAba && infoAba.tahun === d.tahun)
+      item(infoAba.tersimpan ? "ok" : "awas", "Parameter PD & LGD ABA tahun " + d.tahun,
+        infoAba.tersimpan ? ringkasAba(infoAba.tersimpan) : "Belum diatur di ⚙ Pengaturan — CKPN ABA memakai isi Summary C21:C23 apa adanya.");
+    if (ovStatus.tanggal === d.tanggal && ovStatus.ada !== null)
+      item(ovStatus.ada ? (ovStatus.berubah ? "awas" : "ok") : "awas", "Data overview (OS, EAD, NPF) tersimpan",
+        !ovStatus.ada ? "Belum ada — Analisis › Komposisi tidak bisa membandingkan OS/NPF. Muat di Ringkasan."
+          : ovStatus.berubah ? "File template berubah sejak snapshot disimpan." : "");
     if (!final) item(d.bolehMenulis ? "ok" : "belum", "Hak menetapkan", d.bolehMenulis ? "" : (d.infoPengirim || "User ini hanya bisa melihat."));
   }
 
@@ -1062,6 +1073,92 @@
       ? "User Windows Anda: " + infoPing.user + " — " + (boleh ? "boleh menyimpan." : "belum terdaftar; tambahkan nama ini ke pengirim.txt agar bisa menyimpan.")
       : "";
   }
+  // ---------------- ⚙ Pengaturan › PD & LGD ABA (Tahap 5h) ----------------
+  var infoAba = null;
+  function persenAba(v) { return v === null || v === undefined ? "kosong" : (v * 100).toLocaleString("id-ID", { maximumFractionDigits: 4 }) + "%"; }
+  function ringkasAba(x) { return "PD " + persenAba(x.pd) + " · LGD " + persenAba(x.lgdDijamin) + " / " + persenAba(x.lgdAtas); }
+
+  function muatAba(tahun) {
+    if (!tahun) return;
+    return panggil("parameterAba", { tahun: tahun }).then(function (d) {
+      infoAba = d;
+      gambarAba();
+      if (statusP) gambarSyarat(statusP);
+    }).catch(function (e) { infoAba = null; teks("pt-aba", e.message); });
+  }
+
+  function gambarAba() {
+    var d = infoAba;
+    if (!d) { teks("pt-aba", "—"); return; }
+    var sheetTahunIni = d.sheet && d.tahunMaster === d.tahun;
+    teks("pt-aba", d.tersimpan ? ringkasAba(d.tersimpan) + " · menimpa Summary"
+      : "Belum diatur — memakai isi Summary" + (sheetTahunIni ? " (" + ringkasAba(d.sheet) + ")" : ""));
+  }
+
+  function bukaEditorAba() {
+    if (!infoAba) return;
+    var d = infoAba, s = d.tersimpan, sh = d.tahunMaster === d.tahun ? d.sheet : null;
+    var awal = s || sh || {};
+    function isi(id, v) { $(id).value = v === null || v === undefined ? "" : String(+(v * 100).toFixed(6)).replace(".", ","); }
+    isi("aba-pd", awal.pd); isi("aba-lgd1", awal.lgdDijamin); isi("aba-lgd2", awal.lgdAtas);
+    $("aba-dasar").value = s ? s.dasar || "" : "";
+    teks("aba-judul", "PD & LGD ABA tahun " + d.tahun);
+    var info = [];
+    if (s) info.push("Tersimpan: " + ringkasAba(s) + " · " + s.pengguna + " · " + s.waktu);
+    if (sh) info.push("Isi Summary C21:C23 saat ini (workbook " + d.tahunMaster + "): " + ringkasAba(sh));
+    else if (d.sheet) info.push("Workbook berisi periode " + d.tahunMaster + "; nilai Summary tidak ditampilkan untuk tahun " + d.tahun + ".");
+    if (d.terkunci) info.push("Ada periode Final di tahun " + d.tahun + (s ? ": parameter tidak dapat diubah sampai kuncinya dibuka." : "."));
+    $("aba-sheet").textContent = info.join(" · ");
+    var boleh = d.bolehMenulis && !(d.terkunci && s);
+    $("btn-aba-simpan").disabled = !boleh;
+    tampil("btn-aba-hapus", !!s && boleh);
+    $("aba-hasil").innerHTML = "";
+    tampil("kartu-aba", true);
+    $("kartu-aba").scrollIntoView({ block: "start" });
+  }
+
+  function bacaPersen(id, label, salah) {
+    var t = String($(id).value || "").trim().replace(/\s|%/g, "").replace(",", ".");
+    var v = t === "" ? NaN : Number(t);
+    if (!(v >= 0 && v <= 100)) { salah.push(label); return null; }
+    return v / 100;
+  }
+
+  $("btn-atur-aba").addEventListener("click", function () {
+    if (tabAktif !== "pengaturan") pindahTab("pengaturan");
+    var tahun = statusP ? statusP.tahun : null;
+    if (!infoAba || infoAba.tahun !== tahun) { var pr = muatAba(tahun); if (pr) pr.then(bukaEditorAba); }
+    else bukaEditorAba();
+  });
+  $("btn-aba-batal").addEventListener("click", function () { tampil("kartu-aba", false); });
+  $("btn-aba-simpan").addEventListener("click", function () {
+    var salah = [], w = $("aba-hasil");
+    var pd = bacaPersen("aba-pd", "PD", salah), l1 = bacaPersen("aba-lgd1", "LGD dijamin", salah), l2 = bacaPersen("aba-lgd2", "LGD di atas plafon", salah);
+    w.innerHTML = "";
+    if (salah.length) { w.appendChild(el("div", "peringatan-box", "Isi " + salah.join(", ") + " dengan persen 0–100 (mis. 0,05 atau 70).")); return; }
+    if (!$("aba-dasar").value.trim()) { w.appendChild(el("div", "peringatan-box", "Dasar penetapan wajib diisi.")); return; }
+    var baru = { pd: pd, lgdDijamin: l1, lgdAtas: l2 };
+    if (!window.confirm("Tetapkan PD & LGD ABA tahun " + infoAba.tahun + ":\n" + ringkasAba(baru) +
+        "\n\nNilai ini menimpa Summary C21:C23 pada setiap perhitungan dan Simpan grup tahun " + infoAba.tahun +
+        ". Grup yang sudah tersimpan tidak berubah sampai dihitung/disimpan ulang. Lanjutkan?")) return;
+    var b = this;
+    b.disabled = true;
+    panggil("simpanParameterAba", { tahun: infoAba.tahun, pd: pd, lgdDijamin: l1, lgdAtas: l2, dasar: $("aba-dasar").value })
+      .then(function () {
+        tampil("kartu-aba", false);
+        return muatAba(infoAba.tahun);
+      })
+      .catch(function (e) { w.appendChild(el("div", "peringatan-box", e.message)); })
+      .then(function () { b.disabled = false; });
+  });
+  $("btn-aba-hapus").addEventListener("click", function () {
+    var alasan = window.prompt("Hapus parameter ABA tahun " + infoAba.tahun + "?\nSummary C21:C23 tidak lagi ditimpa panel (nilai terakhir di sheet tetap). Alasan (wajib):");
+    if (!alasan) return;
+    panggil("hapusParameterAba", { tahun: infoAba.tahun, alasan: alasan })
+      .then(function () { tampil("kartu-aba", false); return muatAba(infoAba.tahun); })
+      .catch(function (e) { $("aba-hasil").innerHTML = ""; $("aba-hasil").appendChild(el("div", "peringatan-box", e.message)); });
+  });
+
   $("btn-atur-pengirim").addEventListener("click", function () {
     var buka = $("pt-pengirim-info").hidden;
     tampil("pt-pengirim-info", buka);
@@ -1752,7 +1849,7 @@
       ["Menghapus permanen SEMUA periode, versi grup, hasil, konsolidasi, dan jurnal. Cocok untuk mengakhiri masa simulasi.",
        "Salinan arsip database dibuat lebih dulu di folder library\\backup. Log aktivitas tetap disimpan."],
       [{ id: "penyesuaian", label: "Hapus juga semua penyesuaian Individu & LGD CS", bawaan: false },
-       { id: "susunan", label: "Hapus juga susunan grup & metode tahunan", bawaan: false },
+       { id: "susunan", label: "Hapus juga susunan grup, metode, Top-N & parameter ABA tahunan", bawaan: false },
        { id: "snapshot", label: "Hapus juga file snapshot .xlsx", bawaan: true }],
       infoDb.konfirmasiSemua,
       function (konf, alasan, o) {
@@ -1778,17 +1875,93 @@
   }
   function persenOv(v) { return v === null || v === undefined ? "—" : (v * 100).toFixed(2).replace(".", ",") + "%"; }
 
+  // Tahap 5g: overview periode terpilih dibaca dari snapshot database; template Master!D14 hanya
+  // dibuka bila snapshot belum ada (periode Master) atau user menekan "Muat ulang dari template".
+  // Snapshot juga diambil otomatis di awal setiap perhitungan panel bila belum ada / template berubah.
+  var ovStatus = { tanggal: null, ada: null };   // status snapshot periode yang tampil (dipakai Syarat penetapan)
+  var ovOtomatisDicoba = {};                       // tanggal → template sudah dicoba dibuka otomatis di sesi ini
+
+  function aturTombolOv() {
+    var b = $("btn-ov-muat"), d = statusP;
+    var master = !d || d.periodeMaster;
+    b.dataset.mode = master ? "template" : "file";
+    b.textContent = master ? (ovStatus.ada ? "Muat ulang dari template" : "Muat dari template")
+                           : "Ambil dari file template…";
+    b.title = master ? "Baca ulang file template Master!D14 lalu simpan sebagai snapshot periode ini"
+                     : "Pilih file template periode " + (d ? d.tanggal : "") + " lalu simpan sebagai snapshot";
+    b.disabled = !master && !(d && d.bolehMenulis);
+  }
+
+  function kosongkanOverview(pesan) {
+    dataOverview = null;
+    $("ov-keuangan").innerHTML = "";
+    $("ov-rekon").textContent = "";
+    $("ov-log").innerHTML = "";
+    $("ov-tabel").textContent = "—";
+    $("ov-info").textContent = pesan;
+  }
+
+  function muatOverviewPeriode(d, paksa) {
+    if (!d || !d.tanggal) return;
+    if (!paksa && ovStatus.tanggal === d.tanggal && ovStatus.ada !== null && !run) { aturTombolOv(); return; }
+    var tgl = d.tanggal;
+    return panggil("overviewTersimpan", { tanggal: tgl }).then(function (r) {
+      if (!statusP || statusP.tanggal !== tgl) return;   // periode sudah diganti lagi
+      ovStatus = { tanggal: tgl, ada: !!r.ada, berubah: !!r.templateBerubah };
+      aturTombolOv();
+      gambarSyarat(statusP);
+      if (r.ada) { dataOverview = r; gambarOverview(); return; }
+      kosongkanOverview(d.periodeMaster
+        ? "Snapshot overview " + tanggalPanjang(tgl) + " belum tersimpan. Diambil otomatis di awal Hitung (per grup, semua grup, " +
+          "atau manual) oleh user pengirim, atau tekan Muat dari template."
+        : "Snapshot overview " + tanggalPanjang(tgl) + " belum tersimpan. Ambil dari file template periode itu" +
+          (d.bolehMenulis ? " (tombol di atas)." : " — hanya user pengirim yang dapat menyimpannya."));
+      // perilaku lama: membuka Ringkasan memuat overview periode Master — kini hanya bila snapshot belum ada, sekali per sesi
+      if (d.periodeMaster && !$("tab-ringkasan").hidden && !ovOtomatisDicoba[tgl] && !run && !batchAktif) {
+        ovOtomatisDicoba[tgl] = true;
+        muatOverview();
+      }
+    }).catch(function (e) {
+      ovStatus = { tanggal: tgl, ada: null };
+      aturTombolOv();
+      kosongkanOverview(e.message);
+    });
+  }
+
   function muatOverview() {
     var b = $("btn-ov-muat");
+    if (b.dataset.mode === "file") return ambilOverviewDariFile();
     b.disabled = true;
     b.textContent = "Membaca template…";
     teks("ov-info", "Membuka file template (Master!D14) — beberapa detik.");
     panggil("overviewData", {}, 600000).then(function (d) {
+      if (statusP && d.periode && d.periode !== statusP.tanggal) {
+        // Master!C4 berbeda dari periode header: tampilkan periode Master
+        pilihPeriodeGlobal(d.periode);
+        return;
+      }
+      d.ada = true;
+      d.sumberSnapshot = d.tersimpan ? "Ringkasan · " + d.fileTemplate : "";
+      d.waktuSnapshot = d.tersimpan ? d.waktu : "";
+      d.penggunaSnapshot = d.tersimpan && infoPing ? infoPing.user : "";
       dataOverview = d;
+      ovStatus = { tanggal: d.periode, ada: !!d.tersimpan || ovStatus.ada, berubah: false };
       gambarOverview();
+      if (statusP) gambarSyarat(statusP);
     }).catch(function (e) {
       $("ov-info").textContent = e.message;
-    }).then(function () { b.disabled = false; b.textContent = dataOverview ? "Muat ulang" : "Muat data"; });
+    }).then(function () { aturTombolOv(); });
+  }
+
+  function ambilOverviewDariFile() {
+    var d = statusP, b = $("btn-ov-muat");
+    if (!d) return;
+    b.disabled = true;
+    teks("ov-info", "Pilih file template periode " + tanggalPanjang(d.tanggal) + " di jendela Excel…");
+    panggil("overviewDariFile", { tanggal: d.tanggal }, 600000).then(function (r) {
+      if (r.batal) { muatOverviewPeriode(d, true); return; }
+      muatOverviewPeriode(d, true);
+    }).catch(function (e) { teks("ov-info", e.message); aturTombolOv(); });
   }
 
   function namaGrupKC(kode) {
@@ -1802,8 +1975,18 @@
   function gambarOverview() {
     var d = dataOverview;
     if (!d) return;
-    teks("ov-info", (d.namaBPR ? d.namaBPR + " · " : "") + "posisi " + (d.periode || "—") + " · " + d.fileTemplate +
-                    " · dimuat " + d.waktu);
+    var info = (d.namaBPR ? d.namaBPR + " · " : "") + "posisi " + (d.periode || "—") + " · " + d.fileTemplate;
+    info += d.waktuSnapshot
+      ? " · tersimpan di database " + d.waktuSnapshot + (d.penggunaSnapshot ? " oleh " + d.penggunaSnapshot : "") +
+        (d.sumberSnapshot ? " (" + d.sumberSnapshot + ")" : "")
+      : " · dimuat " + d.waktu + (d.tersimpan === false ? " · tidak disimpan (user ini hanya lihat)" : "");
+    teks("ov-info", info);
+    var lama = $("ov-info").parentNode.querySelector(".ov-berubah");
+    if (lama) lama.parentNode.removeChild(lama);
+    if (d.templateBerubah)
+      $("ov-info").insertAdjacentElement("afterend", el("div", "peringatan-box ov-berubah",
+        "File template " + d.fileTemplate + " sudah berubah sejak snapshot disimpan. Tekan Muat ulang dari template, " +
+        "atau biarkan — snapshot diperbarui otomatis pada perhitungan berikutnya."));
     teks("ov-satuan-ket", $("ov-satuan").value === "juta" ? "Angka dalam juta Rp" : "Angka dalam Rp");
 
     // ---- ringkasan keuangan ----
@@ -2601,7 +2784,7 @@
     if (kurang.length) {
       var box = el("div", "peringatan-box");
       box.appendChild(el("div", "", "Snapshot Overview belum ada untuk " + kurang.map(function (p) { return labelPeriode(p.tanggal); }).join(" dan ") +
-        ", sehingga OS, EAD, dan NPF belum bisa dibandingkan. Periode Master bisa diisi dengan membuka Ringkasan › Muat data; " +
+        ", sehingga OS, EAD, dan NPF belum bisa dibandingkan. Periode Master diambil otomatis di awal Hitung, atau lewat Ringkasan › Muat dari template; " +
         "periode lain dari file template-nya."));
       if (d.bolehMenulis) kurang.forEach(function (p) {
         box.appendChild(tombol("Ambil overview " + labelPeriode(p.tanggal) + " dari file template…", "tautan", function () {

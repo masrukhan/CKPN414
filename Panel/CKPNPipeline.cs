@@ -71,6 +71,18 @@ namespace CKPNLibrary.Panel
         };
         private static AcuanTahunan.Acuan _acuan;
 
+        /// <summary>
+        /// Langkah otomatis Tahap 5g: ambil Overview Data (OS, EAD, NPF, PPKA per KC dari template
+        /// Master!D14) dan simpan sebagai snapshot periode di database. Disisipkan di awal run hanya
+        /// bila snapshot periode Master!C4 belum ada atau file template berubah, dan hanya untuk user
+        /// pengirim. Kegagalannya tidak menggagalkan perhitungan CKPN (dicatat sebagai peringatan).
+        /// </summary>
+        private static readonly Langkah LangkahOverview = new Langkah
+        {
+            Id = "overview", Nama = "Data overview (OS, EAD, NPF)", SheetDitulis = "— (database, sheet tidak diubah)", Jalankan = JalankanOverview
+        };
+        private static string _alasanOverview;
+
         /// <summary>Keputusan acuan pada MulaiGrup terakhir (untuk BatchGrup/panel); null = tidak relevan.</summary>
         public static string CatatanAcuan { get; private set; }
 
@@ -160,6 +172,21 @@ namespace CKPNLibrary.Panel
             if (antrian.Count == 0) return "Belum ada langkah yang dipilih.";
             if (masalah.Count > 0) return "Parameter belum lengkap:\n- " + string.Join("\n- ", masalah.ToArray());
 
+            // Tahap 5g: snapshot Overview periode ini diambil dulu bila belum tersimpan / template berubah
+            _alasanOverview = null;
+            try
+            {
+                DateTime tglOv;
+                string alasanOv;
+                if (ParameterMaster.BacaTanggalLaporan(wb, out tglOv) &&
+                    Data.PenjelasanCKPN.OverviewPerluDiambil(tglOv.ToString("yyyy-MM-dd"), ParameterMaster.BacaPathTemplate(wb), out alasanOv))
+                {
+                    _alasanOverview = alasanOv;
+                    antrian.Insert(0, LangkahOverview);
+                }
+            }
+            catch (Exception ex) { CatatanLog.Tulis("Cek snapshot overview gagal: " + PesanError(ex)); }
+
             _wbApp        = wb;
             _param        = p;
             _acuan        = acuan;
@@ -237,6 +264,13 @@ namespace CKPNLibrary.Panel
                 {
                     try { AcuanTahunan.Kosongkan(_wbApp); }
                     catch (Exception ex) { CatatanLog.Tulis("Kosongkan acuan PD & LGD gagal: " + PesanError(ex)); }
+                }
+                // Tahap 5h: PD & LGD ABA tahunan (⚙ Pengaturan) → Summary C21:C23
+                try { AktifkanWorkbookAplikasi(); ParameterAba.Terapkan(_wbApp); }
+                catch (Exception ex)
+                {
+                    CatatanLog.Tulis("Parameter ABA gagal diterapkan: " + PesanError(ex));
+                    LogProses.Catat("Parameter ABA", "Summary C21:C23", LogProses.Peringatan, LogProses.R().Tambah("Error", PesanError(ex)));
                 }
                 _indeks = 0;
                 JadwalkanBerikut();
@@ -522,9 +556,41 @@ namespace CKPNLibrary.Panel
                 .Tambah("LGD weighted", (_acuan.Lgd.Value * 100).ToString("0.00", LogProses.Id) + "%"));
         }
 
+        // Tahap 5g: tidak melempar error — perhitungan CKPN tetap lanjut bila template overview gagal dibaca
+        private static void JalankanOverview(Excel.Application app, ParameterCKPN p)
+        {
+            Excel.Workbook wb = _wbApp ?? PanelBridge.CariWorkbookAplikasi(app);
+            try
+            {
+                var ov = new DataOverviewBuilder(app).UntukPanel(wb);
+                string periode = Convert.ToString(ov["periode"]);
+                bool ok = Data.PenjelasanCKPN.SimpanOverview(periode, ov, "Otomatis saat hitung · " + Convert.ToString(ov["fileTemplate"]));
+                var total = ov["total"] as Dictionary<string, object>;
+                LogProses.Catat("Overview data", periode, ok ? LogProses.OK : LogProses.Peringatan, LogProses.R()
+                    .Tambah("Alasan", _alasanOverview)
+                    .Tambah("File", ov["fileTemplate"])
+                    .TambahBila(total != null, "Total OS", total == null ? null : total["totalOS"])
+                    .TambahBila(total != null, "NPF", total == null || total["npf"] == null ? null :
+                        (Convert.ToDouble(total["npf"]) * 100).ToString("0.00", LogProses.Id) + "%")
+                    .TambahBila(!ok, "Keterangan", "snapshot tidak tersimpan ke database"));
+            }
+            catch (Exception ex)
+            {
+                string msg = PesanError(ex);
+                CatatanLog.Tulis("  Data overview gagal (perhitungan tetap lanjut): " + msg);
+                LogProses.Catat("Overview data", "Master!D14", LogProses.Peringatan, LogProses.R()
+                    .Tambah("Alasan", _alasanOverview).Tambah("Error", msg));
+                Pemberitahu.Info("Data overview belum tersimpan",
+                    "Overview Data (OS, EAD, NPF per KC) gagal dibaca dari template Master!D14: " + msg + "\n" +
+                    "Perhitungan CKPN tetap dilanjutkan. Muat ulang dari Ringkasan setelah template diperbaiki.");
+            }
+        }
+
         private static void JalankanSummary(Excel.Application app, ParameterCKPN p)
         {
             new RefreshSummary(app).Refresh(p.Summary.FilePath, p.KCList);
+            // Tahap 5h: bila modul Refresh Summary menulis ulang C21:C23, parameter tahunan tetap berlaku
+            ParameterAba.Terapkan(_wbApp ?? PanelBridge.CariWorkbookAplikasi(app));
         }
 
         // ------------------------------------------------------------

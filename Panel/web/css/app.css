@@ -534,3 +534,11 @@ button.baris-atur:focus-visible { outline: 2px solid var(--aksen); outline-offse
 #pt-pengirim-info { margin: 0 14px 12px; }
 #pt-pengirim-info p { margin: 0 0 8px; }
 #tab-pengaturan > .label-kecil { margin-top: 4px; }
+
+/* Tahap 5h: editor PD & LGD ABA */
+.tiga-kolom { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+.tiga-kolom .label-isian { min-height: 32px; display: flex; align-items: flex-end; }
+.isian-persen { display: flex; align-items: center; gap: 4px; }
+.isian-persen .isian { min-width: 0; flex: 1; }
+.isian-persen span { color: var(--teks-2); font-size: 12px; }
+#aba-sheet { margin: 4px 0; }
