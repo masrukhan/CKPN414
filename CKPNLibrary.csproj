@@ -12,7 +12,7 @@
     <Optimize>true</Optimize>
     <DebugType>none</DebugType>
     <!-- Versi add-in: ditampilkan di Panel CKPN (tab ping / info) -->
-    <Version>1.16.0</Version>
+    <Version>1.19.0</Version>
 
     <!-- Versi WebView2 SDK. Dipakai di dua tempat: PackageReference dan
          path WebView2Loader.dll native di folder NuGet. Satu properti supaya

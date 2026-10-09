@@ -39,6 +39,11 @@ namespace CKPNLibrary.Data
         public string Kontrak;
         public double JaminanSistem;
         public int    Baris;
+        // Tahap 6: bukti objektif penurunan nilai (diisi lewat CatatBuktiIndividu; null = modul belum dipatch)
+        public int?   Kualitas;
+        public double? HariTunggakan;
+        public bool?  Restruktur;
+        public string DasarPN;
     }
 
     /// <summary>
@@ -111,6 +116,42 @@ namespace CKPNLibrary.Data
                     ((Excel.Range)ws.Cells[baris, "J"]).Value2 = ov.BiayaJual;
             }
             catch (Exception ex) { CatatMasalah("Terapkan penyesuaian Individu " + noKontrak + ": " + ex.Message); }
+        }
+
+        /// <summary>
+        /// Tahap 6: catat bukti objektif penurunan nilai satu kontrak (dipanggil modul CKPN Individu
+        /// setelah TerapkanIndividu — lihat PATCH_MODUL_6.md). Urutan kriteria sama dengan TentukanPN:
+        /// restrukturisasi → NPF (kualitas 3–5) → Kol 2 → tunggakan &gt; 7 s.d. 30 hari.
+        /// </summary>
+        public static void CatatBuktiIndividu(string noKontrak, int kualitas, double hariTunggakan, bool restruktur,
+                                              string adaPN, bool flagNPF, bool flagKol2, bool flagRestru, bool flag7Hari)
+        {
+            try
+            {
+                if (_dasarInd == null) return;
+                string k = (noKontrak ?? "").Trim();
+                DasarIndividu d = null;
+                for (int i = _dasarInd.Count - 1; i >= 0; i--)
+                    if (string.Equals(_dasarInd[i].Kontrak, k, StringComparison.OrdinalIgnoreCase)) { d = _dasarInd[i]; break; }
+                if (d == null) return;
+                d.Kualitas = kualitas;
+                d.HariTunggakan = hariTunggakan;
+                d.Restruktur = restruktur;
+                d.DasarPN = DasarPenurunanNilai(kualitas, hariTunggakan, restruktur, adaPN, flagNPF, flagKol2, flagRestru, flag7Hari);
+            }
+            catch (Exception ex) { CatatMasalah("Catat bukti penurunan nilai " + noKontrak + ": " + ex.Message); }
+        }
+
+        internal static string DasarPenurunanNilai(int kualitas, double hari, bool restruktur, string adaPN,
+                                                   bool flagNPF, bool flagKol2, bool flagRestru, bool flag7Hari)
+        {
+            bool ya = string.Equals((adaPN ?? "").Trim(), "Ya", StringComparison.OrdinalIgnoreCase);
+            if (!ya) return "tidak";
+            if (flagRestru && restruktur) return "restrukturisasi";
+            if (flagNPF && kualitas >= 3 && kualitas <= 5) return "npf";
+            if (flagKol2 && kualitas == 2) return "kol2";
+            if (flag7Hari && hari > 7 && hari <= 30) return "tunggakan7-30";
+            return "lainnya";
         }
 
         /// <summary>Dipanggil setelah tabel selesai di-style (warna penanda tidak tertimpa).</summary>

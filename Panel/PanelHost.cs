@@ -212,6 +212,24 @@ namespace CKPNLibrary.Panel
             catch (Exception ex) { CatatLog("PostWebMessageAsJson gagal: " + ex.Message); }
         }
 
+        /// <summary>
+        /// Tahap 6: cetak halaman panel ke PDF A4. Yang tercetak hanya #cetak-root (CSS @media print),
+        /// yaitu dokumen yang sedang dipratinjau. Dipanggil di thread UI.
+        /// </summary>
+        public Task<bool> CetakPdfAsync(string path)
+        {
+            if (!Siap) throw new InvalidOperationException("Panel belum siap.");
+            CoreWebView2 core = _web.CoreWebView2;
+            CoreWebView2PrintSettings s = core.Environment.CreatePrintSettings();
+            s.Orientation = CoreWebView2PrintOrientation.Portrait;
+            s.PageWidth = 8.27;      // A4 dalam inci
+            s.PageHeight = 11.69;
+            s.MarginTop = 0.47; s.MarginBottom = 0.55; s.MarginLeft = 0.51; s.MarginRight = 0.51;
+            s.ShouldPrintBackgrounds = true;
+            s.ShouldPrintHeaderAndFooter = false;
+            return core.PrintToPdfAsync(path, s);
+        }
+
         private void TampilkanPesan(string teks)
         {
             _pesan.Text    = teks;

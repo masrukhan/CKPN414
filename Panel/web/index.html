@@ -36,6 +36,7 @@
     <button role="tab" data-tab="ringkasan" aria-selected="true">Ringkasan</button>
     <button role="tab" data-tab="hitung" aria-selected="false">Hitung</button>
     <button role="tab" data-tab="tetapkan" aria-selected="false">Tetapkan</button>
+    <button role="tab" data-tab="dokumen" aria-selected="false">Dokumen</button>
     <button role="tab" data-tab="analisis" aria-selected="false">Analisis</button>
     <button role="tab" data-tab="pengaturan" aria-selected="false" class="tab-gigi" aria-label="Pengaturan" title="Pengaturan"><svg class="ikon-gigi" viewBox="0 0 20 20" aria-hidden="true"><path d="M8.6 1.5h2.8l.4 2.3 1.6.7 1.9-1.4 2 2-1.4 1.9.7 1.6 2.3.4v2.8l-2.3.4-.7 1.6 1.4 1.9-2 2-1.9-1.4-1.6.7-.4 2.3H8.6l-.4-2.3-1.6-.7-1.9 1.4-2-2 1.4-1.9-.7-1.6-2.3-.4V8.6l2.3-.4.7-1.6-1.4-1.9 2-2 1.9 1.4 1.6-.7z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="10" cy="10" r="2.6" fill="none" stroke="currentColor" stroke-width="1.4"/></svg></button>
   </nav>
@@ -404,10 +405,117 @@
     </div>
   </section>
 
+  <!-- ================= Dokumen (Tahap 6): ringkasan bulanan, memo Individu, memo LGD CS ================= -->
+  <section id="tab-dokumen" class="isi-tab" role="tabpanel" hidden>
+    <div class="segmen sub-nav" role="group" aria-label="Jenis dokumen" data-grup="dokumen">
+      <button type="button" data-sub="dokringkas" aria-pressed="true">Ringkasan</button>
+      <button type="button" data-sub="dokind" aria-pressed="false">Memo Individu</button>
+      <button type="button" data-sub="doklgd" aria-pressed="false">Memo LGD CS</button>
+    </div>
+    <div id="dok-info" class="teks-kecil"></div>
+    <div class="baris-antara dok-profil">
+      <span id="dok-profil-info" class="teks-kecil">—</span>
+      <span class="baris-tombol">
+        <button id="dok-profil-ambil" class="tautan" type="button" hidden>Ambil dari template</button>
+        <button id="dok-kode" class="tautan" type="button" hidden title="Keterangan kode APOLLO (config\kode_apollo.txt)">Kode</button>
+      </span>
+    </div>
+
+    <!-- ---------- Dokumen › Ringkasan bulanan ---------- -->
+    <div id="sub-dokringkas" class="isi-sub">
+      <div class="kartu">
+        <div class="baris-antara">
+          <div class="judul-kartu">Laporan ringkasan perhitungan CKPN</div>
+          <span id="dr-status" class="status-grup">—</span>
+        </div>
+        <p class="teks-kecil">Dirangkai dari versi grup tersimpan periode di header: portofolio, CKPN per grup, ABA, konsolidasi vs PPKA,
+          usulan jurnal, daftar CKPN Individu, dan parameter. Tanda tangan &amp; catatan disimpan per periode.</p>
+        <div id="dr-syarat"></div>
+        <fieldset class="pilih-metode">
+          <legend class="label-isian">Lampiran</legend>
+          <label class="opsi"><input type="checkbox" id="dr-lamp-ind" checked> <span>Daftar CKPN Individu per kontrak</span></label>
+          <label class="opsi"><input type="checkbox" id="dr-lamp-lgd" checked> <span>Daftar LGD Collateral Shortfall</span></label>
+          <label class="opsi"><input type="checkbox" id="dr-lamp-memo"> <span>Sertakan semua memo Individu &amp; LGD CS berstatus Final</span></label>
+        </fieldset>
+        <label class="label-isian" for="dr-catatan">Catatan / analisis singkat</label>
+        <textarea id="dr-catatan" rows="3" placeholder="Mis. kenaikan CKPN terutama dari kolektif KC0700; NPF naik 0,3 poin"></textarea>
+        <div class="label-isian">Penandatangan</div>
+        <div id="dr-ttd" class="ttd-isian"></div>
+        <div class="baris-tombol jarak-atas">
+          <button id="dr-pratinjau" class="tombol-utama" type="button">Pratinjau</button>
+          <button id="dr-simpan" class="tombol-sekunder" type="button">Simpan isian</button>
+        </div>
+        <div id="dr-hasil" role="status"></div>
+      </div>
+    </div>
+
+    <!-- ---------- Dokumen › Memo CKPN Individu ---------- -->
+    <div id="sub-dokind" class="isi-sub" hidden>
+      <div class="kartu">
+        <div class="baris-antara">
+          <div>
+            <div class="judul-kartu">Memo penilaian individual</div>
+            <div id="di-ringkas" class="teks-kecil">—</div>
+          </div>
+          <button id="di-pdf-semua" class="tombol-sekunder" type="button">PDF semua Final</button>
+        </div>
+        <div class="baris-filter jarak-atas">
+          <select id="di-filter" class="pilih" aria-label="Saring debitur">
+            <option value="pn">Ada penurunan nilai</option>
+            <option value="semua">Semua debitur Top-N</option>
+            <option value="belum">Belum ada memo Final</option>
+          </select>
+          <input id="di-cari" class="isian" type="search" placeholder="Cari nama / CIF / kontrak" aria-label="Cari debitur">
+        </div>
+        <div id="di-daftar" class="dok-daftar"></div>
+        <p class="teks-kecil catatan">Satu memo per debitur (CIF) per periode. Nilai agunan &amp; biaya penjualan di memo Final dapat
+          diterapkan ke <b>penyesuaian tersimpan</b>, sehingga menjadi acuan CKPN Individu pada perhitungan berikutnya.</p>
+      </div>
+      <div class="kartu" id="kartu-memo-ind" hidden></div>
+    </div>
+
+    <!-- ---------- Dokumen › Memo LGD CS ---------- -->
+    <div id="sub-doklgd" class="isi-sub" hidden>
+      <div class="kartu">
+        <div class="baris-antara">
+          <div>
+            <div class="judul-kartu">Memo realisasi agunan (LGD CS)</div>
+            <div id="dl-ringkas" class="teks-kecil">—</div>
+          </div>
+          <button id="dl-pdf-semua" class="tombol-sekunder" type="button">PDF semua Final</button>
+        </div>
+        <input id="dl-cari" class="isian jarak-atas" type="search" placeholder="Cari no. rekening / nama" aria-label="Cari rekening">
+        <div id="dl-daftar" class="dok-daftar"></div>
+        <p class="teks-kecil catatan">Memo menjadi dasar nilai agunan hasil eksekusi (kolom G sheet B4.LGD-CS MACET) yang ditetapkan petugas.
+          Hasil bersih memo Final dapat diterapkan ke penyesuaian LGD CS untuk perhitungan berikutnya.</p>
+      </div>
+      <div class="kartu" id="kartu-memo-lgd" hidden></div>
+    </div>
+
+    <!-- ---------- Pratinjau dokumen (A4) ---------- -->
+    <div class="kartu" id="kartu-pratinjau" hidden>
+      <div class="baris-antara">
+        <div>
+          <div class="judul-kartu" id="pv-judul">Pratinjau</div>
+          <div class="teks-kecil" id="pv-sub"></div>
+        </div>
+        <button id="pv-tutup" class="tautan" type="button">Tutup</button>
+      </div>
+      <div class="baris-tombol jarak-atas">
+        <button id="pv-pdf" class="tombol-utama" type="button" title="Simpan sebagai PDF di library\dokumen lalu buka di penampil PDF untuk dicetak">Buat PDF &amp; buka</button>
+        <button id="pv-cetak" class="tombol-sekunder" type="button">Cetak…</button>
+        <button class="tombol-sekunder" type="button" data-folder="dokumen">Folder arsip</button>
+      </div>
+      <div id="pv-hasil" class="teks-kecil" role="status"></div>
+      <div id="pratinjau-wadah" class="pratinjau-wadah"><div id="pratinjau-isi" class="pratinjau-isi"></div></div>
+    </div>
+  </section>
+
   <!-- ================= Analisis: Tren · Komposisi · Versi ================= -->
   <section id="tab-analisis" class="isi-tab" role="tabpanel" hidden>
     <div class="segmen sub-nav" role="group" aria-label="Bagian analisis" data-grup="analisis">
       <button type="button" data-sub="tren" aria-pressed="true">Tren</button>
+      <button type="button" data-sub="rincian" aria-pressed="false">Rincian</button>
       <button type="button" data-sub="komposisi" aria-pressed="false">Komposisi</button>
       <button type="button" data-sub="versi" aria-pressed="false">Versi</button>
     </div>
@@ -441,6 +549,47 @@
     </div>
 
     <!-- ---------- Analisis › Komposisi (penjelasan CKPN + analisis PD) ---------- -->
+    <!-- ---------- Analisis › Rincian (Tahap 6c): CKPN Individu vs Kolektif, EAD/PD/LGD ---------- -->
+    <div id="sub-rincian" class="isi-sub" hidden>
+      <div class="kartu">
+        <div class="baris-antara">
+          <div class="judul-kartu">Individu vs Kolektif per grup</div>
+          <div class="segmen segmen-kecil" role="group" aria-label="Metode">
+            <button type="button" data-rc-metode="nf" aria-pressed="true">Net Flow</button>
+            <button type="button" data-rc-metode="mig" aria-pressed="false">Migration</button>
+          </div>
+        </div>
+        <div id="rc-info" class="teks-kecil">Memuat…</div>
+        <div id="rc-komposisi" class="gulir-x"></div>
+        <div class="legenda jarak-atas">
+          <span><i class="kunci-kotak rc-ind"></i>Individu</span>
+          <span><i class="kunci-kotak rc-kol"></i>Kolektif</span>
+        </div>
+      </div>
+
+      <div class="kartu">
+        <div class="baris-antara">
+          <label class="label-isian" for="rc-grup">Rincian grup</label>
+          <select id="rc-grup" class="pilih"></select>
+        </div>
+      </div>
+
+      <div class="kartu" id="kartu-rc-ind">
+        <div class="judul-kartu">CKPN Individu</div>
+        <div id="rc-ind" class="teks-kecil">—</div>
+      </div>
+
+      <div class="kartu" id="kartu-rc-kol">
+        <div class="baris-antara">
+          <div class="judul-kartu">CKPN Kolektif</div>
+          <span id="rc-mode" class="status-grup">—</span>
+        </div>
+        <div id="rc-kontrol"></div>
+        <div id="rc-kol-nf"></div>
+        <div id="rc-kol-mig"></div>
+      </div>
+    </div>
+
     <div id="sub-komposisi" class="isi-sub" hidden>
       <!-- Tahap 4g: penjelasan perubahan CKPN antarperiode -->
       <div class="kartu">
@@ -689,6 +838,9 @@
   </details>
   </section>
 </main>
+
+<!-- Tahap 6: salinan dokumen untuk dicetak / PDF (hanya tampil di @media print) -->
+<div id="cetak-root" aria-hidden="true"></div>
 
 <script src="js/grafik.js"></script>
 <script src="js/app.js"></script>

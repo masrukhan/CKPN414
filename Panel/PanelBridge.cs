@@ -314,6 +314,80 @@ namespace CKPNLibrary.Panel
                         });
                         break;
 
+                    // ---- Tahap 6c: rincian CKPN Individu vs Kolektif per grup ----
+                    case "rincianCkpn":
+                        Balas(host, id, RincianCkpn.Data(Convert.ToString(Ambil(args, "tanggal") ?? "")));
+                        break;
+
+                    // ---- Tahap 6: dokumentasi (ringkasan bulanan, memo Individu, memo LGD CS) ----
+                    case "dokumenData":
+                        Balas(host, id, Dokumen.Data(Convert.ToString(Ambil(args, "tanggal") ?? "")));
+                        break;
+
+                    case "simpanMemo":
+                        Balas(host, id, Dokumen.Simpan(Convert.ToString(Ambil(args, "jenis") ?? ""), Convert.ToString(Ambil(args, "tanggal") ?? ""),
+                            Convert.ToString(Ambil(args, "kunci") ?? ""), Ambil(args, "data"), Convert.ToString(Ambil(args, "status") ?? "Draf")));
+                        break;
+
+                    case "bukaMemo":
+                        Balas(host, id, Dokumen.BukaKembali(Convert.ToString(Ambil(args, "jenis") ?? ""), Convert.ToString(Ambil(args, "tanggal") ?? ""),
+                            Convert.ToString(Ambil(args, "kunci") ?? ""), Convert.ToString(Ambil(args, "alasan") ?? "")));
+                        break;
+
+                    case "hapusMemo":
+                        Dokumen.Hapus(Convert.ToString(Ambil(args, "jenis") ?? ""), Convert.ToString(Ambil(args, "tanggal") ?? ""),
+                            Convert.ToString(Ambil(args, "kunci") ?? ""));
+                        Balas(host, id, null);
+                        break;
+
+                    // Tahap 6b: ambil (ulang) profil rekening periode dari template APOLLO
+                    case "ambilProfilTemplate":
+                        string tglProfil = Convert.ToString(Ambil(args, "tanggal") ?? "");
+                        bool pilihFile = Ambil(args, "pilihFile") is bool && (bool)Ambil(args, "pilihFile");
+                        JalankanDiExcel(host, id, app =>
+                        {
+                            if (CKPNPipeline.SedangBerjalan || BatchGrup.Aktif)
+                                throw new InvalidOperationException("Perhitungan sedang berjalan. Coba lagi setelah selesai.");
+                            string pathTpl = null;
+                            if (!pilihFile)
+                            {
+                                Excel.Workbook wbApp = CariWorkbookAplikasi(app);
+                                if (wbApp == null) throw new InvalidOperationException("Workbook aplikasi CKPN tidak sedang terbuka.");
+                                pathTpl = ParameterMaster.BacaPathTemplate(wbApp);
+                            }
+                            else
+                                using (var dlg = new System.Windows.Forms.OpenFileDialog
+                                {
+                                    Title = "Pilih file template APOLLO periode " + tglProfil,
+                                    Filter = "File Excel|*.xlsx;*.xlsm;*.xls|Semua file|*.*"
+                                })
+                                {
+                                    if (dlg.ShowDialog() != System.Windows.Forms.DialogResult.OK)
+                                        return new Dictionary<string, object> { { "batal", true } };
+                                    pathTpl = dlg.FileName;
+                                }
+                            if (string.IsNullOrEmpty(pathTpl) || !File.Exists(pathTpl))
+                                throw new InvalidOperationException("File template tidak ditemukan: " + pathTpl);
+                            CKPNPipeline.MatikanGhostingSekali();
+                            var hasil = ProfilTemplate.AmbilDanSimpan(app, tglProfil, pathTpl, ProfilTemplate.RekeningPeriode(tglProfil), false);
+                            try { Excel.Workbook w = CariWorkbookAplikasi(app); if (w != null) w.Activate(); } catch { }
+                            return hasil;
+                        });
+                        break;
+
+                    case "bukaFileKode":
+                        ProfilTemplate.BacaKode();   // membuat file awal bila belum ada
+                        if (File.Exists(ProfilTemplate.FileKode))
+                            Process.Start(new ProcessStartInfo("notepad.exe", "\"" + ProfilTemplate.FileKode + "\"") { UseShellExecute = true });
+                        Balas(host, id, ProfilTemplate.FileKode);
+                        break;
+
+                    // PDF dari isi #cetak-root (CSS @media print) → library\dokumen\<yyyy-mm>\, lalu dibuka di penampil PDF
+                    case "simpanPdf":
+                        SimpanPdf(host, id, Convert.ToString(Ambil(args, "nama") ?? "Dokumen CKPN"),
+                                  Convert.ToString(Ambil(args, "periode") ?? ""), !(Ambil(args, "buka") is bool) || (bool)Ambil(args, "buka"));
+                        break;
+
                     // ---- Tahap 5h: parameter PD & LGD ABA per tahun (⚙ Pengaturan) ----
                     case "parameterAba":
                         int tahunAba = Convert.ToInt32(Ambil(args, "tahun"));
@@ -664,10 +738,62 @@ namespace CKPNLibrary.Panel
                 case "logs":  path = Path.GetDirectoryName(CatatanLog.LokasiAktif); break;
                 case "lokal": path = AppPaths.FolderLokal; break;
                 case "proses": path = LogProses.FolderAktif; break;
+                case "dokumen": path = FolderDokumen; Directory.CreateDirectory(path); break;
                 default:      path = AppPaths.FolderLibrary; break;
             }
             if (!string.IsNullOrEmpty(path) && Directory.Exists(path))
                 Process.Start("explorer.exe", "\"" + path + "\"");
+        }
+
+        // ================================================================
+        // Tahap 6: PDF dokumen
+        // ================================================================
+        internal static string FolderDokumen { get { return Path.Combine(AppPaths.FolderLibrary, "dokumen"); } }
+
+        private static string NamaFileAman(string nama)
+        {
+            var sb = new System.Text.StringBuilder();
+            foreach (char c in (nama ?? "").Trim())
+                sb.Append(Array.IndexOf(Path.GetInvalidFileNameChars(), c) >= 0 || c == '.' ? '_' : c);
+            string s = sb.ToString().Trim();
+            if (s.Length > 120) s = s.Substring(0, 120);
+            return s.Length == 0 ? "Dokumen CKPN" : s;
+        }
+
+        private static void SimpanPdf(PanelHost host, object id, string nama, string periode, bool buka)
+        {
+            string path;
+            try
+            {
+                string sub = periode != null && periode.Length >= 7 ? periode.Substring(0, 7) : "lain";
+                string folder = Path.Combine(FolderDokumen, sub);
+                Directory.CreateDirectory(folder);
+                string dasar = NamaFileAman(nama);
+                path = Path.Combine(folder, dasar + ".pdf");
+                if (File.Exists(path))
+                {
+                    try { File.Delete(path); }   // ditimpa; bila sedang terbuka di penampil PDF → nama baru
+                    catch { path = Path.Combine(folder, dasar + "_" + DateTime.Now.ToString("HHmmss") + ".pdf"); }
+                }
+            }
+            catch (Exception ex) { Gagal(host, id, "Folder dokumen tidak dapat dibuat: " + ex.Message); return; }
+
+            System.Threading.Tasks.Task<bool> tugas;
+            try { tugas = host.CetakPdfAsync(path); }
+            catch (Exception ex) { Gagal(host, id, "PDF gagal dibuat: " + ex.Message); return; }
+
+            tugas.ContinueWith(t => host.BeginInvoke((Action)(() =>
+            {
+                try
+                {
+                    if (t.IsFaulted || !t.Result)
+                        throw new InvalidOperationException(t.IsFaulted && t.Exception != null ? t.Exception.GetBaseException().Message : "PDF gagal dibuat.");
+                    LogProses.CatatPanel(periode, "Dokumen", "PDF " + Path.GetFileName(path), LogProses.OK, LogProses.R().Tambah("File", path));
+                    if (buka) try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); } catch { }
+                    Balas(host, id, new Dictionary<string, object> { { "file", path }, { "nama", Path.GetFileName(path) } });
+                }
+                catch (Exception ex) { Gagal(host, id, ex.Message); }
+            })));
         }
 
         // ================================================================

@@ -400,6 +400,14 @@ namespace CKPNLibrary.Data
                         "VALUES(@p0,@p1,@p2,@p3,@p4,@p5,@p6,@p7,@p8,@p9,@p10,@p11)",
                         runBaru, b.Urut, b.Kc, b.Cif, b.Nama, b.Kontrak, b.Os, b.AdaPN, b.Jaminan, b.Biaya, b.Penurunan,
                         (b.Disesuaikan || b.Diubah) ? 1 : 0);
+                // Tahap 6: bukti objektif penurunan nilai ikut versi lama
+                Database.Exec(con,
+                    "UPDATE hasil_individu SET " +
+                    "kualitas=(SELECT o.kualitas FROM hasil_individu o WHERE o.run_id=@p1 AND o.no_kontrak=hasil_individu.no_kontrak LIMIT 1), " +
+                    "hari_tunggakan=(SELECT o.hari_tunggakan FROM hasil_individu o WHERE o.run_id=@p1 AND o.no_kontrak=hasil_individu.no_kontrak LIMIT 1), " +
+                    "restruktur=(SELECT o.restruktur FROM hasil_individu o WHERE o.run_id=@p1 AND o.no_kontrak=hasil_individu.no_kontrak LIMIT 1), " +
+                    "dasar_pn=(SELECT o.dasar_pn FROM hasil_individu o WHERE o.run_id=@p1 AND o.no_kontrak=hasil_individu.no_kontrak LIMIT 1) " +
+                    "WHERE run_id=@p0", runBaru, r.Id);
 
                 foreach (var c in r.LgdCs)
                     Database.Exec(con,
@@ -418,7 +426,14 @@ namespace CKPNLibrary.Data
                     foreach (var kv in salin)
                     {
                         string data = kv.Value;
-                        if (nCs > 0 && !string.IsNullOrEmpty(data))
+                        if (kv.Key == RincianCkpn.Jenis && !string.IsNullOrEmpty(data))
+                        {
+                            // Tahap 6c: rincian kolektif ikut koreksi (CKPN × faktor, LGD baru, CKPN Individu baru)
+                            double indV;
+                            data = RincianCkpn.SesuaikanKoreksi(data, faktor, nCs > 0 ? (double?)rgBaru["lgd_gabungan"] : null,
+                                nInd > 0 && rgBaru.TryGetValue("nf_individu", out indV) ? (double?)indV : null);
+                        }
+                        else if (nCs > 0 && !string.IsNullOrEmpty(data))
                         {
                             try
                             {

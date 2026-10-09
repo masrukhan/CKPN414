@@ -81,6 +81,10 @@ namespace CKPNLibrary.Modules
                         string adaPN = TentukanPN(kontrak, dictRestru, flagNPF, flagKol2, flagRestru, flag7Hari);
                         TulisBaris(wsOut, baris, rCif + 1, cifData.CIF, cifData.Nama, kontrak, adaPN);
                         CKPNLibrary.Data.Penyesuaian.TerapkanIndividu(wsOut, baris, kontrak.NoKontrak, kontrak.Jaminan);
+                        // Tahap 6: bukti objektif penurunan nilai untuk memo CKPN Individu
+                        CKPNLibrary.Data.Penyesuaian.CatatBuktiIndividu(kontrak.NoKontrak, kontrak.Kualitas, kontrak.HariTunggakan,
+                            flagRestru && dictRestru.Contains(kontrak.NoKontrak.Trim()), adaPN,
+                            flagNPF, flagKol2, flagRestru, flag7Hari);
                     }
                 }
 

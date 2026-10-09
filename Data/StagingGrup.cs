@@ -211,6 +211,7 @@ namespace CKPNLibrary.Data
                 if (tolakTopN != null) throw new InvalidOperationException(tolakTopN);
                 var ringkasan = BacaRingkasan(wb);
                 string analisisJson = AnalisisPD.BacaWorkbookJson(wb);   // Tahap 4: bahan sankey
+                string kolektifJson = RincianCkpn.BacaWorkbookJson(wb);  // Tahap 6c: EAD/PD/LGD/CKPN per bucket & kualitas
                 ParameterCKPN param = ParameterMaster.Baca(wb);
                 if (param.LgdCs != null) ringkasan["lgd_cs_haircut"] = param.LgdCs.Haircut;   // Tahap 5b: prefill realisasi saat koreksi
 
@@ -256,6 +257,7 @@ namespace CKPNLibrary.Data
                     foreach (var kv in ringkasan)
                         Database.Exec(con, "INSERT INTO ringkasan(run_id,kunci,nilai) VALUES(@p0,@p1,@p2)", runId, kv.Key, kv.Value);
                     AnalisisPD.SimpanRun(con, runId, analisisJson);
+                    RincianCkpn.SimpanRun(con, runId, kolektifJson);
 
                     var disesuaikan = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     foreach (var p in r.Perubahan) if (p.Modul == "individu" && !p.Hapus) disesuaikan.Add(p.Kunci);
@@ -265,6 +267,7 @@ namespace CKPNLibrary.Data
                             "VALUES(@p0,@p1,@p2,@p3,@p4,@p5,@p6,@p7,@p8,@p9,@p10,@p11)",
                             runId, b.Urut, b.Kc, b.Cif, b.Nama, b.Kontrak, b.Os, b.AdaPN, b.Jaminan, b.Biaya, b.Penurunan,
                             (disesuaikan.Contains(b.Kontrak) || r.KontrakBerPenyesuaian.Contains(b.Kontrak)) ? 1 : 0);
+                    SimpanBuktiIndividu(con, runId);   // Tahap 6
 
                     var dasarCs = DasarCs();
                     foreach (var b in r.Cs)
@@ -302,6 +305,30 @@ namespace CKPNLibrary.Data
                     CatatanLog.Tulis(pesanSnapshot);
                 }
 
+                // ---- e. Tahap 6b: profil rekening Individu & LGD CS dari template APOLLO (untuk dokumen CKPN) ----
+                string pesanProfil = null;
+                try
+                {
+                    string pathTpl = ParameterMaster.BacaPathTemplate(wb);
+                    if (!string.IsNullOrEmpty(pathTpl) && File.Exists(pathTpl))
+                    {
+                        var rekProfil = new List<string>();
+                        foreach (var b in r.Indv) rekProfil.Add(b.Kontrak);
+                        foreach (var c in r.Cs) rekProfil.Add(c.Rek);
+                        var hp = ProfilTemplate.AmbilDanSimpan(app, r.TanggalStr, pathTpl, rekProfil, true);
+                        var tidak = hp["tidakDitemukan"] as List<string>;
+                        if (tidak != null && tidak.Count > 0)
+                            pesanProfil = "Profil template tidak ditemukan untuk " + tidak.Count + " rekening (mis. baris manual LGD CS): " +
+                                          string.Join(", ", tidak.GetRange(0, Math.Min(5, tidak.Count)).ToArray());
+                    }
+                    wb.Activate();
+                }
+                catch (Exception ex)
+                {
+                    pesanProfil = "Data tersimpan, tetapi profil debitur dari template gagal dibaca: " + ex.Message;
+                    CatatanLog.Tulis(pesanProfil);
+                }
+
                 CatatanLog.Tulis("SIMPAN GRUP " + r.KodeKC + " periode " + r.TanggalStr + " v" + versi +
                                  " · " + r.Perubahan.Count + " perubahan penyesuaian");
 
@@ -320,7 +347,7 @@ namespace CKPNLibrary.Data
                     { "migTotal",  ringkasan.TryGetValue("mig_total", out v)  ? (object)v : null },
                     { "ppkaTotal", ringkasan.TryGetValue("ppka_total", out v) ? (object)v : null },
                     { "jumlahPerubahan", r.Perubahan.Count },
-                    { "snapshot", snapshot }, { "pesanSnapshot", pesanSnapshot },
+                    { "snapshot", snapshot }, { "pesanSnapshot", pesanSnapshot }, { "pesanProfil", pesanProfil },
                     { "pesan", pesanModul }
                 };
             }
@@ -328,6 +355,37 @@ namespace CKPNLibrary.Data
             {
                 try { app.ScreenUpdating = su; app.Cursor = Excel.XlMousePointer.xlDefault; } catch { }
             }
+        }
+
+        // Tahap 6: bukti objektif penurunan nilai (kualitas, hari tunggakan, restrukturisasi, dasar PN)
+        // dari data dasar perhitungan Individu terakhir di PC ini. Kontrak tanpa data dibiarkan NULL.
+        private static void SimpanBuktiIndividu(SQLiteConnection con, long runId)
+        {
+            try
+            {
+                var dasar = Penyesuaian.BacaDasar("individu.json");
+                object baris;
+                if (dasar == null || !dasar.TryGetValue("baris", out baris) || baris == null) return;
+                foreach (var x in (IEnumerable)baris)
+                {
+                    var b = x as Dictionary<string, object>;
+                    if (b == null) continue;
+                    object kual, hari, restru, dasarPn;
+                    b.TryGetValue("Kualitas", out kual);
+                    b.TryGetValue("HariTunggakan", out hari);
+                    b.TryGetValue("Restruktur", out restru);
+                    b.TryGetValue("DasarPN", out dasarPn);
+                    if (kual == null && dasarPn == null) continue;
+                    Database.Exec(con,
+                        "UPDATE hasil_individu SET kualitas=@p0, hari_tunggakan=@p1, restruktur=@p2, dasar_pn=@p3 WHERE run_id=@p4 AND no_kontrak=@p5",
+                        kual == null ? (object)DBNull.Value : Convert.ToInt32(kual),
+                        hari == null ? (object)DBNull.Value : Convert.ToDouble(hari),
+                        restru == null ? (object)DBNull.Value : (Convert.ToBoolean(restru) ? 1 : 0),
+                        dasarPn == null ? (object)DBNull.Value : Convert.ToString(dasarPn),
+                        runId, Convert.ToString(b["Kontrak"]));
+                }
+            }
+            catch (Exception ex) { CatatanLog.Tulis("Simpan bukti penurunan nilai gagal: " + ex.Message); }
         }
 
         // ================================================================

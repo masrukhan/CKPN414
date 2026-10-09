@@ -25,7 +25,7 @@ namespace CKPNLibrary.Data
     /// </summary>
     internal static class Database
     {
-        public const int VersiSkema = 8;
+        public const int VersiSkema = 10;
         private static bool _skemaSiap;
         private static readonly object _kunci = new object();
 
@@ -273,7 +273,29 @@ namespace CKPNLibrary.Data
                     }
                     CatatanLog.Tulis("Database: migrasi ke skema v8 selesai");
                 }
-                // Migrasi versi berikutnya ditambahkan di sini: if (versi < 9) { ... }
+                // ---- v9 (Tahap 6): dokumentasi — memo & bukti objektif penurunan nilai per kontrak ----
+                if (versi < 9)
+                {
+                    using (var tx = con.BeginTransaction())
+                    {
+                        foreach (var sql in SkemaV9) Exec(con, sql);
+                        Exec(con, "INSERT OR REPLACE INTO meta(kunci,nilai) VALUES('versi_skema','9')");
+                        tx.Commit();
+                    }
+                    CatatanLog.Tulis("Database: migrasi ke skema v9 selesai");
+                }
+                // ---- v10 (Tahap 6b): profil kontrak dari template APOLLO per periode ----
+                if (versi < 10)
+                {
+                    using (var tx = con.BeginTransaction())
+                    {
+                        foreach (var sql in SkemaV10) Exec(con, sql);
+                        Exec(con, "INSERT OR REPLACE INTO meta(kunci,nilai) VALUES('versi_skema','10')");
+                        tx.Commit();
+                    }
+                    CatatanLog.Tulis("Database: migrasi ke skema v10 selesai");
+                }
+                // Migrasi versi berikutnya ditambahkan di sini: if (versi < 11) { ... }
 
                 _skemaSiap = true;
             }
@@ -517,6 +539,53 @@ namespace CKPNLibrary.Data
                 dasar        TEXT,
                 pengguna     TEXT,
                 waktu        TEXT)"
+        };
+
+        private static readonly string[] SkemaV9 =
+        {
+            // Bukti objektif penurunan nilai per kontrak (dicatat modul CKPN Individu, disimpan saat Simpan grup)
+            "ALTER TABLE hasil_individu ADD COLUMN kualitas INTEGER",
+            "ALTER TABLE hasil_individu ADD COLUMN hari_tunggakan REAL",
+            "ALTER TABLE hasil_individu ADD COLUMN restruktur INTEGER",
+            "ALTER TABLE hasil_individu ADD COLUMN dasar_pn TEXT",
+
+            // Dokumen / memo per periode:
+            //   jenis 'ringkasan' (kunci '')      — catatan & penandatangan ringkasan bulanan
+            //   jenis 'individu'  (kunci = CIF)   — memo penilaian penurunan nilai individual
+            //   jenis 'lgdcs'     (kunci = no rek) — memo penetapan nilai realisasi agunan LGD CS
+            //   data = JSON isian petugas; status 'Draf' | 'Final'
+            @"CREATE TABLE IF NOT EXISTS memo (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                jenis         TEXT NOT NULL CHECK (jenis IN ('ringkasan','individu','lgdcs')),
+                tanggal       TEXT NOT NULL,
+                kunci         TEXT NOT NULL DEFAULT '',
+                data          TEXT NOT NULL,
+                status        TEXT NOT NULL DEFAULT 'Draf' CHECK (status IN ('Draf','Final')),
+                dibuat_oleh   TEXT,
+                dibuat_waktu  TEXT,
+                diubah_oleh   TEXT,
+                diubah_waktu  TEXT,
+                final_oleh    TEXT,
+                final_waktu   TEXT,
+                UNIQUE (jenis, tanggal, kunci))",
+            "CREATE INDEX IF NOT EXISTS ix_memo_kunci ON memo(jenis, kunci, tanggal)"
+        };
+
+        private static readonly string[] SkemaV10 =
+        {
+            // Profil per rekening dari template APOLLO (KC0600–KC1100, GB0500, KC2900) — JSON, lihat ProfilTemplate.cs
+            @"CREATE TABLE IF NOT EXISTS profil_template (
+                tanggal  TEXT NOT NULL,
+                no_rek   TEXT NOT NULL,
+                data     TEXT NOT NULL,
+                waktu    TEXT,
+                PRIMARY KEY (tanggal, no_rek))",
+            @"CREATE TABLE IF NOT EXISTS profil_template_info (
+                tanggal   TEXT PRIMARY KEY,
+                file      TEXT,
+                cap       TEXT,
+                pengguna  TEXT,
+                waktu     TEXT)"
         };
 
         public static void CatatAktivitas(SQLiteConnection con, string periode, string aksi, string detail)
