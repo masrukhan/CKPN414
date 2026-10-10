@@ -649,3 +649,29 @@ button.baris-atur:focus-visible { outline: 2px solid var(--aksen); outline-offse
 .segmen-kecil button { white-space: nowrap; }
 .tabel-rc-top .aksi-rc { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .tabel-rc-top td:nth-child(2) { white-space: nowrap; }
+
+/* ---------------- Tahap 6d: Referensi KC hapus buku ---------------- */
+.refkc-pindai > * { margin-bottom: 6px; }
+.tabel-ringkas { width: 100%; border-collapse: collapse; font-size: 12px; margin: 4px 0 8px; }
+.tabel-ringkas td, .tabel-ringkas th { padding: 4px 6px; border-bottom: 1px solid #EFEDE6; text-align: left; vertical-align: top; }
+.tabel-ringkas th { font-weight: 600; color: #5F6662; font-size: 11px; }
+.tabel-ringkas td.angka { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tabel-ringkas tr.baris-awas td { background: #FFF6E5; }
+.tabel-produk select { max-width: 150px; }
+.blok-ref { border: 1px solid #E6E3DA; border-radius: 8px; padding: 8px 10px; margin: 6px 0; }
+.blok-ref .baris-antara { gap: 8px; align-items: flex-start; }
+.blok-ref details summary { cursor: pointer; margin-top: 4px; }
+.pilih-kc { width: auto; max-width: 170px; flex-shrink: 0; font-size: 12px; padding: 4px 6px; }
+.daftar-rek-ref { list-style: none; margin: 4px 0 0; padding: 0; }
+.rek-ref { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; padding: 6px 0; border-bottom: 1px solid #EFEDE6; font-size: 12px; word-break: break-word; }
+.rek-ref:last-child { border-bottom: none; }
+.rek-ref > div { min-width: 0; }
+.rek-ref.redup { color: #8A908D; }
+.lipat-ref { margin-top: 10px; border-top: 1px solid #EFEDE6; padding-top: 6px; }
+.lipat-ref > summary { cursor: pointer; font-size: 13px; font-weight: 600; }
+.baris-isian { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
+.baris-isian .isian { width: auto; flex: 1 1 120px; min-width: 0; }
+.baris-isian .label-isian { margin: 0; }
+.blok-ref .nama-grup { font-weight: 600; font-size: 13px; }
+.rek-ref > button, #refkc-status button { white-space: nowrap; flex-shrink: 0; }
+.rek-ref .pilih-kc { max-width: 130px; }

@@ -738,6 +738,9 @@
       <button type="button" class="baris-atur" id="btn-atur-aba">
         <span class="atur-teks"><span class="atur-nama">PD &amp; LGD ABA (Summary C21:C23)</span><span class="atur-nilai" id="pt-aba">—</span></span>
         <span class="atur-ubah">Ubah ›</span></button>
+      <button type="button" class="baris-atur" id="btn-atur-refkc">
+        <span class="atur-teks"><span class="atur-nama">Referensi KC hapus buku (LGD ER)</span><span class="atur-nilai" id="pt-refkc">—</span></span>
+        <span class="atur-ubah">Lihat ›</span></button>
       <div class="baris-atur statis">
         <span class="atur-teks"><span class="atur-nama">Metode PD &amp; LGD (Master!D17)</span><span class="atur-nilai" id="pt-pdlgd">—</span></span>
         <span class="atur-ubah teks-kecil">di sheet Master</span></div>
@@ -794,6 +797,62 @@
       </div>
       <button id="btn-aba-hapus" class="tautan hapus jarak-atas" type="button" hidden>Hapus parameter tahun ini (Summary C21:C23 kembali diisi manual)</button>
       <div id="aba-hasil" role="status"></div>
+    </div>
+
+    <!-- Tahap 6d: referensi Kode KC rekening hapus buku KC2900 (LGD ER) -->
+    <div class="kartu" id="kartu-refkc" hidden>
+      <div class="baris-antara">
+        <div class="judul-kartu">Referensi KC hapus buku (KC2900)</div>
+        <button id="btn-refkc-tutup" class="tautan" type="button">Tutup</button>
+      </div>
+      <p class="teks-kecil">LGD ER memecah rekening hapus buku KC2900 per segmen (KC0600–KC1100). Kode KC dicari otomatis dari
+        file tahunan Master!D60:D65: <b>rekening yang sama</b> di sheet KC0600–KC1100, lalu <b>KC mayoritas kode produk</b>
+        (digit awal nomor rekening). Rekening yang tetap tanpa Kode KC <b>tidak masuk LGD ER grup mana pun</b> — lengkapi di bawah,
+        lalu hitung ulang grup. File sumber tidak lagi ditulis (kolom M).</p>
+      <div id="refkc-pindai" class="teks-kecil refkc-pindai"></div>
+      <div id="refkc-status"></div>
+      <div id="refkc-ringkas"></div>
+
+      <label class="label-isian" for="refkc-alasan">Dasar / alasan pengisian (wajib saat menyimpan)</label>
+      <input id="refkc-alasan" class="isian" type="text" placeholder="Mis. konversi CBS 2019 — produk 21 = Murabahah (memo TI)">
+
+      <div class="label-kecil jarak-atas" id="refkc-tanpa-judul">Perlu dilengkapi</div>
+      <div id="refkc-tanpa"></div>
+
+      <details class="lipat-ref">
+        <summary id="refkc-produk-judul">Kode produk</summary>
+        <div class="baris-isian">
+          <label class="label-isian" for="refkc-panjang">Panjang kode produk</label>
+          <select id="refkc-panjang" class="isian">
+            <option value="2">2 digit</option><option value="3">3 digit</option><option value="4">4 digit</option><option value="5">5 digit</option>
+          </select>
+        </div>
+        <p class="teks-kecil">Digit awal nomor rekening tanpa nol di depan. Baris kuning = kode produk tersebar ke beberapa KC; pertimbangkan
+          menambah panjang kode atau mengisi KC manual.</p>
+        <div id="refkc-produk"></div>
+      </details>
+      <details class="lipat-ref">
+        <summary id="refkc-manual-judul">Isian manual</summary>
+        <div class="baris-isian">
+          <input id="refkc-rek" class="isian" type="text" placeholder="No. rekening" aria-label="Nomor rekening">
+          <select id="refkc-rek-kc" class="isian"></select>
+          <button id="btn-refkc-rek" class="tombol-sekunder" type="button">Tambah</button>
+        </div>
+        <div id="refkc-manual"></div>
+      </details>
+      <details class="lipat-ref" hidden>
+        <summary id="refkc-bedam-judul">Berbeda dengan kolom M</summary>
+        <div id="refkc-bedam"></div>
+      </details>
+      <details class="lipat-ref" hidden>
+        <summary id="refkc-kecuali-judul">Dikecualikan</summary>
+        <div id="refkc-kecuali"></div>
+      </details>
+
+      <div class="baris-tombol jarak-atas">
+        <button id="btn-refkc-simpan" class="tombol-utama" type="button" disabled>Simpan isian</button>
+      </div>
+      <div id="refkc-hasil" role="status"></div>
     </div>
 
     <div class="label-kecil">Data &amp; sistem</div>

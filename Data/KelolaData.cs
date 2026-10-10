@@ -169,6 +169,8 @@ namespace CKPNLibrary.Data
 
                     foreach (var t in new[] { "keputusan_metode", "jurnal_ckpn", "ringkasan", "analisis_pd", "hasil_individu", "hasil_lgdcs", "run_grup", "periode", "overview_periode", "memo", "profil_template", "profil_template_info" })
                         Database.Exec(con, "DELETE FROM " + t);
+                    // Tahap 6d: jejak lingkup LGD ER ikut kosong (hasil pindai KC2900 = cache file, tetap)
+                    Database.Exec(con, "DELETE FROM ref_kc_lingkup");
                     if (sertakanPenyesuaian)
                     {
                         Database.Exec(con, "DELETE FROM penyesuaian_individu");
@@ -183,6 +185,7 @@ namespace CKPNLibrary.Data
                         Database.Exec(con, "DELETE FROM susunan_grup");
                         Database.Exec(con, "DELETE FROM susunan_tahun");
                         Database.Exec(con, "DELETE FROM parameter_aba");   // Tahap 5h: ketetapan tahunan juga
+                        Database.Exec(con, "DELETE FROM ref_kc_manual");   // Tahap 6d: isian referensi KC petugas
                     }
                     Database.CatatAktivitas(con, "", "kosongkan-database",
                         nPeriode + " periode, " + nVersi + " versi" +

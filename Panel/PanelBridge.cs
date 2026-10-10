@@ -404,6 +404,25 @@ namespace CKPNLibrary.Panel
                         Balas(host, id, ParameterAba.Hapus(Convert.ToInt32(Ambil(args, "tahun")), Convert.ToString(Ambil(args, "alasan") ?? "")));
                         break;
 
+                    // ---- Tahap 6d: referensi Kode KC rekening hapus buku KC2900 (LGD ER) ----
+                    case "referensiKC":
+                        Balas(host, id, ReferensiKC.Data(GrupDariArgs(Ambil(args, "grup"))));
+                        break;
+
+                    case "simpanReferensiKC":
+                        Balas(host, id, ReferensiKC.SimpanManual(Ambil(args, "item") as System.Collections.IList,
+                                                                 Convert.ToString(Ambil(args, "alasan") ?? "")));
+                        break;
+
+                    case "panjangReferensiKC":
+                        Balas(host, id, ReferensiKC.AturPanjang(Convert.ToInt32(Ambil(args, "panjang"))));
+                        break;
+
+                    case "pindaiReferensiKC":
+                        if (CKPNPipeline.SedangBerjalan) { Gagal(host, id, "Perhitungan sedang berjalan. Tunggu sampai selesai."); break; }
+                        JalankanDiExcel(host, id, app => ReferensiKC.PindaiUlang(app));
+                        break;
+
                     // ---- Tahap 5g: snapshot Overview tersimpan (tanpa membuka template) ----
                     case "overviewTersimpan":
                         Balas(host, id, PenjelasanCKPN.OverviewTersimpan(Convert.ToString(Ambil(args, "tanggal") ?? "")));
@@ -524,6 +543,24 @@ namespace CKPNLibrary.Panel
                     Gagal(host, id, ex.Message);
                 }
             });
+        }
+
+        /// <summary>[{nama, kc:[...]}] dari panel → pasangan nama grup + kode KC (Tahap 6d).</summary>
+        private static List<KeyValuePair<string, string[]>> GrupDariArgs(object v)
+        {
+            var hasil = new List<KeyValuePair<string, string[]>>();
+            var daftar = v as System.Collections.IEnumerable;
+            if (daftar == null) return hasil;
+            foreach (var o in daftar)
+            {
+                var g = o as Dictionary<string, object>;
+                if (g == null) continue;
+                var kc = new List<string>();
+                var isi = Ambil(g, "kc") as System.Collections.IEnumerable;
+                if (isi != null) foreach (var k in isi) kc.Add(Convert.ToString(k));
+                hasil.Add(new KeyValuePair<string, string[]>(Convert.ToString(Ambil(g, "nama") ?? ""), kc.ToArray()));
+            }
+            return hasil;
         }
 
         /// <summary>Hak simpan user ini (dari config\pengirim.txt) untuk ditampilkan di panel.</summary>

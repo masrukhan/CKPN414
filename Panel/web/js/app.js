@@ -716,6 +716,7 @@
       sinkronBatch(d);
       muatOverviewPeriode(d);
       if (!infoAba || infoAba.tahun !== d.tahun || tabAktif === "pengaturan") muatAba(d.tahun);
+      if (!refKC || tabAktif === "pengaturan" || tabAktif === "tetapkan") muatRefKC();
       if (tabAktif === "dokumen" && dok.tanggal !== d.tanggal) muatDokumen();
       if (tabAktif === "analisis" && subAktif.analisis === "rincian" && rc.tanggal !== d.tanggal) muatRincian();
       document.querySelectorAll("#rw-tabel tr[data-tanggal]").forEach(function (tr) {
@@ -1013,6 +1014,7 @@
       item(ovStatus.ada ? (ovStatus.berubah ? "awas" : "ok") : "awas", "Data overview (OS, EAD, NPF) tersimpan",
         !ovStatus.ada ? "Belum ada — Analisis › Komposisi tidak bisa membandingkan OS/NPF. Muat di Ringkasan."
           : ovStatus.berubah ? "File template berubah sejak snapshot disimpan." : "");
+    if (!final) syaratRefKC(item);
     if (!final) item(d.bolehMenulis ? "ok" : "belum", "Hak menetapkan", d.bolehMenulis ? "" : (d.infoPengirim || "User ini hanya bisa melihat."));
   }
 
@@ -1856,7 +1858,7 @@
       ["Menghapus permanen SEMUA periode, versi grup, hasil, konsolidasi, dan jurnal. Cocok untuk mengakhiri masa simulasi.",
        "Salinan arsip database dibuat lebih dulu di folder library\\backup. Log aktivitas tetap disimpan."],
       [{ id: "penyesuaian", label: "Hapus juga semua penyesuaian Individu & LGD CS", bawaan: false },
-       { id: "susunan", label: "Hapus juga susunan grup, metode, Top-N & parameter ABA tahunan", bawaan: false },
+       { id: "susunan", label: "Hapus juga susunan grup, metode, Top-N, parameter ABA & isian referensi KC", bawaan: false },
        { id: "snapshot", label: "Hapus juga file snapshot .xlsx", bawaan: true }],
       infoDb.konfirmasiSemua,
       function (konf, alasan, o) {
@@ -5003,6 +5005,355 @@
       tampil("banner-koneksi", true);
     });
   }
+
+
+  // =====================================================================
+  // 14. ⚙ Pengaturan › Referensi KC hapus buku KC2900 untuk LGD ER (Tahap 6d)
+  // =====================================================================
+  var refKC = null, ubahRef = {};
+  var NAMA_KC = { KC0600: "Murabahah", KC0700: "Istishna", KC0800: "Multijasa", KC0900: "Qardh", KC1000: "Bagi hasil", KC1100: "Ijarah", DIKECUALIKAN: "Dikecualikan" };
+  var LABEL_SUMBER = {
+    "manual-rek": "Manual per rekening", "rekening": "Cocok rekening KC0600–KC1100", "manual-produk": "Manual per kode produk",
+    "kolom-m": "Kolom M file", "produk": "KC mayoritas kode produk", "tanpa": "Tanpa Kode KC"
+  };
+  function namaKC(k) { return k ? k + (NAMA_KC[k] ? " · " + NAMA_KC[k] : "") : "—"; }
+
+  function grupUntukRef() {
+    return statusP ? (statusP.grup || []).map(function (g) { return { nama: g.nama, kc: g.kc }; }) : [];
+  }
+
+  function muatRefKC() {
+    return panggil("referensiKC", { grup: grupUntukRef() }).then(function (d) {
+      refKC = d;
+      gambarRefKCRingkas();
+      if (!$("kartu-refkc").hidden && !Object.keys(ubahRef).length) gambarRefKC();   // isian belum disimpan tidak ditimpa
+      if (statusP) gambarSyarat(statusP);
+    }).catch(function (e) { refKC = null; teks("pt-refkc", e.message); });
+  }
+
+  function refTanpaCohort(d) { return d && d.ringkas ? d.ringkas.tanpa : { nCohort: 0, bakiCohort: 0 }; }
+  function refGrupUlang(d) { return d && d.grup ? d.grup.filter(function (g) { return g.status === "ulang"; }) : []; }
+
+  function gambarRefKCRingkas() {
+    var d = refKC;
+    if (!d) { teks("pt-refkc", "—"); return; }
+    if (!d.ada) { teks("pt-refkc", "Belum dipindai — otomatis saat LGD ER dihitung"); return; }
+    var t = refTanpaCohort(d), u = refGrupUlang(d), bag = [];
+    bag.push(t.nCohort ? t.nCohort + " rek cohort tanpa KC (" + jt(t.bakiCohort) + ")" : "Semua rek cohort terpetakan");
+    if (u.length) bag.push(u.length + " grup perlu hitung ulang");
+    if (d.pindai && d.pindai.berubah) bag.push("file tahunan berubah");
+    teks("pt-refkc", bag.join(" · "));
+  }
+
+  /** Item syarat penetapan (dipanggil gambarSyarat). */
+  function syaratRefKC(item) {
+    var d = refKC;
+    if (!d || !d.ada) return;
+    var t = refTanpaCohort(d), u = refGrupUlang(d);
+    var rinci = [];
+    if (t.nCohort) rinci.push(t.nCohort + " rekening cohort " + (d.currYear - 5) + "–" + d.currYear + " senilai " + jt(t.bakiCohort) + " tidak masuk LGD ER grup mana pun");
+    if (u.length) rinci.push("perlu hitung ulang: " + u.map(function (g) { return g.nama; }).join(", "));
+    item(rinci.length ? "awas" : "ok", "Referensi KC hapus buku (LGD ER)", rinci.length ? rinci.join(" · ") + ". Lengkapi di ⚙ Pengaturan." : "");
+  }
+
+  function pilihKC(nilai, kosong) {
+    var s = el("select", "isian pilih-kc");
+    var o = el("option", "", kosong || "— pilih KC —");
+    o.value = "";
+    s.appendChild(o);
+    (refKC.daftarKC || []).concat([refKC.dikecualikan]).forEach(function (k) {
+      var x = el("option", "", namaKC(k));
+      x.value = k;
+      s.appendChild(x);
+    });
+    s.value = nilai || "";
+    s.disabled = !refKC.bolehMenulis;
+    return s;
+  }
+
+  function catatUbah(jenis, kunci, kc) {
+    ubahRef[jenis + "|" + kunci] = { jenis: jenis, kunci: kunci, kodeKC: kc };
+    var n = Object.keys(ubahRef).length;
+    $("btn-refkc-simpan").textContent = n ? "Simpan " + n + " isian" : "Simpan isian";
+    $("btn-refkc-simpan").disabled = !n || !refKC.bolehMenulis;
+  }
+
+  function bukaRefKC() {
+    if (tabAktif !== "pengaturan") pindahTab("pengaturan");
+    ubahRef = {};
+    tampil("kartu-refkc", true);
+    gambarRefKC();
+    $("kartu-refkc").scrollIntoView({ block: "start" });
+    muatRefKC();
+  }
+
+  function gambarRefKC() {
+    var d = refKC;
+    ubahRef = {};
+    $("btn-refkc-simpan").textContent = "Simpan isian";
+    $("btn-refkc-simpan").disabled = true;
+    if (!d) { $("refkc-pindai").textContent = "Memuat…"; return; }
+    var lama = $("refkc-rek-kc");
+    lama.parentNode.replaceChild(Object.assign(pilihKC(""), { id: "refkc-rek-kc" }), lama);
+    $("refkc-rek").disabled = !d.bolehMenulis;
+    $("btn-refkc-rek").disabled = !d.bolehMenulis;
+
+    // Info pindai
+    var wp = $("refkc-pindai");
+    wp.innerHTML = "";
+    if (!d.ada) {
+      wp.appendChild(el("div", "peringatan-box", "Belum ada hasil pindai. Pindai berjalan otomatis saat LGD ER dihitung, atau tekan Pindai sekarang."));
+    } else {
+      var p = d.pindai;
+      wp.appendChild(el("div", "", "Dipindai " + p.waktu + " oleh " + p.pengguna + " · " + (p.file || []).length + " file tahunan · " +
+        d.total + " rekening KC2900 (" + d.totalCohort + " dalam cohort " + (d.currYear - 5) + "–" + d.currYear + ")"));
+      if (p.berubah) {
+        var ub = (p.file || []).filter(function (f) { return f.berubah; }).map(function (f) { return f.tahun; });
+        wp.appendChild(el("div", "peringatan-box", "File tahun " + ub.join(", ") + " berubah sejak dipindai. Pindai ulang otomatis pada perhitungan LGD ER berikutnya."));
+      }
+      if (d.dipakai) wp.appendChild(el("div", "teks-kecil", "LGD ER terakhir memakai referensi ini: " + d.dipakai.waktu + " · " + d.dipakai.pengguna + " · lingkup " + d.dipakai.lingkup));
+    }
+    var bp = tombol("Pindai sekarang", "tombol-sekunder", pindaiRefKC);
+    bp.id = "btn-refkc-pindai";
+    bp.disabled = !d.bolehMenulis;
+    wp.appendChild(bp);
+    if (!d.bolehMenulis) wp.appendChild(el("div", "teks-kecil", d.infoPengirim || "User ini hanya bisa melihat."));
+    if (!d.ada) { ["refkc-status", "refkc-ringkas", "refkc-tanpa", "refkc-produk", "refkc-manual", "refkc-bedam", "refkc-kecuali"].forEach(function (id) { $(id).innerHTML = ""; }); return; }
+
+    gambarRefStatus(d);
+    gambarRefSumber(d);
+    gambarRefTanpa(d);
+    gambarRefProduk(d);
+    gambarRefManual(d);
+    gambarRefDaftar("refkc-bedam", "refkc-bedam-judul", d.bedaM, "Berbeda dengan kolom M file", d.jumlahBedaM,
+      "Kolom M di file berisi KC lain. Hasil panel yang dipakai; ubah per rekening bila kolom M yang benar.");
+    gambarRefDaftar("refkc-kecuali", "refkc-kecuali-judul", d.dikecualikanRek, "Dikecualikan", d.dikecualikanRek.length,
+      "Sengaja tidak masuk LGD ER segmen mana pun.");
+  }
+
+  function gambarRefStatus(d) {
+    var w = $("refkc-status");
+    w.innerHTML = "";
+    if (!(d.grup || []).length) return;
+    var ul = el("ul", "daftar-syarat");
+    d.grup.forEach(function (g) {
+      var st = g.status === "ok" ? "ok" : g.status === "ulang" ? "awas" : "belum";
+      var li = el("li", "syarat s-" + st);
+      li.appendChild(el("span", "syarat-ikon", st === "ok" ? "✓" : st === "awas" ? "!" : "–"));
+      var t = el("div");
+      t.appendChild(el("div", "", g.nama + " · " + g.jumlah + " rek hapus buku masuk lingkup"));
+      t.appendChild(el("div", "teks-kecil", g.status === "ok" ? "Sesuai LGD ER terakhir (" + g.waktu + ")"
+        : g.status === "ulang" ? "Perlu hitung ulang: " + (g.tambah ? "+" + g.tambah + " rek (" + jt(g.bakiTambah) + ")" : "") +
+          (g.tambah && g.kurang ? " · " : "") + (g.kurang ? "−" + g.kurang + " rek (" + jt(g.bakiKurang) + ")" : "") + " dibanding LGD ER " + g.waktu
+        : "LGD ER grup ini belum dihitung dengan referensi panel (tahun " + d.currYear + ")."));
+      li.appendChild(t);
+      ul.appendChild(li);
+    });
+    w.appendChild(ul);
+    if (refGrupUlang(d).length) {
+      var catatan = infoAcuan && infoAcuan.tahunan && !infoAcuan.desember
+        ? "Mode PD & LGD setahun sekali: LGD ER hanya dihitung ulang pada periode Desember." : "Hitung ulang grup lalu Simpan grup agar LGD ER memakai referensi terbaru.";
+      var b = el("div", "baris-antara jarak-atas");
+      b.appendChild(el("span", "teks-kecil", catatan));
+      b.appendChild(tombol("Hitung →", "tombol-sekunder", function () { pindahTab("hitung", "pergrup"); }));
+      w.appendChild(b);
+    }
+  }
+
+  function gambarRefSumber(d) {
+    var w = $("refkc-ringkas");
+    w.innerHTML = "";
+    w.appendChild(el("div", "label-kecil", "Asal Kode KC · rekening cohort " + (d.currYear - 5) + "–" + d.currYear));
+    var tb = el("table", "tabel-ringkas");
+    ["manual-rek", "rekening", "manual-produk", "kolom-m", "produk", "tanpa"].forEach(function (k) {
+      var r = d.ringkas[k];
+      if (!r || (!r.n && k !== "tanpa")) return;
+      var tr = el("tr", k === "tanpa" && r.nCohort ? "baris-awas" : "");
+      tr.appendChild(el("td", "", LABEL_SUMBER[k]));
+      tr.appendChild(el("td", "angka", r.nCohort + " rek"));
+      tr.appendChild(el("td", "angka", jt(r.bakiCohort)));
+      tr.title = "Semua tahun: " + r.n + " rek · " + jt(r.baki);
+      tb.appendChild(tr);
+    });
+    w.appendChild(tb);
+  }
+
+  function barisRek(r, kontrol) {
+    var li = el("li", "rek-ref" + (r.cohort ? "" : " redup"));
+    var kiri = el("div");
+    kiri.appendChild(el("div", "", r.rek + (r.nama ? " · " + r.nama : r.cif ? " · CIF " + r.cif : "")));
+    kiri.appendChild(el("div", "teks-kecil", "HB " + (r.tglHB || r.tahunHB) + " · " + rp(r.baki) + " · instrumen " + (r.produk || "—") +
+      " · file " + r.tahunFile + (r.kolomM ? " · kolom M " + r.kolomM : "") + (r.cohort ? "" : " · di luar cohort")));
+    if (r.kc) kiri.appendChild(el("div", "teks-kecil", "Dipakai: " + namaKC(r.kc) + " (" + LABEL_SUMBER[r.sumber] + ")"));
+    li.appendChild(kiri);
+    if (kontrol !== false) {
+      var s = pilihKC("", "— per rekening —");
+      s.setAttribute("aria-label", "Kode KC rekening " + r.rek);
+      s.addEventListener("change", function () { catatUbah("rek", r.kunci, s.value); });
+      li.appendChild(s);
+    }
+    return li;
+  }
+
+  function gambarRefTanpa(d) {
+    var w = $("refkc-tanpa");
+    w.innerHTML = "";
+    var tanpa = d.tanpa || [];
+    var t = refTanpaCohort(d);
+    teks("refkc-tanpa-judul", "Perlu dilengkapi · " + t.nCohort + " rek cohort (" + jt(t.bakiCohort) + ")" +
+      (tanpa.length > t.nCohort ? " + " + (tanpa.length - t.nCohort) + " di luar cohort" : ""));
+    if (!tanpa.length) { w.appendChild(el("div", "teks-kecil", "Tidak ada rekening KC2900 tanpa Kode KC.")); return; }
+    var grup = {};
+    tanpa.forEach(function (r) { (grup[r.awalan] = grup[r.awalan] || []).push(r); });
+    Object.keys(grup).sort(function (a, b) {
+      function nilai(k) { return grup[k].reduce(function (s, r) { return s + (r.cohort ? r.baki : 0); }, 0); }
+      return nilai(b) - nilai(a);
+    }).forEach(function (aw) {
+      var daftar = grup[aw];
+      var nC = daftar.filter(function (r) { return r.cohort; }).length;
+      var baki = daftar.reduce(function (s, r) { return s + (r.cohort ? r.baki : 0); }, 0);
+      var instr = {};
+      daftar.forEach(function (r) { instr[r.produk || "—"] = 1; });
+      var kotak = el("div", "blok-ref");
+      var atas = el("div", "baris-antara");
+      var info = el("div");
+      info.appendChild(el("div", "nama-grup", "Kode produk " + aw));
+      info.appendChild(el("div", "teks-kecil", daftar.length + " rek (" + nC + " cohort · " + jt(baki) + ") · instrumen " + Object.keys(instr).join(", ")));
+      atas.appendChild(info);
+      var s = pilihKC("", "— KC untuk kode " + aw + " —");
+      s.setAttribute("aria-label", "Kode KC untuk kode produk " + aw);
+      s.addEventListener("change", function () { catatUbah("produk", aw, s.value); });
+      atas.appendChild(s);
+      kotak.appendChild(atas);
+      var det = el("details");
+      det.appendChild(el("summary", "teks-kecil", "Rincian rekening / isi per rekening"));
+      var ul = el("ul", "daftar-rek-ref");
+      daftar.forEach(function (r) { ul.appendChild(barisRek(r)); });
+      det.appendChild(ul);
+      kotak.appendChild(det);
+      w.appendChild(kotak);
+    });
+  }
+
+  function gambarRefProduk(d) {
+    var w = $("refkc-produk");
+    w.innerHTML = "";
+    $("refkc-panjang").value = String(d.panjang);
+    $("refkc-panjang").disabled = !d.bolehMenulis;
+    var produk = (d.produk || []).filter(function (x) { return x.hapusBuku > 0 || x.manual; });
+    teks("refkc-produk-judul", "Kode produk · " + d.panjang + " digit awal rekening · " + produk.length + " kode di KC2900");
+    if (!produk.length) { w.appendChild(el("div", "teks-kecil", "Tidak ada kode produk.")); return; }
+    var tb = el("table", "tabel-ringkas tabel-produk");
+    var h = el("tr");
+    ["Kode", "Rek aktif per KC (KC0600–KC1100)", "Rek HB", "Dipakai"].forEach(function (x) { h.appendChild(el("th", "", x)); });
+    tb.appendChild(h);
+    produk.forEach(function (x) {
+      var tr = el("tr", x.kemurnian !== null && x.kemurnian < 0.9 && !x.manual ? "baris-awas" : "");
+      tr.appendChild(el("td", "", x.awalan));
+      tr.appendChild(el("td", "teks-kecil", x.distribusi.length ? x.distribusi.map(function (k) { return k.kc + " " + k.n; }).join(" · ") +
+        (x.kemurnian !== null && x.kemurnian < 0.9 ? " — campuran (" + Math.round(x.kemurnian * 100) + "% mayoritas)" : "") : "tidak ada rekening aktif"));
+      tr.appendChild(el("td", "angka", String(x.hapusBuku)));
+      var td = el("td");
+      var s = pilihKC(x.manual || "", x.pemenang ? "Otomatis: " + x.pemenang : "— tanpa KC —");
+      s.setAttribute("aria-label", "Kode KC untuk kode produk " + x.awalan);
+      s.addEventListener("change", function () { catatUbah("produk", x.awalan, s.value); });
+      td.appendChild(s);
+      tr.appendChild(td);
+      tb.appendChild(tr);
+    });
+    w.appendChild(tb);
+  }
+
+  function gambarRefManual(d) {
+    var w = $("refkc-manual");
+    w.innerHTML = "";
+    teks("refkc-manual-judul", "Isian manual · " + (d.manual || []).length);
+    if (!(d.manual || []).length) { w.appendChild(el("div", "teks-kecil", "Belum ada isian manual.")); return; }
+    var ul = el("ul", "daftar-rek-ref");
+    d.manual.forEach(function (m) {
+      var li = el("li", "rek-ref");
+      var kiri = el("div");
+      kiri.appendChild(el("div", "", (m.jenis === "rek" ? "Rekening " : "Kode produk ") + m.kunci + " → " + namaKC(m.kodeKC)));
+      kiri.appendChild(el("div", "teks-kecil", m.jumlahRek + " rek KC2900 · " + m.alasan + " · " + m.pengguna + " · " + m.waktu));
+      li.appendChild(kiri);
+      if (d.bolehMenulis) li.appendChild(tombol("Hapus", "tautan hapus", function () {
+        if (!window.confirm("Hapus isian " + (m.jenis === "rek" ? "rekening " : "kode produk ") + m.kunci + " → " + m.kodeKC + "?")) return;
+        simpanRef([{ jenis: m.jenis, kunci: m.kunci, kodeKC: "" }], "Hapus isian: " + m.alasan);
+      }));
+      ul.appendChild(li);
+    });
+    w.appendChild(ul);
+  }
+
+  function gambarRefDaftar(idIsi, idJudul, daftar, judul, jumlah, ket) {
+    var w = $(idIsi);
+    w.innerHTML = "";
+    teks(idJudul, judul + " · " + (jumlah || 0));
+    $(idIsi).parentNode.hidden = !jumlah;
+    if (!jumlah) return;
+    w.appendChild(el("p", "teks-kecil", ket + (jumlah > daftar.length ? " Ditampilkan " + daftar.length + " pertama." : "")));
+    var ul = el("ul", "daftar-rek-ref");
+    daftar.forEach(function (r) { ul.appendChild(barisRek(r)); });
+    w.appendChild(ul);
+  }
+
+  function simpanRef(item, alasan) {
+    var w = $("refkc-hasil");
+    w.innerHTML = "";
+    return panggil("simpanReferensiKC", { item: item, alasan: alasan }).then(function () {
+      ubahRef = {};
+      $("refkc-alasan").value = "";
+      return muatRefKC();
+    }).then(function () {
+      w.appendChild(el("div", "info-box", "Tersimpan. Hitung ulang grup bertanda ! agar LGD ER memakai referensi baru."));
+    }).catch(function (e) { w.appendChild(el("div", "peringatan-box", e.message)); });
+  }
+
+  function pindaiRefKC() {
+    var b = $("btn-refkc-pindai"), w = $("refkc-hasil");
+    if (!window.confirm("Pindai ulang keenam file tahunan LGD ER (Master!D60:D65)?\nFile dibuka read-only; tidak ada yang ditulis ke file. Bisa memakan waktu beberapa menit.")) return;
+    if (b) { b.disabled = true; b.textContent = "Memindai…"; }
+    w.innerHTML = "";
+    panggil("pindaiReferensiKC").then(function (r) {
+      w.appendChild(el("div", "info-box", "Selesai: " + r.rekening + " rekening KC2900 dari " + r.file + " file."));
+      return muatRefKC();
+    }).catch(function (e) {
+      w.appendChild(el("div", "peringatan-box", e.message));
+      if (b) { b.disabled = false; b.textContent = "Pindai sekarang"; }
+    });
+  }
+
+  $("btn-atur-refkc").addEventListener("click", bukaRefKC);
+  $("btn-refkc-tutup").addEventListener("click", function () { tampil("kartu-refkc", false); });
+  $("btn-refkc-simpan").addEventListener("click", function () {
+    var item = Object.keys(ubahRef).map(function (k) { return ubahRef[k]; });
+    var w = $("refkc-hasil");
+    w.innerHTML = "";
+    if (!item.length) return;
+    var alasan = $("refkc-alasan").value.trim();
+    if (!alasan) { w.appendChild(el("div", "peringatan-box", "Isi dasar / alasan pengisian dahulu.")); $("refkc-alasan").focus(); return; }
+    var ringkas = item.map(function (x) { return (x.jenis === "rek" ? "Rek " : "Kode ") + x.kunci + " → " + (x.kodeKC || "(hapus isian)"); });
+    if (!window.confirm("Simpan " + item.length + " isian referensi KC?\n" + ringkas.slice(0, 12).join("\n") + (ringkas.length > 12 ? "\n…" : "") +
+        "\n\nBerlaku untuk perhitungan LGD ER berikutnya (semua periode). Hasil yang sudah tersimpan tidak berubah sampai grup dihitung & disimpan ulang.")) return;
+    simpanRef(item, alasan);
+  });
+  $("refkc-panjang").addEventListener("change", function () {
+    var n = +this.value, sel = this;
+    if (!window.confirm("Ubah panjang kode produk menjadi " + n + " digit awal rekening?\nPemetaan otomatis per kode produk dihitung ulang dari hasil pindai (tanpa membuka file).")) {
+      sel.value = String(refKC.panjang); return;
+    }
+    panggil("panjangReferensiKC", { panjang: n }).then(muatRefKC)
+      .catch(function (e) { sel.value = String(refKC.panjang); $("refkc-hasil").appendChild(el("div", "peringatan-box", e.message)); });
+  });
+  $("btn-refkc-rek").addEventListener("click", function () {
+    var rek = $("refkc-rek").value.trim(), kc = $("refkc-rek-kc").value;
+    var w = $("refkc-hasil");
+    w.innerHTML = "";
+    if (!rek || !kc) { w.appendChild(el("div", "peringatan-box", "Isi nomor rekening dan pilih Kode KC.")); return; }
+    catatUbah("rek", rek, kc);
+    $("refkc-rek").value = "";
+    w.appendChild(el("div", "info-box", "Rekening " + rek + " → " + kc + " ditambahkan ke isian. Tekan Simpan isian."));
+  });
 
   document.querySelectorAll("[data-folder]").forEach(function (b) {
     b.addEventListener("click", function () {

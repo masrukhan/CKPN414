@@ -295,7 +295,18 @@ namespace CKPNLibrary.Data
                     }
                     CatatanLog.Tulis("Database: migrasi ke skema v10 selesai");
                 }
-                // Migrasi versi berikutnya ditambahkan di sini: if (versi < 11) { ... }
+                // ---- v11 (Tahap 6d): referensi Kode KC rekening hapus buku KC2900 (LGD ER) ----
+                if (versi < 11)
+                {
+                    using (var tx = con.BeginTransaction())
+                    {
+                        foreach (var sql in SkemaV11) Exec(con, sql);
+                        Exec(con, "INSERT OR REPLACE INTO meta(kunci,nilai) VALUES('versi_skema','11')");
+                        tx.Commit();
+                    }
+                    CatatanLog.Tulis("Database: migrasi ke skema v11 selesai");
+                }
+                // Migrasi versi berikutnya ditambahkan di sini: if (versi < 12) { ... }
 
                 _skemaSiap = true;
             }
@@ -586,6 +597,52 @@ namespace CKPNLibrary.Data
                 cap       TEXT,
                 pengguna  TEXT,
                 waktu     TEXT)"
+        };
+
+        private static readonly string[] SkemaV11 =
+        {
+            // Isian petugas (panel ⚙ Pengaturan › Referensi KC). jenis 'rek' = satu rekening (kunci = no rek
+            // ternormalisasi), 'produk' = awalan kode produk. kode_kc = KC0600..KC1100 atau 'DIKECUALIKAN'.
+            @"CREATE TABLE IF NOT EXISTS ref_kc_manual (
+                jenis     TEXT NOT NULL CHECK (jenis IN ('rek','produk')),
+                kunci     TEXT NOT NULL,
+                kode_kc   TEXT NOT NULL,
+                alasan    TEXT,
+                pengguna  TEXT,
+                waktu     TEXT,
+                PRIMARY KEY (jenis, kunci))",
+            // Hasil pindai: jumlah rekening aktif KC0600–KC1100 per awalan kode produk (panjang 2–5) per KC
+            @"CREATE TABLE IF NOT EXISTS ref_kc_produk (
+                panjang  INTEGER NOT NULL,
+                awalan   TEXT NOT NULL,
+                kode_kc  TEXT NOT NULL,
+                jumlah   INTEGER NOT NULL,
+                PRIMARY KEY (panjang, awalan, kode_kc))",
+            // Hasil pindai: rekening KC2900 keenam file tahunan + KC bila rekening ditemukan di KC0600–KC1100
+            @"CREATE TABLE IF NOT EXISTS ref_kc_hapusbuku (
+                no_rek             TEXT PRIMARY KEY,
+                rek_asli           TEXT,
+                cif                TEXT,
+                nama               TEXT,
+                jenis_instrumen    TEXT,
+                tgl_hb             TEXT,
+                tahun_hb           INTEGER,
+                baki               REAL,
+                tahun_file         TEXT,
+                kolom_m            TEXT,
+                kc_rekening        TEXT,
+                kc_rekening_tahun  INTEGER)",
+            // Rekening yang masuk tiap lingkup KC saat LGD ER terakhir dihitung (deteksi perlu hitung ulang)
+            @"CREATE TABLE IF NOT EXISTS ref_kc_lingkup (
+                lingkup    TEXT PRIMARY KEY,
+                curr_year  INTEGER NOT NULL,
+                rekening   TEXT NOT NULL,
+                pengguna   TEXT,
+                waktu      TEXT)",
+            // pindai (JSON file+cap), dipakai (JSON LGD ER terakhir), panjang, diubah
+            @"CREATE TABLE IF NOT EXISTS ref_kc_info (
+                kunci  TEXT PRIMARY KEY,
+                nilai  TEXT)"
         };
 
         public static void CatatAktivitas(SQLiteConnection con, string periode, string aksi, string detail)

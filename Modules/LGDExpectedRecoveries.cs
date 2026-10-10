@@ -16,6 +16,9 @@ namespace CKPNLibrary.Modules
     {
         private readonly Excel.Application _app;
 
+        // Tahap 6d: penentu Kode KC rekening KC2900 (referensi database, pengganti kolom M)
+        private CKPNLibrary.Data.ReferensiKC.Resolver _refKC;
+
         // Warna tema — sama persis dengan konstanta VBA
         private const int CLR_GREEN_DARK      = 0x1F6E43;  // &H436E1F  BGR→RGB
         private const int CLR_GREEN_MED       = 0x2E8B57;  // &H578B2E
@@ -79,26 +82,10 @@ namespace CKPNLibrary.Modules
                 StringComparer.OrdinalIgnoreCase);
 
             // ---- Auto-build RefKC dan isi kolom M KC2900 ----
-            // Kolom M (Kode KC) di KC2900 wajib terisi agar filter KC bekerja.
-            // Sistem cek otomatis: jika kolom M belum terisi di salah satu file,
-            // jalankan RefKCBuilder secara otomatis sebelum membaca data.
-            // Ini menggantikan keharusan user menjalankan "Bangun Tabel Referensi KC"
-            // secara manual terlebih dahulu.
-            var refBuilder = new RefKCBuilder(_app);
-            bool kolomMOK  = refBuilder.CekKolomMTerisi(filePaths);
-
-            if (!kolomMOK)
-            {
-                // Kolom M belum terisi — bangun otomatis
-                // Tampilkan info ke user bahwa proses tambahan sedang berjalan
-                Pemberitahu.Info("Auto-Build Referensi KC",
-                    "Kolom referensi KC (M) di KC2900 belum terisi." +
-                    "Sistem akan membangun tabel referensi KC secara otomatis" +
-                    "sebelum melanjutkan perhitungan LGD Expected Recoveries." +
-                    "File sumber akan dibuka READ-WRITE dan disimpan." +
-                    "Proses ini hanya perlu dilakukan sekali per set file.");
-                refBuilder.BangunRefKC(filePaths, wsLog);
-            }
+            // Tahap 6d: Kode KC per rekening KC2900 diambil dari referensi di database
+            // (Panel CKPN › Pengaturan › Referensi KC hapus buku). File tahunan dipindai
+            // READ-ONLY hanya bila berubah; kolom M file sumber tidak ditulis/di-save lagi.
+            _refKC = CKPNLibrary.Data.ReferensiKC.Siapkan(_app, filePaths, currYear);
 
             // ---- Baca KC2900 dari setiap file tahunan ----
             // dataByYear[year]    = Dictionary<noRek, double[]{ baki, tglHB }>
@@ -224,6 +211,7 @@ namespace CKPNLibrary.Modules
             catch { /* abaikan error logging — jangan gagalkan proses utama */ }
 
             // ---- Audit Log: rekap Jenis Instrumen x Kode KC ----
+            if (_refKC != null) _refKC.Selesai(scopeKC);   // Tahap 6d: jejak lingkup (deteksi perlu hitung ulang); tidak melempar error
             try { TulisLogRefKC(wsLog, statRefKC); }
             catch { /* abaikan error logging — jangan gagalkan proses utama */ }
 
@@ -234,12 +222,12 @@ namespace CKPNLibrary.Modules
             if (statRefKC.TotalTanpaKC > 0)
             {
                 pesan += "\n\nPERHATIAN: " + statRefKC.TotalTanpaKC +
-                         " rekening tidak punya Kode KC (kolom M) senilai " +
+                        " rekening tidak punya Kode KC senilai " +
                          statRefKC.BakiTanpaKC.ToString("N0") + "." +
                          "\nRekening ini TIDAK ikut dihitung." +
                          "\nJenis instrumen: " + statRefKC.RingkasProdukTanpaKC() +
-                        "\nRincian per tahun ada di log proses (Panel CKPN › Riwayat › " +
-                         "Log proses, proses \"LGD ER - Referensi KC\").";
+                         "\nLengkapi di Panel CKPN › Pengaturan › Referensi KC hapus buku, " +
+                         "lalu hitung ulang grup.";
             }
             }
             finally
@@ -278,7 +266,8 @@ namespace CKPNLibrary.Modules
                 string noRek = NormNoRek(rekArr[i]);
                 if (string.IsNullOrEmpty(noRek)) continue;
 
-                string refKC = NormKodeKC(refArr[i]);
+                // Tahap 6d: manual rekening > cocok rekening KC0600–KC1100 > manual kode produk > kolom M > KC mayoritas kode produk
+                string refKC = _refKC != null ? _refKC.Tentukan(rekArr[i], refArr[i]) : NormKodeKC(refArr[i]);
 
                 // Rekap dicatat SEBELUM filter scope, sehingga rekening yang
                 // gagal dipetakan (kode konversi CBS lama / WO lama) tetap
@@ -922,7 +911,7 @@ namespace CKPNLibrary.Modules
                 bool dobel   = !tanpaKC && ganda.Contains(b.Tahun + "|" + b.Produk);
                 LogProses.Catat("LGD ER - Referensi KC", "Des " + b.Tahun,
                     tanpaKC ? LogProses.Peringatan : LogProses.OK, LogProses.R()
-                        .Tambah("Status", tanpaKC ? "TIDAK ADA KC - lengkapi kolom M manual"
+                        .Tambah("Status", tanpaKC ? "TIDAK ADA KC - lengkapi di panel (Pengaturan › Referensi KC)"
                                         : dobel ? "Terpetakan (produk ini juga ke KC lain)" : "Terpetakan")
                         .Tambah("Jenis instrumen", b.Produk)
                         .Tambah("Kode KC", tanpaKC ? "(kosong)" : b.KodeKC)
