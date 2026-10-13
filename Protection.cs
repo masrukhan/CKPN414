@@ -36,10 +36,12 @@ namespace CKPNLibrary
         {
             // Tolak perintah dari tombol VBA selama Panel CKPN menjalankan
             // perhitungan, agar dua proses tidak menulis sheet yang sama.
-            if (CKPNLibrary.Panel.CKPNPipeline.TolakPanggilanLuar())
+            
+            // Tahap 7: edisi Lite (trial / lisensi berakhir) hanya menghitung seluruh KC0600–KC1100 sekaligus
+            string tolakLisensi = CKPNLibrary.Panel.Lisensi.TolakTombolMaster(app);
+            if (tolakLisensi != null)
             {
-                TampilkanError("Perhitungan sedang berjalan dari Panel CKPN.\n\n" +
-                               "Tunggu sampai selesai atau batalkan dari panel, lalu coba lagi.");
+                TampilkanError(tolakLisensi);
                 return false;
             }
 

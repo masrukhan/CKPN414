@@ -23,6 +23,7 @@ namespace CKPNLibrary
             {
                 var app = (Excel.Application)ExcelDnaUtil.Application;
                 if (!Protection.CekProteksi(app)) return;
+                sheetKCList = CKPNLibrary.Panel.Lisensi.KCEfektif(sheetKCList);   // Tahap 7b: Lite = seluruh KC0600–KC1100
                 int    topN   = (int)topNDbl;
                 bool   npf    = flagNPF.Trim().Equals("Ya",    StringComparison.OrdinalIgnoreCase);
                 bool   kol2   = flagKol2.Trim().Equals("Ya",   StringComparison.OrdinalIgnoreCase);
@@ -42,6 +43,7 @@ namespace CKPNLibrary
             {
                 var app = (Excel.Application)ExcelDnaUtil.Application;
                 if (!Protection.CekProteksi(app)) return;
+                sheetKCList = CKPNLibrary.Panel.Lisensi.KCEfektif(sheetKCList);   // Tahap 7b: Lite = seluruh KC0600–KC1100
                 int      topN   = (int)topNDbl;
                 string[] paths  = filePaths.Split(new[]{'|'}, StringSplitOptions.RemoveEmptyEntries);
                 string[] labels = bulanLabels.Split(new[]{'|'}, StringSplitOptions.RemoveEmptyEntries);
@@ -62,6 +64,7 @@ namespace CKPNLibrary
             {
                 var app = (Excel.Application)ExcelDnaUtil.Application;
                 if (!Protection.CekProteksi(app)) return;
+                sheetKCList = CKPNLibrary.Panel.Lisensi.KCEfektif(sheetKCList);   // Tahap 7b: Lite = seluruh KC0600–KC1100
                 new PDMigration(app).Hitung(
                     triwulan, pathAwal, pathAkhir,
                     tglAwalStr, tglAkhirStr,
@@ -89,6 +92,7 @@ namespace CKPNLibrary
             {
                 var app = (Excel.Application)ExcelDnaUtil.Application;
                 if (!Protection.CekProteksi(app)) return;
+                sheetKCList = CKPNLibrary.Panel.Lisensi.KCEfektif(sheetKCList);   // Tahap 7b: Lite = seluruh KC0600–KC1100
                 new PDMigration(app).HitungSemua(
                     pathAwalGab, pathAkhirGab, tglAwalGab, tglAkhirGab,
                     (int)topNDbl, sheetKCList);
@@ -104,6 +108,7 @@ namespace CKPNLibrary
             {
                 var app = (Excel.Application)ExcelDnaUtil.Application;
                 if (!Protection.CekProteksi(app)) return;
+                sheetKCList = CKPNLibrary.Panel.Lisensi.KCEfektif(sheetKCList);   // Tahap 7b: Lite = seluruh KC0600–KC1100
                 new LGDExpectedRecoveries(app).Hitung((int)currYearDbl, filePathsStr, sheetKCList);
             }
             catch (Exception ex) { TampilError("LGD Expected Recoveries", ex); }
@@ -129,6 +134,7 @@ namespace CKPNLibrary
             {
                 var app = (Excel.Application)ExcelDnaUtil.Application;
                 if (!Protection.CekProteksi(app)) return;
+                sheetKCList = CKPNLibrary.Panel.Lisensi.KCEfektif(sheetKCList);   // Tahap 7b: Lite = seluruh KC0600–KC1100
                 new LGDCollateralShortfall(app).Hitung(fileConfigStr, haircutAgn, sheetKCList);
             }
             catch (Exception ex) { TampilError("LGD Collateral Shortfall", ex); }
@@ -155,6 +161,7 @@ namespace CKPNLibrary
             {
                 var app = (Excel.Application)ExcelDnaUtil.Application;
                 if (!Protection.CekProteksi(app)) return;
+                sheetKCList = CKPNLibrary.Panel.Lisensi.KCEfektif(sheetKCList);   // Tahap 7b: Lite = seluruh KC0600–KC1100
                 new ExportToExcel(app).Export(savePath, sheetKCList);
             }
             catch (Exception ex) { TampilError("Export Hasil", ex); }
@@ -239,6 +246,7 @@ namespace CKPNLibrary
 
                 var app = (Excel.Application)ExcelDnaUtil.Application;
                 if (!Protection.CekProteksi(app)) return;
+                sheetKCList = CKPNLibrary.Panel.Lisensi.KCEfektif(sheetKCList);   // Tahap 7b: Lite = seluruh KC0600–KC1100
                 new RefreshSummary(app).Refresh(filePath, sheetKCList);
             }
             catch (Exception ex) { TampilError("Refresh Summary", ex); }

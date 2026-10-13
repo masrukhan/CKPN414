@@ -675,3 +675,20 @@ button.baris-atur:focus-visible { outline: 2px solid var(--aksen); outline-offse
 .blok-ref .nama-grup { font-weight: 600; font-size: 13px; }
 .rek-ref > button, #refkc-status button { white-space: nowrap; flex-shrink: 0; }
 .rek-ref .pilih-kc { max-width: 130px; }
+
+/* ---------------- Tahap 7: edisi & lisensi ---------------- */
+.lencana-edisi { margin-left: 4px; cursor: pointer; border: none; font-family: inherit; }
+.lencana-edisi.edisi-pro { background: #E7F2EC; color: var(--sukses); }
+.lencana-edisi.edisi-trial { background: #FFF3D6; color: #8A5A00; }
+.lencana-edisi.edisi-lite { background: #F4E4E1; color: #8E2F22; }
+.banner-lisensi { background: #FFF6E5; color: #6B4A00; border-radius: 8px; padding: 8px 10px; font-size: 12px; margin: 8px 0; line-height: 1.5; }
+.banner-lisensi.lite { background: #F7EAE7; color: #7A2A1F; }
+.chip-edisi { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #EEF0EE; white-space: nowrap; }
+.chip-edisi.edisi-pro { background: #E7F2EC; color: var(--sukses); }
+.chip-edisi.edisi-trial { background: #FFF3D6; color: #8A5A00; }
+.chip-edisi.edisi-lite { background: #F4E4E1; color: #8E2F22; }
+.tabel-edisi td.pusat, .tabel-edisi th:not(:first-child) { text-align: center; white-space: nowrap; }
+.tabel-edisi td.tidak { color: #B0B4B2; }
+.tabel-edisi caption { caption-side: bottom; text-align: left; padding-top: 4px; }
+#ls-detail dd { word-break: break-word; }
+.baris-atur:disabled { opacity: .5; cursor: not-allowed; }

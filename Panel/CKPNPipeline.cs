@@ -158,6 +158,17 @@ namespace CKPNLibrary.Panel
             // bisa sudah basi bila user mengubah Master setelah menekan "Periksa".
             ParameterCKPN p = ParameterMaster.Baca(wb);
 
+            // Tahap 7: edisi Lite selalu menghitung seluruh segmen KC0600–KC1100 — centang Master disesuaikan
+            string catatanLisensi = null;
+            try
+            {
+                catatanLisensi = Lisensi.CentangSeluruhKC(wb);
+                if (catatanLisensi != null) p = ParameterMaster.Baca(wb);
+            }
+            catch (Exception ex) { return "Edisi Lite: centang KC0600–KC1100 di Master gagal diubah otomatis (" + PesanError(ex) + "). Centang manual lalu ulangi."; }
+            string tolakLisensi = Lisensi.TolakHitung(p.KC);
+            if (tolakLisensi != null) return tolakLisensi;
+
             var pilih = new HashSet<string>(idDipilih ?? new string[0], StringComparer.OrdinalIgnoreCase);
             var antrian = new List<Langkah>();
             var masalah = new List<string>();
@@ -197,6 +208,7 @@ namespace CKPNLibrary.Panel
             _hasilLangkah = new List<Dictionary<string, object>>();
             SedangBerjalan = true;
             Pemberitahu.MulaiModePanel();
+            if (catatanLisensi != null) Pemberitahu.Info("Edisi Lite", catatanLisensi);
             // Penyesuaian manual tersimpan (Individu I/J, LGD CS) diterapkan di
             // dalam modul. Bisa dimatikan per run untuk melihat hasil sistem murni.
             Data.Penyesuaian.Aktif = terapkanPenyesuaian;

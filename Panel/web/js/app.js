@@ -104,6 +104,7 @@
   }
 
   function pindahSub(grup, nama, tanpaMuat) {
+    if (edisiLite() && grup === "hitung" && nama === "pergrup") nama = "manual";   // Tahap 7
     subAktif[grup] = nama;
     document.querySelectorAll('.sub-nav[data-grup="' + grup + '"] [data-sub]').forEach(function (b) {
       var aktif = b.getAttribute("data-sub") === nama;
@@ -115,6 +116,10 @@
   }
 
   function pindahTab(nama, sub, tanpaMuat) {
+    if (edisiLite() && (nama === "tetapkan" || nama === "analisis")) {   // Tahap 7
+      tampilkanBatasLite(nama === "analisis" ? "analisis" : "tetapkan");
+      nama = "ringkasan"; sub = null;
+    }
     if (nama !== tabAktif && tabAktif !== "pengaturan") tabSebelum = tabAktif;
     tabAktif = nama;
     tombolTab.forEach(function (x) {
@@ -516,6 +521,7 @@
   var dataSimpan = null;
 
   function bukaSimpan() {
+    if (edisiLite()) { tampilkanBatasLite("simpan"); return; }   // Tahap 7
     tampil("kartu-hasil", false);
     tampil("kartu-langkah", false);
     tampil("kartu-simpan", true);
@@ -4430,7 +4436,7 @@
   }
   function kaki(teksStatus) {
     return d_("div", "dok-kaki", "Dicetak dari Panel CKPN PSAK 414" + (infoPing ? " v" + infoPing.versiAddin + " oleh " + infoPing.user : "") +
-      " · " + new Date().toLocaleString("id-ID") + (teksStatus ? " · " + teksStatus : ""));
+      " · " + new Date().toLocaleString("id-ID") + (teksStatus ? " · " + teksStatus : "") + teksLisensiDok());
   }
   function hal(kelas) { return d_("div", "dok " + (kelas || "")); }
   function persenDok(v) { return v === null || v === undefined || !isFinite(v) ? "—" : (v * 100).toFixed(2).replace(".", ",") + "%"; }
@@ -4985,6 +4991,8 @@
       gambarPengaturan();
       $("d-jembatan").innerHTML = '<span class="ok">Terhubung</span>';
       teks("lencana-versi", "v" + d.versiAddin);
+      lisensi = d.lisensi || lisensi;
+      terapkanLisensi();
       teks("d-excel", d.versiExcel + " · " + d.arsitektur);
       teks("d-user", d.user);
       teks("d-hak", d.bolehMenulis ? "Lihat & simpan" : "Hanya lihat (nama user belum ada di config\\pengirim.txt)");
@@ -5353,6 +5361,146 @@
     catatUbah("rek", rek, kc);
     $("refkc-rek").value = "";
     w.appendChild(el("div", "info-box", "Rekening " + rek + " → " + kc + " ditambahkan ke isian. Tekan Simpan isian."));
+  });
+
+
+  // =====================================================================
+  // 15. Tentang & lisensi: Trial · Pro · Lite (Tahap 7)
+  // =====================================================================
+  var lisensi = null;
+  var NAMA_EDISI = { trial: "Trial", pro: "Pro", lite: "Lite" };
+  function edisiLite() { return !!lisensi && lisensi.edisi === "lite"; }
+  function tglId(t) { return t ? tanggalPanjang(t) : "—"; }
+
+  function teksLisensiDok() {
+    if (!lisensi) return "";
+    if (lisensi.edisi === "pro") return " · Dilisensikan kepada " + lisensi.pemegang;
+    return lisensi.edisi === "trial" ? " · Versi trial" : " · Edisi Lite";
+  }
+
+  var PESAN_LITE = {
+    analisis: "Tab Analisis", tetapkan: "Konsolidasi & penetapan periode", simpan: "Simpan hasil ke database",
+    segmentasi: "Susunan grup & hitung per grup"
+  };
+  function tampilkanBatasLite(fitur) {
+    gambarBannerLisensi((PESAN_LITE[fitur] || "Fitur ini") + " tidak tersedia di edisi Lite.");
+  }
+
+  function gambarBannerLisensi(tambahan) {
+    var b = $("banner-lisensi"), L = lisensi;
+    b.innerHTML = "";
+    if (!L) { b.hidden = true; return; }
+    var pesan = null, kelas = "banner-lisensi";
+    if (L.edisi === "lite") {
+      pesan = (tambahan ? tambahan + " " : "") + "Edisi Lite: " +
+        (L.lisensiBerakhir ? "lisensi berakhir " + tglId(L.berlakuSampai) : "masa trial berakhir " + tglId(L.trialSampai)) +
+        ". Tersedia: hitung manual seluruh KC0600–KC1100, Ringkasan & overview, dokumen lihat & cetak.";
+      kelas += " lite";
+    } else if (L.edisi === "trial" && L.sisaHariTrial <= 30) {
+      pesan = "Masa trial berakhir " + tglId(L.trialSampai) + " (" + L.sisaHariTrial + " hari lagi). Setelah itu aplikasi menjadi edisi Lite.";
+    } else if (L.edisi === "pro" && L.sisaHariLisensi !== null && L.sisaHariLisensi <= 30) {
+      pesan = "Lisensi berakhir " + tglId(L.berlakuSampai) + " (" + L.sisaHariLisensi + " hari lagi). Hubungi penerbit untuk perpanjangan.";
+    }
+    b.hidden = !pesan;
+    if (!pesan) return;
+    b.className = kelas;
+    b.appendChild(el("span", "", pesan + " "));
+    b.appendChild(tombol("Lisensi ›", "tautan", bukaLisensi));
+  }
+
+  function bukaLisensi() {
+    pindahTab("pengaturan");
+    $("kartu-lisensi").scrollIntoView({ block: "start" });
+  }
+
+  function terapkanLisensi() {
+    var L = lisensi;
+    var lc = $("lencana-edisi");
+    lc.hidden = !L;
+    if (!L) return;
+    var lite = L.edisi === "lite";
+    lc.textContent = L.edisi === "trial" ? "Trial · " + L.sisaHariTrial + " hr" : NAMA_EDISI[L.edisi];
+    lc.className = "lencana lencana-edisi edisi-" + L.edisi;
+    document.body.classList.toggle("edisi-lite", lite);
+    tombolTab.forEach(function (b) {
+      var t = b.getAttribute("data-tab");
+      if (t === "tetapkan" || t === "analisis") b.hidden = lite;
+    });
+    document.querySelectorAll('.sub-nav[data-grup="hitung"] [data-sub="pergrup"]').forEach(function (b) { b.hidden = lite; });
+    ["btn-atur-susunan"].concat([]).forEach(function (id) { $(id).disabled = lite; });
+    document.querySelectorAll('[data-atur="susunan"]').forEach(function (b) { b.disabled = lite; });
+    if (lite) {
+      if (tabAktif === "tetapkan" || tabAktif === "analisis") pindahTab("ringkasan");
+      if (subAktif.hitung === "pergrup") pindahSub("hitung", "manual", tabAktif !== "hitung");
+    }
+    tampil("lite-manual-info", lite);
+    gambarBannerLisensi();
+    gambarLisensi();
+  }
+
+  function gambarLisensi() {
+    var L = lisensi;
+    if (!L) return;
+    teks("ls-produk", L.produk);
+    teks("ls-versi", "Versi " + (infoPing ? infoPing.versiAddin : "—") + " · " + L.pengembang);
+    var chip = $("ls-edisi");
+    chip.textContent = "Edisi " + NAMA_EDISI[L.edisi];
+    chip.className = "chip-edisi edisi-" + L.edisi;
+    var dl = $("ls-detail");
+    dl.innerHTML = "";
+    function baris(k, v) { if (v === null || v === undefined || v === "") return; dl.appendChild(el("dt", "", k)); dl.appendChild(el("dd", "", v)); }
+    if (L.pemegang && !(L.edisi !== "pro" && !L.lisensiBerakhir)) {
+      baris("Dilisensikan kepada", L.pemegang);
+      baris("Alamat", L.alamat);
+      baris("ID lisensi", L.id);
+      baris("Diterbitkan", tglId(L.diterbitkan) + (L.penerbit ? " · " + L.penerbit : ""));
+      baris("Berlaku sampai", L.berlakuSampai ? tglId(L.berlakuSampai) + (L.lisensiBerakhir ? " (berakhir)" : " · " + L.sisaHariLisensi + " hari lagi") : "Tanpa batas waktu");
+      baris("Catatan", L.catatan);
+      baris("File", L.file);
+    } else {
+      baris("Lisensi", "Belum ada file lisensi");
+      baris("Masa trial", "Sampai " + tglId(L.trialSampai) + (L.edisi === "trial" ? " · " + L.sisaHariTrial + " hari lagi" : " (berakhir)"));
+    }
+    baris("Lokasi lisensi", L.folder + "\\*.lic");
+    var p = $("ls-pesan");
+    p.innerHTML = "";
+    if (L.masalah) p.appendChild(el("div", "peringatan-box", "File lisensi diabaikan — " + L.masalah + "."));
+    if (!L.kunciTerpasang) p.appendChild(el("div", "teks-kecil", "Build ini belum berisi kunci publik penerbit, jadi file lisensi belum dapat dipakai."));
+    if (L.edisi === "lite") p.appendChild(el("div", "info-box", "Edisi Lite. Untuk membuka kembali semua fitur, minta file lisensi dari penerbit lalu tekan Pasang file lisensi."));
+
+    var tb = $("ls-fitur");
+    tb.innerHTML = "";
+    var h = el("tr");
+    ["Fitur", "Trial / Pro", "Lite"].forEach(function (x) { h.appendChild(el("th", "", x)); });
+    tb.appendChild(h);
+    [["Hitung manual seluruh segmen KC0600–KC1100", true],
+     ["Ringkasan, data overview, penyesuaian Individu & LGD CS", true],
+     ["Referensi KC hapus buku, parameter ABA", true],
+     ["Dokumen: lihat & cetak", true]].concat((L.fiturLite || []).map(function (f) { return [f.nama, false]; }))
+      .forEach(function (r) {
+        var tr = el("tr");
+        tr.appendChild(el("td", "", r[0]));
+        tr.appendChild(el("td", "pusat", "✓"));
+        tr.appendChild(el("td", "pusat " + (r[1] ? "" : "tidak"), r[1] ? "✓" : "—"));
+        tb.appendChild(tr);
+      });
+    tb.appendChild(el("caption", "teks-kecil", "Trial: semua fitur sampai " + tglId(L.trialSampai) + ". Pro: semua fitur selama lisensi berlaku."));
+  }
+
+  $("lencana-edisi").addEventListener("click", bukaLisensi);
+  $("btn-ls-pasang").addEventListener("click", function () {
+    var b = this, w = $("ls-hasil");
+    w.innerHTML = "";
+    b.disabled = true;
+    panggil("pasangLisensi").then(function (d) {
+      if (d && d.batal) return;
+      lisensi = d;
+      terapkanLisensi();
+      w.appendChild(el("div", d.edisi === "pro" ? "info-box" : "peringatan-box",
+        d.edisi === "pro" ? "Lisensi terpasang: edisi Pro untuk " + d.pemegang + "." : "File tersimpan, tetapi edisi masih " + NAMA_EDISI[d.edisi] + "."));
+      if (statusP) muatPeriode(periodeTerpilih());
+    }).catch(function (e) { w.appendChild(el("div", "peringatan-box", e.message)); })
+      .then(function () { b.disabled = false; });
   });
 
   document.querySelectorAll("[data-folder]").forEach(function (b) {

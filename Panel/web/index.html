@@ -19,6 +19,7 @@
       <div class="subjudul">PSAK 414</div>
     </div>
     <span id="lencana-versi" class="lencana">v—</span>
+    <button id="lencana-edisi" class="lencana lencana-edisi" type="button" hidden title="Tentang & lisensi"></button>
   </div>
 
   <!-- Tahap 5f: pemilih periode global — dipakai Ringkasan, Hitung, Tetapkan, dan Analisis -->
@@ -44,6 +45,8 @@
 
 <main>
   <div id="banner-koneksi" class="peringatan-box" role="alert" hidden></div>
+  <!-- Tahap 7: pemberitahuan edisi (trial hampir habis / Lite) -->
+  <div id="banner-lisensi" class="banner-lisensi" role="status" hidden></div>
 
   <!-- ================= Area proses (progres, hasil, simpan) — tampil di semua tab ================= -->
   <section id="area-proses" class="isi-tab area-proses" aria-live="polite">
@@ -270,6 +273,9 @@
 
     <!-- ---------- Hitung › Manual (lanjutan) ---------- -->
     <div id="sub-manual" class="isi-sub" hidden>
+      <div id="lite-manual-info" class="peringatan-box" hidden>Edisi Lite: perhitungan selalu untuk <b>seluruh KC0600–KC1100</b>
+        — centang KC di Master disesuaikan otomatis, termasuk saat memakai tombol di sheet Master.
+        Perhitungan per segmen, Simpan ke database, dan penetapan periode memerlukan lisensi Pro.</div>
       <div class="kartu info teks-kecil">Jalankan manual: centang langkah yang ingin dihitung untuk KC yang dicentang di Master.
         Untuk menghitung sesuai susunan grup tahunan, gunakan <b>Hitung › Per grup</b>.</div>
 
@@ -853,6 +859,29 @@
         <button id="btn-refkc-simpan" class="tombol-utama" type="button" disabled>Simpan isian</button>
       </div>
       <div id="refkc-hasil" role="status"></div>
+    </div>
+
+    <!-- Tahap 7: tentang aplikasi & lisensi -->
+    <div class="label-kecil">Tentang aplikasi</div>
+    <div class="kartu" id="kartu-lisensi">
+      <div class="baris-antara">
+        <div>
+          <div class="judul-kartu" id="ls-produk">CKPN PSAK 414</div>
+          <div class="teks-kecil" id="ls-versi">—</div>
+        </div>
+        <span id="ls-edisi" class="chip-edisi">—</span>
+      </div>
+      <dl class="detail jarak-atas" id="ls-detail"></dl>
+      <div id="ls-pesan"></div>
+      <details class="lipat-ref">
+        <summary>Perbandingan edisi</summary>
+        <table class="tabel-ringkas tabel-edisi" id="ls-fitur"></table>
+      </details>
+      <div class="baris-tombol jarak-atas">
+        <button id="btn-ls-pasang" class="tombol-sekunder" type="button">Pasang file lisensi…</button>
+        <button type="button" class="tautan" data-folder="library">Buka folder library</button>
+      </div>
+      <div id="ls-hasil" role="status"></div>
     </div>
 
     <div class="label-kecil">Data &amp; sistem</div>

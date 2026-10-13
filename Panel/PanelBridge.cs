@@ -49,8 +49,35 @@ namespace CKPNLibrary.Panel
                 string cmd = Convert.ToString(Ambil(msg, "cmd") ?? "");
                 var args = Ambil(msg, "args") as Dictionary<string, object> ?? new Dictionary<string, object>();
 
+                // Tahap 7: fitur yang tidak tersedia di edisi Lite ditolak di sini (panel juga menyembunyikannya)
+                string tolakLisensi = Lisensi.TolakPerintah(cmd);
+                if (tolakLisensi != null) { Gagal(host, id, tolakLisensi); return; }
+
                 switch (cmd)
                 {
+                    // ---- Tahap 7: lisensi & tentang aplikasi ----
+                    case "lisensi":
+                        Balas(host, id, Lisensi.InfoPanel());
+                        break;
+
+                    case "pasangLisensi":
+                        JalankanDiExcel(host, id, app =>
+                        {
+                            string info;
+                            if (!Database.BolehMenulis(out info)) throw new InvalidOperationException(info);
+                            using (var dlg = new System.Windows.Forms.OpenFileDialog
+                            {
+                                Title = "Pilih file lisensi CKPN PSAK 414",
+                                Filter = "File lisensi (*.lic)|*.lic|Semua file|*.*"
+                            })
+                            {
+                                if (dlg.ShowDialog() != System.Windows.Forms.DialogResult.OK)
+                                    return new Dictionary<string, object> { { "batal", true } };
+                                return Lisensi.Pasang(dlg.FileName);
+                            }
+                        });
+                        break;
+
                     // ---- Tanpa Excel: langsung dijawab ----
                     case "ping":
                         Balas(host, id, InfoLingkungan());
@@ -545,6 +572,12 @@ namespace CKPNLibrary.Panel
             });
         }
 
+        private static object LisensiAman()
+        {
+            try { return Lisensi.InfoPanel(); }
+            catch (Exception ex) { CatatanLog.Tulis("Info lisensi gagal: " + ex.Message); return null; }
+        }
+
         /// <summary>[{nama, kc:[...]}] dari panel → pasangan nama grup + kode KC (Tahap 6d).</summary>
         private static List<KeyValuePair<string, string[]>> GrupDariArgs(object v)
         {
@@ -582,6 +615,7 @@ namespace CKPNLibrary.Panel
             return new Dictionary<string, object>
             {
                 { "versiAddin",    typeof(PanelBridge).Assembly.GetName().Version.ToString() },
+                { "lisensi",       LisensiAman() },
                 { "arsitektur",    Environment.Is64BitProcess ? "64-bit" : "32-bit" },
                 { "versiExcel",    ExcelDnaUtil.ExcelVersion.ToString("0.0") },
                 { "webview2",      versiRuntime },
