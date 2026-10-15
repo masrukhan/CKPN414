@@ -181,6 +181,20 @@
         </div>
       </div>
 
+      <!-- Tahap 7c: penyesuaian tersimpan yang belum masuk versi tersimpan -->
+      <div class="kartu" id="kartu-pny-tertunda" hidden>
+        <div class="judul-kartu">Penyesuaian belum masuk versi tersimpan</div>
+        <p class="teks-kecil">Penyesuaian Individu / LGD CS disimpan setelah grup ini dihitung. Terapkan untuk menghitung ulang
+          CKPN Individu, LGD CS, LGD gabungan, dan CKPN Kolektif <b>langsung dari database</b> &mdash; Net Flow, Migration, dan LGD ER
+          tidak dihitung ulang. Hasilnya menjadi versi baru; <b>sheet Excel tidak ikut berubah</b>.</p>
+        <div id="pt-isi"></div>
+        <div class="baris-tombol jarak-atas">
+          <button id="btn-pt-semua" class="tombol-utama" type="button">Terapkan ke semua grup</button>
+        </div>
+        <div id="pt-hasil" role="status"></div>
+      </div>
+      <div id="pt-koreksi" class="info-box" hidden></div>
+
       <!-- Grup segmen -->
       <div class="kartu">
         <div class="baris-antara">
@@ -200,11 +214,12 @@
             <legend class="label-isian">Bila sebuah grup punya temuan</legend>
             <label class="opsi"><input type="radio" name="batch-temuan" value="berhenti" checked>
               <span><b>Review dulu sebelum simpan</b> <span class="teks-kecil">— proses berhenti di grup itu; cek temuan di sheet,
-                edit bila perlu, lalu Simpan. Jalankan lagi untuk melanjutkan grup berikutnya.</span></span></label>
+                edit bila perlu, lalu Simpan. Jalankan lagi untuk melanjutkan grup berikutnya. Isi sheet Excel dan database tetap sama.</span></span></label>
             <label class="opsi"><input type="radio" name="batch-temuan" value="lanjut">
               <span><b>Simpan semua otomatis</b> <span class="teks-kecil">— semua grup dihitung &amp; disimpan sampai selesai, termasuk yang
-                bertemuan. Temuan dicatat; cek &amp; koreksi sesudahnya lewat <b>Lihat / koreksi data</b>. Cocok untuk bulan reguler
-                tanpa kontrak/debitur baru.</span></span></label>
+                bertemuan. Temuan dicatat; cek &amp; koreksi sesudahnya lewat <b>Lihat / koreksi data</b> atau
+                <b>Terapkan penyesuaian ke versi tersimpan</b>. Koreksi itu dihitung dari database, sehingga angka di sheet Excel
+                <b>tidak lagi sama</b> dengan versi tersimpan. Cocok untuk bulan reguler tanpa kontrak/debitur baru.</span></span></label>
           </fieldset>
           <div class="baris-tombol">
             <button id="btn-batch-mulai" class="tombol-utama" type="button">Mulai</button>

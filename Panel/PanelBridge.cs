@@ -501,6 +501,22 @@ namespace CKPNLibrary.Panel
                             Ambil(args, "individu"), Ambil(args, "lgdcs"), Convert.ToString(Ambil(args, "alasan") ?? "")));
                         break;
 
+                    // ---- Tahap 7c: penyesuaian tersimpan → versi tersimpan (tanpa hitung ulang Excel) ----
+                    case "rencanaPenyesuaian":
+                        Balas(host, id, KoreksiRun.RencanaPeriode(Convert.ToString(Ambil(args, "tanggal") ?? "")));
+                        break;
+
+                    case "terapkanPenyesuaian":
+                        {
+                            string tolakLite = Lisensi.Tolak(Lisensi.FSimpan);
+                            if (tolakLite != null) { Gagal(host, id, tolakLite); break; }
+                            if (CKPNPipeline.SedangBerjalan || BatchGrup.Aktif) { Gagal(host, id, "Perhitungan sedang berjalan. Coba lagi setelah selesai."); break; }
+                            var daftarRun = Ambil(args, "runIds") as System.Collections.IEnumerable;
+                            if (daftarRun == null) { Gagal(host, id, "Tidak ada grup yang dipilih."); break; }
+                            Balas(host, id, KoreksiRun.TerapkanPenyesuaian(daftarRun));
+                        }
+                        break;
+
                     // ---- Tahap 5: log proses (pengganti sheet Audit Log) ----
                     case "logProses":
                         Balas(host, id, LogProses.Baca(Convert.ToString(Ambil(args, "bulan") ?? "")));

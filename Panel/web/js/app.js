@@ -723,6 +723,7 @@
       muatOverviewPeriode(d);
       if (!infoAba || infoAba.tahun !== d.tahun || tabAktif === "pengaturan") muatAba(d.tahun);
       if (!refKC || tabAktif === "pengaturan" || tabAktif === "tetapkan") muatRefKC();
+      if (tabAktif === "hitung" || tabAktif === "tetapkan") muatRencanaPny();
       if (tabAktif === "dokumen" && dok.tanggal !== d.tanggal) muatDokumen();
       if (tabAktif === "analisis" && subAktif.analisis === "rincian" && rc.tanggal !== d.tanggal) muatRincian();
       document.querySelectorAll("#rw-tabel tr[data-tanggal]").forEach(function (tr) {
@@ -1021,6 +1022,11 @@
         !ovStatus.ada ? "Belum ada — Analisis › Komposisi tidak bisa membandingkan OS/NPF. Muat di Ringkasan."
           : ovStatus.berubah ? "File template berubah sejak snapshot disimpan." : "");
     if (!final) syaratRefKC(item);
+    if (!final && rencanaPny && rencanaPny.tanggal === d.tanggal) {
+      var tunda = (rencanaPny.grup || []).filter(function (g) { return g.jumlah > 0; });
+      item(tunda.length ? "awas" : "ok", "Penyesuaian sudah masuk versi tersimpan",
+        tunda.length ? "Belum diterapkan: " + tunda.map(function (g) { return namaGrupKC(g.kodeKC); }).join(", ") + ". Terapkan di Hitung › Per grup." : "");
+    }
     if (!final) item(d.bolehMenulis ? "ok" : "belum", "Hak menetapkan", d.bolehMenulis ? "" : (d.infoPengirim || "User ini hanya bisa melihat."));
   }
 
@@ -1705,7 +1711,8 @@
     panggil("simpanPenyesuaian", { modul: modulPny, data: data, alasan: $("pe-alasan").value }).then(function (r) {
       var dipakai = editPny && editPny.dipakai;
       pesanEditor("Tersimpan: " + r.sesudah + ". Berlaku pada perhitungan berikutnya" +
-        (dipakai ? " — hitung ulang grup " + dipakai.kodeKC + " agar hasilnya berubah." : "."), true);
+        (dipakai ? " — atau terapkan ke versi tersimpan grup " + dipakai.kodeKC + " di Hitung › Per grup (tanpa hitung ulang Excel)." : "."), true);
+      muatRencanaPny();
       return muatPenyesuaian();
     }).catch(function (e) { pesanEditor(e.message); })
       .then(function () { b.disabled = false; });
@@ -5501,6 +5508,112 @@
       if (statusP) muatPeriode(periodeTerpilih());
     }).catch(function (e) { w.appendChild(el("div", "peringatan-box", e.message)); })
       .then(function () { b.disabled = false; });
+  });
+
+
+  // =====================================================================
+  // 16. Penyesuaian tersimpan → versi tersimpan, tanpa hitung ulang Excel (Tahap 7c)
+  // =====================================================================
+  var rencanaPny = null, pesanPt = "";
+
+  function namaGrupKC(kodeKC) {
+    var g = statusP && (statusP.grup || []).filter(function (x) { return x.kc.join(",") === kodeKC || x.kodeKC === kodeKC; })[0];
+    return g ? g.nama : kodeKC;
+  }
+
+  function muatRencanaPny() {
+    if (!statusP || !statusP.tanggal) return;
+    var tgl = statusP.tanggal;
+    return panggil("rencanaPenyesuaian", { tanggal: tgl }).then(function (d) {
+      if (!statusP || statusP.tanggal !== tgl) return;
+      rencanaPny = d;
+      gambarRencanaPny();
+      gambarSyarat(statusP);
+    }).catch(function () { rencanaPny = null; tampil("kartu-pny-tertunda", false); });
+  }
+
+  function persenPt(v) { return v === null || v === undefined ? "—" : (v * 100).toFixed(2).replace(".", ",") + "%"; }
+
+  function gambarRencanaPny() {
+    var d = rencanaPny, w = $("pt-isi");
+    w.innerHTML = "";
+    $("pt-hasil").innerHTML = "";
+    var final = d && d.statusPeriode === "Final";
+    var tunda = d && !final ? (d.grup || []).filter(function (g) { return g.jumlah > 0; }) : [];
+    tampil("kartu-pny-tertunda", tunda.length > 0);
+    var koreksi = d ? (d.grup || []).filter(function (g) { return g.koreksiPanel; }) : [];
+    var info = $("pt-koreksi");
+    info.hidden = !koreksi.length && !pesanPt;
+    info.textContent = pesanPt + (koreksi.length ? "Versi hasil koreksi dari database (bukan dari sheet): " +
+      koreksi.map(function (g) { return namaGrupKC(g.kodeKC) + " v" + g.versi; }).join(", ") +
+      ". Angka di sheet Excel berbeda dengan versi tersimpan; Simpan grup dari sheet akan membuat versi baru tanpa koreksi tersebut." : "");
+    pesanPt = "";
+    if (!tunda.length) return;
+    var metode = statusP && statusP.metode;
+    tunda.forEach(function (g) {
+      var blok = el("div", "blok-ref");
+      var atas = el("div", "baris-antara");
+      var kiri = el("div");
+      kiri.appendChild(el("div", "nama-grup", namaGrupKC(g.kodeKC) + " · v" + g.versi));
+      kiri.appendChild(el("div", "teks-kecil", g.jumlah + " perubahan dari penyesuaian tersimpan"));
+      atas.appendChild(kiri);
+      var b = tombol("Terapkan", "tombol-sekunder", function () { terapkanPny([g]); });
+      b.disabled = !d.bolehMenulis || !!g.galat;
+      atas.appendChild(b);
+      blok.appendChild(atas);
+      if (g.lama && g.baru) {
+        var t = el("table", "tabel-ringkas");
+        var h = el("tr");
+        ["", "Tersimpan", "Sesudah"].forEach(function (x) { h.appendChild(el("th", x ? "angka" : "", x)); });
+        t.appendChild(h);
+        [["CKPN Individu", "nf_individu", rp], ["LGD CS", "lgd_cs", persenPt], ["LGD gabungan", "lgd_gabungan", persenPt],
+         ["Total Net Flow" + (metode === "nf" ? " ★" : ""), "nf_total", rp], ["Total Migration" + (metode === "mig" ? " ★" : ""), "mig_total", rp]]
+          .forEach(function (r) {
+            if (g.lama[r[1]] === undefined && g.baru[r[1]] === undefined) return;
+            var tr = el("tr");
+            tr.appendChild(el("td", "", r[0]));
+            tr.appendChild(el("td", "angka", r[2](g.lama[r[1]])));
+            tr.appendChild(el("td", "angka", r[2](g.baru[r[1]])));
+            t.appendChild(tr);
+          });
+        blok.appendChild(t);
+      }
+      if (g.galat) blok.appendChild(el("div", "peringatan-box", g.galat));
+      var det = el("details");
+      det.appendChild(el("summary", "teks-kecil", "Rincian perubahan"));
+      var ul = el("ul", "daftar-rek-ref");
+      (g.rincian || []).forEach(function (x) { ul.appendChild(el("li", "rek-ref", x)); });
+      det.appendChild(ul);
+      blok.appendChild(det);
+      (g.catatan || []).forEach(function (x) { blok.appendChild(el("div", "peringatan-box", x)); });
+      if (g.perluHitungUlang) blok.appendChild(el("div", "teks-kecil", "Sebagian penyesuaian hanya bisa diterapkan lewat Hitung ulang grup."));
+      w.appendChild(blok);
+    });
+    $("btn-pt-semua").disabled = !d.bolehMenulis;
+    $("btn-pt-semua").textContent = tunda.length > 1 ? "Terapkan ke " + tunda.length + " grup" : "Terapkan";
+  }
+
+  function terapkanPny(grup) {
+    var w = $("pt-hasil");
+    w.innerHTML = "";
+    if (!window.confirm("Terapkan penyesuaian tersimpan ke versi tersimpan: " + grup.map(function (g) { return namaGrupKC(g.kodeKC); }).join(", ") +
+        "?\n\nCKPN Individu, LGD CS, LGD gabungan, dan CKPN Kolektif dihitung ulang dari database dan disimpan sebagai versi baru." +
+        "\nSheet Excel TIDAK ikut berubah, sehingga angkanya akan berbeda dengan versi tersimpan.")) return;
+    $("btn-pt-semua").disabled = true;
+    panggil("terapkanPenyesuaian", { runIds: grup.map(function (g) { return g.runId; }) }, 120000).then(function (r) {
+      var ok = (r.hasil || []).filter(function (x) { return x.status === "tersimpan"; });
+      pesanPt = ok.length ? "Penyesuaian diterapkan: " + ok.map(function (x) { return namaGrupKC(x.kodeKC) + " v" + x.versi; }).join(", ") + ". " :
+        "Tidak ada perubahan yang perlu disimpan. ";
+      return muatPeriode(periodeTerpilih());
+    }).catch(function (e) {
+      w.appendChild(el("div", "peringatan-box", e.message));
+      $("btn-pt-semua").disabled = false;
+    });
+  }
+
+  $("btn-pt-semua").addEventListener("click", function () {
+    if (!rencanaPny) return;
+    terapkanPny((rencanaPny.grup || []).filter(function (g) { return g.jumlah > 0 && !g.galat; }));
   });
 
   document.querySelectorAll("[data-folder]").forEach(function (b) {

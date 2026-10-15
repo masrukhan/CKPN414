@@ -242,13 +242,17 @@ namespace CKPNLibrary.Data
         // ================================================================
         /// <param name="individu">[{id, jaminan, biaya}] — hanya baris yang diubah</param>
         /// <param name="lgdcs">{ubah:[{id, agunan, recovery}], hapus:[id], tambah:[{rek,nama,pokok,agunan,thnSerah,thnEks,recovery}]}</param>
-        public static Dictionary<string, object> Simpan(long runId, object individu, object lgdcs, string alasan)
+        /// <param name="simulasi">Tahap 7c: true = hanya hitung (pratinjau), tidak menulis database</param>
+        public static Dictionary<string, object> Simpan(long runId, object individu, object lgdcs, string alasan, bool simulasi = false)
         {
             string info;
-            if (!Database.BolehMenulis(out info)) throw new InvalidOperationException(info);
-            if (string.IsNullOrWhiteSpace(alasan)) throw new InvalidOperationException("Alasan koreksi wajib diisi.");
-            if (Panel.CKPNPipeline.SedangBerjalan || Panel.BatchGrup.Aktif)
-                throw new InvalidOperationException("Perhitungan sedang berjalan. Coba lagi setelah selesai.");
+            if (!simulasi)
+            {
+                if (!Database.BolehMenulis(out info)) throw new InvalidOperationException(info);
+                if (string.IsNullOrWhiteSpace(alasan)) throw new InvalidOperationException("Alasan koreksi wajib diisi.");
+                if (Panel.CKPNPipeline.SedangBerjalan || Panel.BatchGrup.Aktif)
+                    throw new InvalidOperationException("Perhitungan sedang berjalan. Coba lagi setelah selesai.");
+            }
 
             Run r;
             using (var con = Database.Buka(false)) r = Muat(con, runId);
@@ -367,6 +371,19 @@ namespace CKPNLibrary.Data
             }
             rgBaru["koreksi_dari_versi"] = r.Versi;
 
+            if (simulasi)
+            {
+                var lama = new Dictionary<string, object>();
+                foreach (var kv in r.Ringkasan) lama[kv.Key] = kv.Value;
+                var baru = new Dictionary<string, object>();
+                foreach (var kv in rgBaru) baru[kv.Key] = kv.Value;
+                return new Dictionary<string, object>
+                {
+                    { "runId", r.Id }, { "versi", r.Versi }, { "kodeKC", r.KodeKC }, { "lama", lama }, { "baru", baru },
+                    { "faktorKolektif", faktor }, { "jumlahIndividu", nInd }, { "jumlahLgdCs", nCs }
+                };
+            }
+
             // ---- d. Tulis versi baru ----
             Database.Cadangkan();
             long runBaru; int versiBaru;
@@ -469,6 +486,193 @@ namespace CKPNLibrary.Data
                 { "runId", runBaru }, { "versi", versiBaru }, { "tanggal", r.Tanggal }, { "kodeKC", r.KodeKC },
                 { "ringkasan", keluar }, { "faktorKolektif", faktor }, { "jumlahIndividu", nInd }, { "jumlahLgdCs", nCs }
             };
+        }
+
+
+        // ================================================================
+        // Tahap 7c: terapkan penyesuaian tersimpan ke versi tersimpan (tanpa Excel)
+        // ================================================================
+        /// <summary>Rencana perubahan satu versi agar sesuai penyesuaian tersimpan saat ini.</summary>
+        private class Rencana
+        {
+            public List<object> Individu = new List<object>();
+            public List<object> Ubah = new List<object>(), Hapus = new List<object>(), Tambah = new List<object>();
+            public List<string> Rincian = new List<string>(), Catatan = new List<string>();
+            public bool PerluHitungUlang;
+            public int Jumlah { get { return Individu.Count + Ubah.Count + Hapus.Count + Tambah.Count; } }
+            public Dictionary<string, object> LgdCs()
+            {
+                return new Dictionary<string, object> { { "ubah", Ubah }, { "hapus", Hapus }, { "tambah", Tambah } };
+            }
+        }
+
+        private static Rencana BuatRencana(Run r, Dictionary<string, PenyesuaianIndividu> pInd, Dictionary<string, PenyesuaianLgdCs> pCs)
+        {
+            var rc = new Rencana();
+            foreach (var b in r.Individu)
+            {
+                PenyesuaianIndividu p;
+                if (pInd.TryGetValue((b.Kontrak ?? "").Trim(), out p))
+                {
+                    if (Math.Abs(p.Jaminan - b.Jaminan) >= 0.005 || Math.Abs(p.BiayaJual - b.Biaya) >= 0.005)
+                    {
+                        rc.Individu.Add(new Dictionary<string, object> { { "id", b.Id }, { "jaminan", p.Jaminan }, { "biaya", p.BiayaJual } });
+                        rc.Rincian.Add("Individu " + b.Kontrak + ": agunan " + Format(b.Jaminan) + " → " + Format(p.Jaminan) +
+                                       ", biaya " + Format(b.Biaya) + " → " + Format(p.BiayaJual));
+                    }
+                }
+                else if (b.Disesuaikan)
+                {
+                    rc.PerluHitungUlang = true;
+                    rc.Catatan.Add("Penyesuaian kontrak " + b.Kontrak + " sudah dihapus; nilai agunan sistem baru diketahui setelah Hitung ulang grup.");
+                }
+            }
+
+            InfoLgd lgd = HitungInfoLgd(r);
+            bool adaCs = false;
+            foreach (var c in r.LgdCs) { PenyesuaianLgdCs t; if (pCs.TryGetValue(c.Rek.Trim(), out t)) { adaCs = true; break; } }
+            foreach (var t in pCs.Values) if (t.Jenis == "tambah") adaCs = true;
+            if (adaCs && lgd.Masalah != null)
+            {
+                rc.Catatan.Add("LGD CS tidak dihitung ulang: " + lgd.Masalah);
+                return rc;
+            }
+            if (!adaCs) return rc;
+
+            var adaRek = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var c in r.LgdCs)
+            {
+                adaRek.Add(c.Rek.Trim());
+                PenyesuaianLgdCs ov;
+                if (!pCs.TryGetValue(c.Rek.Trim(), out ov)) continue;
+                if (ov.Jenis == "hapus")
+                {
+                    rc.Hapus.Add(c.Id);
+                    rc.Rincian.Add("LGD CS " + c.Rek + " dikecualikan (pokok " + Format(c.Pokok) + ")");
+                }
+                else if (ov.Jenis == "ubah")
+                {
+                    double agn = ov.NilaiAgunan ?? c.Agunan;
+                    double rec;
+                    if (ov.Recovery.HasValue) rec = ov.Recovery.Value;
+                    else if (Math.Abs(agn - c.Agunan) < 0.005) rec = c.Recovery;
+                    else if (lgd.Haircut.HasValue) rec = Math.Min(agn * (1 - lgd.Haircut.Value), c.Pokok);   // = prefill modul
+                    else
+                    {
+                        rc.PerluHitungUlang = true;
+                        rc.Catatan.Add("LGD CS " + c.Rek + ": haircut tidak diketahui, realisasi dari agunan baru dihitung saat Hitung ulang.");
+                        continue;
+                    }
+                    if (Math.Abs(agn - c.Agunan) >= 0.005 || Math.Abs(rec - c.Recovery) >= 0.005)
+                    {
+                        rc.Ubah.Add(new Dictionary<string, object> { { "id", c.Id }, { "agunan", agn }, { "recovery", rec } });
+                        rc.Rincian.Add("LGD CS " + c.Rek + ": agunan " + Format(c.Agunan) + " → " + Format(agn) +
+                                       ", realisasi " + Format(c.Recovery) + " → " + Format(rec));
+                    }
+                }
+            }
+            foreach (var ov in pCs.Values)
+            {
+                if (ov.Jenis != "tambah" || adaRek.Contains(ov.NoRek.Trim())) continue;
+                double pokok = ov.PokokAwal ?? 0, agn = ov.NilaiAgunan ?? 0;
+                if (pokok <= 0) continue;
+                double? rec = ov.Recovery;
+                if (!rec.HasValue && lgd.Haircut.HasValue) rec = Math.Min(agn * (1 - lgd.Haircut.Value), pokok);
+                if (!rec.HasValue)
+                {
+                    rc.PerluHitungUlang = true;
+                    rc.Catatan.Add("Baris manual " + ov.NoRek + ": haircut tidak diketahui, ditambahkan saat Hitung ulang.");
+                    continue;
+                }
+                rc.Tambah.Add(new Dictionary<string, object>
+                {
+                    { "rek", ov.NoRek }, { "nama", ov.Nama ?? "" }, { "pokok", pokok }, { "agunan", agn },
+                    { "thnSerah", ov.ThnDiserahkan ?? "" }, { "thnEks", ov.ThnEksekusi ?? "" }, { "recovery", rec.Value }
+                });
+                rc.Rincian.Add("LGD CS baris manual " + ov.NoRek + " ditambahkan (pokok " + Format(pokok) + ")");
+            }
+            return rc;
+        }
+
+        /// <summary>
+        /// Daftar grup periode ini yang versi tersimpannya belum sesuai dengan penyesuaian tersimpan, beserta
+        /// pratinjau angka sesudah diterapkan. Juga menandai versi hasil koreksi panel (angka sheet Excel berbeda).
+        /// </summary>
+        public static Dictionary<string, object> RencanaPeriode(string tanggal)
+        {
+            var hasil = new Dictionary<string, object> { { "tanggal", tanggal }, { "grup", new List<object>() } };
+            if (!Database.Ada || string.IsNullOrEmpty(tanggal)) return hasil;
+            var runs = new List<Run>();
+            string status = null;
+            using (var con = Database.Buka(false))
+            {
+                var ids = new List<long>();
+                using (var cmd = Database.Cmd(con,
+                    "SELECT g.id, p.status FROM run_grup g JOIN periode p ON p.id=g.periode_id WHERE p.tanggal=@p0 AND g.aktif=1 AND g.dihapus=0 ORDER BY g.kode_kc", tanggal))
+                using (var rd = cmd.ExecuteReader())
+                    while (rd.Read()) { ids.Add(rd.GetInt64(0)); status = rd.GetString(1); }
+                foreach (var id in ids) runs.Add(Muat(con, id));
+            }
+            hasil["statusPeriode"] = status;
+            if (runs.Count == 0) return hasil;
+            var pInd = Penyesuaian.MuatIndividu();
+            var pCs = Penyesuaian.MuatLgdCs();
+            string info;
+            hasil["bolehMenulis"] = Database.BolehMenulis(out info);
+
+            var daftar = (List<object>)hasil["grup"];
+            foreach (var r in runs)
+            {
+                var rc = BuatRencana(r, pInd, pCs);
+                var g = new Dictionary<string, object>
+                {
+                    { "runId", r.Id }, { "kodeKC", r.KodeKC }, { "versi", r.Versi },
+                    { "koreksiPanel", r.Ringkasan.ContainsKey("koreksi_dari_versi") },
+                    { "jumlah", rc.Jumlah }, { "rincian", rc.Rincian }, { "catatan", rc.Catatan }, { "perluHitungUlang", rc.PerluHitungUlang }
+                };
+                if (rc.Jumlah > 0 && status != "Final")
+                {
+                    try
+                    {
+                        var sim = Simpan(r.Id, rc.Individu, rc.LgdCs(), "simulasi", true);
+                        g["lama"] = sim["lama"]; g["baru"] = sim["baru"]; g["faktorKolektif"] = sim["faktorKolektif"];
+                    }
+                    catch (Exception ex) { g["galat"] = ex.Message; }
+                }
+                daftar.Add(g);
+            }
+            return hasil;
+        }
+
+        /// <summary>Terapkan penyesuaian tersimpan ke versi aktif grup-grup ini → versi baru per grup.</summary>
+        public static Dictionary<string, object> TerapkanPenyesuaian(IEnumerable runIds)
+        {
+            string info;
+            if (!Database.BolehMenulis(out info)) throw new InvalidOperationException(info);
+            var pInd = Penyesuaian.MuatIndividu();
+            var pCs = Penyesuaian.MuatLgdCs();
+            var hasil = new List<object>();
+            foreach (var o in runIds)
+            {
+                long id = Convert.ToInt64(o, CultureInfo.InvariantCulture);
+                Run r;
+                using (var con = Database.Buka(false)) r = Muat(con, id);
+                var rc = BuatRencana(r, pInd, pCs);
+                if (rc.Jumlah == 0)
+                {
+                    hasil.Add(new Dictionary<string, object> { { "kodeKC", r.KodeKC }, { "status", "tidak ada perubahan" } });
+                    continue;
+                }
+                string alasan = "Penerapan penyesuaian tersimpan: " + rc.Individu.Count + " kontrak Individu, " +
+                                (rc.Ubah.Count + rc.Hapus.Count + rc.Tambah.Count) + " baris LGD CS (sheet Excel tidak ikut berubah)";
+                var s = Simpan(id, rc.Individu, rc.LgdCs(), alasan);
+                hasil.Add(new Dictionary<string, object>
+                {
+                    { "kodeKC", r.KodeKC }, { "status", "tersimpan" }, { "versi", s["versi"] }, { "runId", s["runId"] },
+                    { "perluHitungUlang", rc.PerluHitungUlang }, { "catatan", rc.Catatan }
+                });
+            }
+            return new Dictionary<string, object> { { "hasil", hasil } };
         }
 
         // ================================================================
