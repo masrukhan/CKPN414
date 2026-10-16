@@ -53,20 +53,29 @@ namespace CKPNLibrary.Modules
             public string ColBaki2;   // kosong jika tidak ada
             public string ColAgn;
             public string ColJenis;   // jenis jaminan
+            public string ColIkatan;  // jenis pengikatan (Tahap 7e)
         }
 
+        // ----------------------------------------------------------------
+        // Spec kolom per jenis KC untuk modul LGD-CS
+        // Berbeda dengan SheetSpec di Models/ karena kolom berbeda
+        //
+        // Tahap 7e: ColAgn = Nilai Agunan/Jaminan; ColIkatan = Jenis Pengikatan.
+        //   Pengikatan 90 (tidak diikat) → nilai agunan baris tsb = 0.
+        //   KC0600–0800 AS/AK · KC0900 AQ/AI · KC1000 AY/AQ · KC1100 AX/AP
+        // ----------------------------------------------------------------
         private static KCSpec BuatSpec(string kcName)
         {
             switch (kcName.ToUpper())
             {
                 case "KC0600": case "KC0700": case "KC0800":
-                    return new KCSpec { ColKual="Y", ColBaki1="AC", ColBaki2="", ColAgn="AS", ColJenis="AJ" };
+                    return new KCSpec { ColKual="Y", ColBaki1="AC", ColBaki2="", ColAgn="AS", ColIkatan="AK", ColJenis="AJ" };
                 case "KC0900":
-                    return new KCSpec { ColKual="Y", ColBaki1="AC", ColBaki2="", ColAgn="AQ", ColJenis="AH" };
+                    return new KCSpec { ColKual="Y", ColBaki1="AC", ColBaki2="", ColAgn="AQ", ColIkatan="AI", ColJenis="AH" };
                 case "KC1000":
-                    return new KCSpec { ColKual="AE", ColBaki1="AG", ColBaki2="", ColAgn="AY", ColJenis="AP" };
+                    return new KCSpec { ColKual="AE", ColBaki1="AG", ColBaki2="", ColAgn="AY", ColIkatan="AQ", ColJenis="AP" };
                 case "KC1100":
-                    return new KCSpec { ColKual="AF", ColBaki1="AB", ColBaki2="AI", ColAgn="AS", ColJenis="AO" };
+                    return new KCSpec { ColKual="AF", ColBaki1="AB", ColBaki2="AI", ColAgn="AX", ColIkatan="AP", ColJenis="AO" };
                 default:
                     return null;
             }
@@ -307,8 +316,25 @@ namespace CKPNLibrary.Modules
 
         // ================================================================
         // BacaSheetKC: baca satu sheet KC dari workbook sumber
-        // Setara BacaSheetKC VBA — filter macet + jaminan fisik
+        // Filter: kualitas Macet (kol 5) + punya jaminan fisik.
+        //
+        // Tahap 7d — satu rekening dapat tercatat di beberapa baris (satu baris
+        // per agunan). Baris pertama rekening (baris bernama) memuat kualitas,
+        // baki debet, dan nama; baris berikutnya hanya data agunan (kualitas
+        // kosong). Karena itu data dikelompokkan dulu per nomor rekening:
+        //   - kualitas, baki, nama  : dari baris utama
+        //   - nilai agunan          : JUMLAH seluruh baris berjenis jaminan fisik
+        //                             (baris berpengikatan 90 bernilai 0)
+        //   - lolos filter fisik    : bila minimal satu baris berjenis jaminan fisik
         // ================================================================
+        private class RekBaris
+        {
+            public bool   AdaUtama;
+            public string Kual = "", Nama = "";
+            public double Baki, Agunan;
+            public bool   Fisik;
+        }
+
         private void BacaSheetKC(
             Excel.Workbook wbSrc, string kcName,
             Dictionary<string, RekMacet> dictY,
@@ -335,52 +361,76 @@ namespace CKPNLibrary.Modules
                                 : new double[namaArr.Length];
             double[] agnArr   = ExcelHelper.BacaKolomDouble(ws, spec.ColAgn,   5, lastRow);
             string[] jenisArr = ExcelHelper.BacaKolomString(ws, spec.ColJenis, 5, lastRow);
+            string[] ikatArr  = ExcelHelper.BacaKolomString(ws, spec.ColIkatan, 5, lastRow);
+
+            // ---- 1. Kelompokkan per nomor rekening (urutan kemunculan dipertahankan) ----
+            var urut  = new List<string>();
+            var grup  = new Dictionary<string, RekBaris>(StringComparer.OrdinalIgnoreCase);
 
             for (int i = 0; i < rekArr.Length; i++)
             {
-                string noRek = rekArr[i].Trim();
+                string noRek = (rekArr[i] ?? "").Trim();
                 if (string.IsNullOrEmpty(noRek)) continue;
+
+                RekBaris g;
+                if (!grup.TryGetValue(noRek, out g))
+                {
+                    g = new RekBaris();
+                    grup[noRek] = g;
+                    urut.Add(noRek);
+                }
+
+                string nama = (namaArr[i] ?? "").Trim();
+                string kual = (kualArr[i] ?? "").Trim();
+
+                // Baris utama = baris pertama yang bernama atau berkualitas
+                if (!g.AdaUtama && (nama.Length > 0 || kual.Length > 0))
+                {
+                    g.AdaUtama = true;
+                    g.Nama = nama;
+                    g.Kual = kual;
+                    g.Baki = !string.IsNullOrEmpty(spec.ColBaki2)
+                        ? baki1Arr[i] - baki2Arr[i]   // KC1100: AB - AI
+                        : baki1Arr[i];
+                }
+
+                // Agunan: jumlahkan seluruh baris berjenis jaminan fisik
+                if (IsJaminanFisik(jenisArr[i]))
+                {
+                    g.Fisik   = true;
+                    // Tahap 7e: pengikatan 90 (tidak diikat) → agunan baris ini = 0
+                    if (!ExcelHelper.TanpaIkatan(ikatArr[i]))
+                        g.Agunan += agnArr[i];
+                }
+            }
+
+            // ---- 2. Terapkan filter per rekening ----
+            foreach (string noRek in urut)
+            {
+                RekBaris g = grup[noRek];
 
                 nRekTotal++;
                 dictAllRekY.Add(noRek);   // HashSet auto-deduplicate
 
-                // Filter kualitas macet
-                if (!IsKualitasMacet(kualArr[i])) continue;
-
-                // Filter jaminan fisik
-                if (!IsJaminanFisik(jenisArr[i])) continue;
-
-                // Hitung baki debet
-                double baki = !string.IsNullOrEmpty(spec.ColBaki2)
-                    ? baki1Arr[i] - baki2Arr[i]   // KC1100: AB - AI
-                    : baki1Arr[i];
-
-                double agn  = agnArr[i];
-                string nama = namaArr[i].Trim();
+                if (!g.AdaUtama) continue;                 // baris agunan tanpa baris utama
+                if (!IsKualitasMacet(g.Kual)) continue;    // filter kualitas macet
+                if (!g.Fisik) continue;                    // filter jaminan fisik
 
                 nRekMacet++;
-                sumBaki += baki;
+                sumBaki += g.Baki;
 
                 // dictY per periode: simpan kemunculan pertama
                 if (!dictY.ContainsKey(noRek))
-                    dictY[noRek] = new RekMacet { Baki = baki, Agunan = agn, Nama = nama };
+                    dictY[noRek] = new RekMacet { Baki = g.Baki, Agunan = g.Agunan, Nama = g.Nama };
 
                 // dictAll lintas periode: simpan kemunculan paling awal
-                if (!dictAll.ContainsKey(noRek))
+                if (!dictAll.ContainsKey(noRek) || refYear < dictAll[noRek].ThnPertamaMacet)
                     dictAll[noRek] = new RekAll
                     {
                         ThnPertamaMacet = refYear,
-                        NilaiAgunanAwal = agn,
-                        BakiDebetAwal   = baki,
-                        Nama            = nama
-                    };
-                else if (refYear < dictAll[noRek].ThnPertamaMacet)
-                    dictAll[noRek] = new RekAll
-                    {
-                        ThnPertamaMacet = refYear,
-                        NilaiAgunanAwal = agn,
-                        BakiDebetAwal   = baki,
-                        Nama            = nama
+                        NilaiAgunanAwal = g.Agunan,
+                        BakiDebetAwal   = g.Baki,
+                        Nama            = g.Nama
                     };
             }
         }

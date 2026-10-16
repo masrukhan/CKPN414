@@ -131,7 +131,40 @@ namespace CKPNLibrary.Helpers
         }
 
         // ----------------------------------------------------------------
+        // Tahap 7e: jenis pengikatan 90 = tidak ada pengikatan.
+        // Menerima "90", "090", 90, "90 - Tidak diikat", dsb. (blok digit pertama).
+        // Kosong / kode lain → false (nilai agunan tetap dipakai).
+        // ----------------------------------------------------------------
+        public static bool TanpaIkatan(string kode)
+        {
+            if (string.IsNullOrEmpty(kode)) return false;
+            string digit = "";
+            foreach (char c in kode.Trim())
+            {
+                if (char.IsDigit(c)) digit += c;
+                else if (digit.Length > 0) break;
+            }
+            int v;
+            return digit.Length > 0 && int.TryParse(digit, out v) && v == 90;
+        }
+
+        // ----------------------------------------------------------------
         // Baca satu sheet KC → isi dictCIF
+        //
+        // Satu nomor kontrak dapat tercatat di beberapa baris: setiap baris
+        // mewakili satu agunan. Nilai agunan kontrak = jumlah seluruh baris
+        // dengan nomor kontrak (kolom J) yang sama.
+        //
+        // Nilai agunan per baris (Tahap 7e): kolom Nilai Agunan/Jaminan, KECUALI
+        // jenis pengikatan = 90 (tidak ada pengikatan) → 0.
+        //
+        //   KC0600–KC0900 (mode AF): setiap baris terisi lengkap → semua baris
+        //                            masuk, jaminan diakumulasi di TambahKontrak.
+        //   KC1000 / KC1100        : hanya baris pertama yang bernama (kolom D);
+        //                            baris agunan berikutnya tanpa nama. Baris
+        //                            tanpa nama TIDAK menambah OS/kontrak baru,
+        //                            tetapi nilai agunannya ditambahkan ke kontrak
+        //                            yang nomornya sama (Tahap 7d).
         // ----------------------------------------------------------------
         public static Dictionary<string, CIFData> BacaSheetKC(
             Excel.Workbook wb,
@@ -145,7 +178,10 @@ namespace CKPNLibrary.Helpers
 
             var ws      = (Excel.Worksheet)wb.Worksheets[spec.SheetName];
             int headerRow = spec.HeaderRow;
-            int lastRow   = CariLastRow(ws, spec.ColCIF, headerRow);
+            // Baris agunan bisa tanpa CIF → cari baris terakhir dari kolom CIF
+            // dan kolom nomor kontrak, ambil yang terbesar.
+            int lastRow   = Math.Max(CariLastRow(ws, spec.ColCIF,   headerRow),
+                                     CariLastRow(ws, spec.ColNoRek, headerRow));
             if (lastRow <= headerRow) return dictCIF;
 
             int dataStart = headerRow + 1;
@@ -155,6 +191,10 @@ namespace CKPNLibrary.Helpers
             string[] namaArr  = BacaKolomString(ws, spec.ColNama,     dataStart, lastRow);
             string[] noRekArr = BacaKolomString(ws, spec.ColNoRek,    dataStart, lastRow);
             double[] jamArr   = BacaKolomDouble(ws, spec.ColJaminan,  dataStart, lastRow);
+            // Tahap 7e: jenis pengikatan — kode 90 (tidak diikat) → nilai agunan = 0
+            string[] ikatArr  = string.IsNullOrEmpty(spec.ColIkatan)
+                                ? new string[n]
+                                : BacaKolomString(ws, spec.ColIkatan, dataStart, lastRow);
             double[] kualArr  = BacaKolomDouble(ws, spec.ColKualitas, dataStart, lastRow);
 
             double[] hariPokok = null, nomPokok = null, nomUjroh = null, hariBasil = null, nomBasil = null;
@@ -168,11 +208,9 @@ namespace CKPNLibrary.Helpers
                     break;
                 case SheetMode.Tunggakan1:
                     // KC1100 (ijarah): pokok (AL) + ujroh/imbalan (AM).
-                    // hariPokok (AK) dibaca demi konsistensi, tapi tidak dipakai
-                    // untuk osVal karena OS = seluruh tunggakan tanpa syarat hari.
                     hariPokok = BacaKolomDouble(ws, spec.ColHariPokok, dataStart, lastRow);
                     nomPokok  = BacaKolomDouble(ws, spec.ColNomPokok,  dataStart, lastRow);
-                    nomUjroh  = BacaKolomDouble(ws, spec.ColNomUjroh,  dataStart, lastRow);   // BARU: AM
+                    nomUjroh  = BacaKolomDouble(ws, spec.ColNomUjroh,  dataStart, lastRow);
                     break;
                 case SheetMode.Tunggakan2:
                     hariPokok = BacaKolomDouble(ws, spec.ColHariPokok, dataStart, lastRow);
@@ -182,57 +220,67 @@ namespace CKPNLibrary.Helpers
                     break;
             }
 
+            // Tahap 7d — kontrak yang sudah terbaca di sheet ini (kunci = no. kontrak),
+            // dan agunan dari baris tanpa nama yang muncul SEBELUM baris utamanya.
+            var kontrakSheet  = new Dictionary<string, KontrakData>(StringComparer.OrdinalIgnoreCase);
+            var agunanTertunda = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+
             for (int i = 0; i < n; i++)
             {
                 string cif       = (cifArr[i] ?? "").Trim();
                 string noKontrak = (noRekArr[i] ?? "").Trim();
-                if (string.IsNullOrEmpty(cif) || string.IsNullOrEmpty(noKontrak)) continue;
+                if (string.IsNullOrEmpty(noKontrak)) continue;
 
                 string nama     = (namaArr[i] ?? "").Trim();
                 double jaminan  = jamArr.Length  > i ? jamArr[i]  : 0;
+                if (ikatArr.Length > i && TanpaIkatan(ikatArr[i])) jaminan = 0;
                 int    kualitas = kualArr.Length > i ? (int)kualArr[i] : 0;
+
+                // ---- Baris agunan tambahan ----
+                // KC1000 / KC1100: baris tanpa nama; semua sheet: baris tanpa CIF.
+                // Nilai agunannya ditambahkan ke kontrak bernomor sama.
+                bool barisAgunan = string.IsNullOrEmpty(cif) ||
+                                   (spec.Mode != SheetMode.AF && string.IsNullOrEmpty(nama));
+                if (barisAgunan)
+                {
+                    if (jaminan == 0) continue;
+                    KontrakData kAda;
+                    if (kontrakSheet.TryGetValue(noKontrak, out kAda))
+                        kAda.Jaminan += jaminan;
+                    else
+                    {
+                        double t;
+                        agunanTertunda.TryGetValue(noKontrak, out t);
+                        agunanTertunda[noKontrak] = t + jaminan;
+                    }
+                    continue;
+                }
 
                 double osVal;
                 double hariVal;      // hari tunggakan untuk kriteria penurunan nilai 7–30 hari
-                bool   masuk;
 
                 switch (spec.Mode)
                 {
                     case SheetMode.AF:
-                        masuk   = true;
                         osVal   = osArr[i];
                         hariVal = hariAF[i];
                         break;
 
                     case SheetMode.Tunggakan1:
-                        // KC1100 — LOGIKA BARU (pokok + ujroh):
-                        // Filter: baris masuk jika nama debitur (kolom D) tidak kosong.
-                        // Baris tanpa nama = baris agunan/subtotal → di-skip.
-                        // OS/EAD = tunggakan pokok (AL) + tunggakan ujroh (AM),
-                        //          tidak peduli hari tunggakan.
-                        // Alasan: ujroh adalah kewajiban debitur yang ikut membentuk
-                        //         EAD; hari tunggakan gabungan ada di AK.
-                        masuk   = !string.IsNullOrEmpty(nama);
-                        osVal   = nomPokok[i] + nomUjroh[i];   // BARU: pokok (AL) + ujroh (AM)
-                        hariVal = hariPokok[i];                // AK (aging gabungan pokok & ujroh)
+                        // KC1100: OS/EAD = tunggakan pokok (AL) + tunggakan ujroh (AM); aging gabungan di AK.
+                        osVal   = nomPokok[i] + nomUjroh[i];
+                        hariVal = hariPokok[i];
                         break;
 
                     case SheetMode.Tunggakan2:
-                        // KC1000 — LOGIKA BARU:
-                        // Filter: baris masuk jika nama debitur (kolom D) tidak kosong.
-                        // Baris tanpa nama = baris agunan/subtotal → di-skip.
-                        // OS = nomPokok (AL) + nomBasil (AN), tidak peduli hari tunggakan.
-                        // Alasan: ada debitur dengan hari tunggakan = 0 tapi nominal > 0.
-                        masuk   = !string.IsNullOrEmpty(nama);
+                        // KC1000: OS = tunggakan pokok (AL) + tunggakan basil (AN); aging terlama.
                         osVal   = nomPokok[i] + nomBasil[i];
-                        hariVal = Math.Max(hariPokok[i], hariBasil[i]);   // aging terlama (pokok vs basil)
+                        hariVal = Math.Max(hariPokok[i], hariBasil[i]);
                         break;
 
                     default:
                         continue;
                 }
-
-                if (!masuk) continue;
 
                 if (!dictCIF.ContainsKey(cif))
                     dictCIF[cif] = new CIFData(cif, nama, spec.SheetName);
@@ -240,6 +288,18 @@ namespace CKPNLibrary.Helpers
                     dictCIF[cif].Nama = nama;
 
                 dictCIF[cif].TambahKontrak(noKontrak, osVal, jaminan, kualitas, spec.SheetName, hariVal);
+
+                KontrakData k = dictCIF[cif].Kontrak[noKontrak];
+                if (!kontrakSheet.ContainsKey(noKontrak))
+                {
+                    kontrakSheet[noKontrak] = k;
+                    double tunda;
+                    if (agunanTertunda.TryGetValue(noKontrak, out tunda))
+                    {
+                        k.Jaminan += tunda;
+                        agunanTertunda.Remove(noKontrak);
+                    }
+                }
             }
 
             return dictCIF;

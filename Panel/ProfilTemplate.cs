@@ -72,7 +72,7 @@ namespace CKPNLibrary.Panel
                 } },
             { "KC1100", new Peta
                 {
-                    Akad = "Ijarah", KolomNilaiDipakai = "AY",
+                    Akad = "Ijarah", KolomNilaiDipakai = "AX",
                     Kolom = Gabung(Identitas(), new[,] {
                         { "jenisAkad", "U" }, { "jenisAset", "V" }, { "waktuPerolehan", "W" }, { "hargaPerolehan", "X" }, { "periodeAngsuran", "AA" },
                         { "nilaiKontrak", "AB" }, { "sewaPerPeriode", "AC" }, { "imbalanAwal", "AD" }, { "imbalanKini", "AE" }, { "kualitas", "AF" },
@@ -210,7 +210,13 @@ namespace CKPNLibrary.Panel
                     if (v != null) ag[p.Agunan[i, 0]] = v;
                 }
                 object nilaiPakai = Sel(d, r, p.KolomNilaiDipakai);
-                ag["nilaiDipakai"] = nilaiPakai is double ? nilaiPakai : (object)0.0;
+                double nilaiDipakai = nilaiPakai is double ? (double)nilaiPakai : 0.0;
+                // Tahap 7e: pengikatan 90 (tidak diikat) → nilai agunan diakui 0
+                object ikat;
+                if (ag.TryGetValue("pengikatan", out ikat) &&
+                    CKPNLibrary.Helpers.ExcelHelper.TanpaIkatan(Convert.ToString(ikat)))
+                    nilaiDipakai = 0;
+                ag["nilaiDipakai"] = nilaiDipakai;
                 if (ag.ContainsKey("jenis") || ag.ContainsKey("nomor") || Angka(ag, "nilai") > 0)
                     ((List<object>)h["agunan"]).Add(ag);
             }

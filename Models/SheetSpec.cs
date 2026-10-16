@@ -41,6 +41,7 @@ namespace CKPNLibrary.Models
         public string ColNoRek        { get; set; }   // selalu "J"
         public string ColOS           { get; set; }   // OS / NomPokok
         public string ColJaminan      { get; set; }   // kolom nilai jaminan
+        public string ColIkatan       { get; set; }   // jenis pengikatan; kode 90 → nilai agunan 0 (Tahap 7e)
         public string ColKualitas     { get; set; }   // kolom kualitas
 
         // Khusus mode AF: kolom hari tunggakan
@@ -79,7 +80,8 @@ namespace CKPNLibrary.Models
                         ColOS      = "AC",
                         ColJaminan = "AS",
                         ColKualitas= "Y",
-                        ColHariAF  = "AF"
+                        ColHariAF  = "AF",
+                        ColIkatan = "AK"
                     };
 
                 case "KC0900":
@@ -91,7 +93,8 @@ namespace CKPNLibrary.Models
                         ColOS      = "AA",
                         ColJaminan = "AQ",
                         ColKualitas= "Y",
-                        ColHariAF  = "AF"
+                        ColHariAF  = "AF",
+                        ColIkatan = "AI"
                     };
 
                 case "KC1000":
@@ -106,7 +109,8 @@ namespace CKPNLibrary.Models
                         ColJaminan  = "AY",
                         ColKualitas = "AE",
                         ColHariPokok= "AK", ColNomPokok = "AL",
-                        ColHariBasil= "AM", ColNomBasil = "AN"
+                        ColHariBasil= "AM", ColNomBasil = "AN",
+                        ColIkatan = "AQ"
                     };
 
                 case "KC1100":
@@ -121,10 +125,11 @@ namespace CKPNLibrary.Models
                         SheetName   = sheetName,
                         Mode        = SheetMode.Tunggakan1,
                         ColCIF      = "C", ColNama = "D", ColNoRek = "J",
-                        ColJaminan  = "AY",
+                        ColJaminan  = "AX",
                         ColKualitas = "AF",
                         ColHariPokok= "AK", ColNomPokok = "AL",
-                        ColNomUjroh = "AM"
+                        ColNomUjroh = "AM",
+                        ColIkatan = "AP"
                     };
 
                 default:

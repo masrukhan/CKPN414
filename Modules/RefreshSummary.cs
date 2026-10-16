@@ -528,6 +528,15 @@ namespace CKPNLibrary.Modules
 
         // ================================================================
         // BAGIAN 2: PPKA OJK per KC -> H2:H8
+        //
+        // Tahap 7f — hanya BARIS DATA yang dijumlah, sama dengan perhitungan
+        // PPKA di panel (Overview Data):
+        //   - baris dihitung bila KUALITAS bernilai 1–5;
+        //   - khusus KC0500: bila kualitas kosong, baris tetap dihitung bila
+        //     JENIS CKPN dikenali (1/2/3/4 dalam bentuk angka, teks "1",
+        //     "1 (Individual)", "2 (Kolektif)", dsb.) dan bukan baris total.
+        // Dengan aturan ini baris JUMLAH/TOTAL di bawah tabel dan baris agunan
+        // tambahan (KC1000/KC1100, kualitas kosong) tidak ikut terjumlah.
         // ================================================================
         private void HitungPPKA(
             Excel.Workbook wbSrc, Excel.Worksheet wsSum,
@@ -535,13 +544,14 @@ namespace CKPNLibrary.Modules
         {
             var map = new[]
             {
-                new PpkaSpec("H2", "KC0500", "X",  4, false),   // selalu ikut
-                new PpkaSpec("H3", "KC0600", "AV", 5, true),
-                new PpkaSpec("H4", "KC0700", "AV", 5, true),
-                new PpkaSpec("H5", "KC0800", "AV", 5, true),
-                new PpkaSpec("H6", "KC0900", "AT", 5, true),
-                new PpkaSpec("H7", "KC1000", "BB", 5, true),
-                new PpkaSpec("H8", "KC1100", "BA", 5, true)
+                //            sel   sheet     PPKA  jenis kualitas baris  checkbox
+                new PpkaSpec("H2", "KC0500", "X",  "Y",  "R",  4, false),   // selalu ikut
+                new PpkaSpec("H3", "KC0600", "AV", "AW", "Y",  5, true),
+                new PpkaSpec("H4", "KC0700", "AV", "AW", "Y",  5, true),
+                new PpkaSpec("H5", "KC0800", "AV", "AW", "Y",  5, true),
+                new PpkaSpec("H6", "KC0900", "AT", "AU", "Y",  5, true),
+                new PpkaSpec("H7", "KC1000", "BB", "BC", "AE", 5, true),
+                new PpkaSpec("H8", "KC1100", "BA", "BB", "AF", 5, true)
             };
 
             foreach (var mp in map)
@@ -564,9 +574,14 @@ namespace CKPNLibrary.Modules
                     }
                     else
                     {
-                        nilai = JumlahKolomAngka(wsP, mp.Kolom, mp.BarisAwal);
-                        lapPPKA.AppendLine("  - " + mp.KC + " (" + mp.Kolom + mp.BarisAwal +
-                                           ":bawah) : " + nilai.ToString("#,##0"));
+                        int nBaris, nLewat; double nilaiLewat;
+                        nilai = JumlahPPKA(wsP, mp, out nBaris, out nLewat, out nilaiLewat);
+                        lapPPKA.Append("  - " + mp.KC + " : " + nilai.ToString("#,##0") +
+                                       " (" + nBaris + " baris)");
+                        if (nLewat > 0)
+                            lapPPKA.Append(" | dilewati " + nLewat + " baris non-data (" +
+                                           nilaiLewat.ToString("#,##0") + ")");
+                        lapPPKA.AppendLine();
                     }
                 }
 
@@ -574,17 +589,78 @@ namespace CKPNLibrary.Modules
             }
         }
 
+        /// <summary>
+        /// Jumlah PPKA satu sheet KC — hanya baris data (lihat aturan di HitungPPKA).
+        /// nLewat/nilaiLewat = baris berisi nilai PPKA yang TIDAK dihitung (untuk laporan).
+        /// </summary>
+        private static double JumlahPPKA(Excel.Worksheet ws, PpkaSpec mp,
+                                         out int nBaris, out int nLewat, out double nilaiLewat)
+        {
+            nBaris = 0; nLewat = 0; nilaiLewat = 0;
+
+            int lastRow = Math.Max(BarisTerakhir(ws, mp.Kolom), BarisTerakhir(ws, mp.KolomKualitas));
+            if (lastRow < mp.BarisAwal) return 0;
+
+            object[] arrVal  = BacaKolom(ws, mp.Kolom,         mp.BarisAwal, lastRow);
+            object[] arrJns  = BacaKolom(ws, mp.KolomJenis,    mp.BarisAwal, lastRow);
+            object[] arrKual = BacaKolom(ws, mp.KolomKualitas, mp.BarisAwal, lastRow);
+            object[] arrId   = BacaKolom(ws, "C",              mp.BarisAwal, lastRow);   // ID/CIF; "JUMLAH" di baris total
+
+            double total = 0;
+            for (int i = 0; i < arrVal.Length; i++)
+            {
+                double v = KeAngka(arrVal[i]);
+
+                bool barisData = KodeKualitas(i < arrKual.Length ? arrKual[i] : null) > 0;
+                if (!barisData && mp.KC == "KC0500")
+                {
+                    string id = (i < arrId.Length && arrId[i] != null) ? arrId[i].ToString().Trim().ToUpperInvariant() : "";
+                    bool barisTotal = id.StartsWith("JUMLAH") || id.StartsWith("TOTAL");
+                    barisData = !barisTotal && KodeJenisCKPN(i < arrJns.Length ? arrJns[i] : null) > 0;
+                }
+
+                if (barisData) { total += v; nBaris++; }
+                else if (v != 0) { nLewat++; nilaiLewat += v; }
+            }
+            return total;
+        }
+
+        /// <summary>Kualitas 1–5 dari angka atau teks ("1", "1 - Lancar", "01"); 0 bila bukan.</summary>
+        private static int KodeKualitas(object v)
+        {
+            if (v == null || v is DBNull) return 0;
+            if (v is double || v is int || v is long || v is decimal)
+            {
+                double d = Convert.ToDouble(v);
+                int k = (int)Math.Floor(d);
+                return (k >= 1 && k <= 5 && d == k) ? k : 0;
+            }
+            string s = v.ToString().Trim();
+            var digits = new StringBuilder();
+            foreach (char c in s)
+            {
+                if (char.IsDigit(c)) digits.Append(c);
+                else break;
+            }
+            int hasil;
+            return (digits.Length > 0 && int.TryParse(digits.ToString(), out hasil) && hasil >= 1 && hasil <= 5) ? hasil : 0;
+        }
+
         private class PpkaSpec
         {
             public string Sel;
             public string KC;
             public string Kolom;
+            public string KolomJenis;
+            public string KolomKualitas;
             public int    BarisAwal;
             public bool   PakaiCheckbox;
 
-            public PpkaSpec(string sel, string kc, string kolom, int barisAwal, bool pakaiCheckbox)
+            public PpkaSpec(string sel, string kc, string kolom, string kolomJenis, string kolomKualitas,
+                            int barisAwal, bool pakaiCheckbox)
             {
-                Sel = sel; KC = kc; Kolom = kolom; BarisAwal = barisAwal; PakaiCheckbox = pakaiCheckbox;
+                Sel = sel; KC = kc; Kolom = kolom; KolomJenis = kolomJenis; KolomKualitas = kolomKualitas;
+                BarisAwal = barisAwal; PakaiCheckbox = pakaiCheckbox;
             }
         }
 
