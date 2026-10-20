@@ -257,6 +257,11 @@ namespace CKPNLibrary.Panel
                         JalankanDiExcel(host, id, app => StatusPeriode(app, tglDiminta));
                         break;
 
+                    // ---- Tahap 7h: cocokkan angka Summary di Excel dengan versi tersimpan ----
+                    case "cocokExcel":
+                        JalankanDiExcel(host, id, app => LabelLingkup.Cocokkan(CariWorkbookAplikasi(app)));
+                        break;
+
                     case "hitungGrup":
                         string kodeGrup = Convert.ToString(Ambil(args, "kodeKC") ?? "");
                         bool terapkanG = !(Ambil(args, "terapkanPenyesuaian") is bool) || (bool)Ambil(args, "terapkanPenyesuaian");
@@ -733,7 +738,14 @@ namespace CKPNLibrary.Panel
             string tanggal = string.IsNullOrEmpty(tanggalDiminta) ? tanggalMaster : tanggalDiminta;
             if (string.IsNullOrEmpty(tanggal))
                 throw new InvalidOperationException("Tanggal laporan (Master!C4) belum diisi.");
-            return Periode.Status(tanggal, kodeKCMaster, tanggalMaster);
+            var hasil = Periode.Status(tanggal, kodeKCMaster, tanggalMaster);
+
+            // Tahap 7h: isi workbook (grup, periode, status terhadap database) + perbarui label di kertas kerja
+            var infoWb = LabelLingkup.Info(tanggalMaster, kodeKCMaster);
+            hasil["workbook"] = infoWb;
+            if (wb != null && !CKPNPipeline.SedangBerjalan && !BatchGrup.Aktif)
+                LabelLingkup.Tulis(wb, infoWb);
+            return hasil;
         }
 
         // ================================================================

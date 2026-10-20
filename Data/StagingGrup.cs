@@ -281,6 +281,8 @@ namespace CKPNLibrary.Data
                     tx.Commit();
                 }
                 Periode.CatatSimpan(r.TanggalStr, r.KodeKC, versi);
+                // Tahap 7h: label lingkup kertas kerja → "sama dengan versi tersimpan vN" (ikut ke snapshot)
+                CKPNLibrary.Panel.LabelLingkup.Tulis(wb, CKPNLibrary.Panel.LabelLingkup.Info(r.TanggalStr, r.KodeKC));
 
                 // ---- d. Snapshot .xlsx ----
                 string snapshot = null, pesanSnapshot = null;

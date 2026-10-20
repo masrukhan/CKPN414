@@ -30,6 +30,8 @@
     <div class="periode-global-sub">
       <span id="hp-sub">—</span>
       <span id="hp-status" class="chip-status" hidden></span>
+      <!-- Tahap 7h: grup yang sedang ada di kertas kerja Excel -->
+      <button id="chip-excel" class="chip-excel" type="button" hidden title="Isi kertas kerja Excel saat ini"></button>
     </div>
   </div>
 
@@ -181,6 +183,19 @@
         </div>
       </div>
 
+      <!-- Tahap 7h: isi kertas kerja Excel (hanya satu grup) vs database -->
+      <div class="kartu kartu-excel" id="kartu-excel" hidden>
+        <div class="baris-antara">
+          <div class="judul-kartu">Isi kertas kerja Excel</div>
+          <button id="btn-cocok-excel" class="tombol-sekunder" type="button" title="Bandingkan angka sheet Summary dengan versi tersimpan">Cocokkan</button>
+        </div>
+        <div id="ke-isi"></div>
+        <p class="teks-kecil catatan">Sheet Summary, A. CKPN - INDV, dan B. CKPN - KOL INDV hanya berisi <b>satu grup</b>, yaitu grup yang terakhir
+          dihitung. Panel menampilkan <b>semua grup</b>. Total bank dan usulan jurnal ada di <b>Tetapkan › Konsolidasi vs PPKA OJK</b>;
+          bagian E di sheet Summary bukan dasar jurnal.</p>
+        <div id="ke-hasil" role="status"></div>
+      </div>
+
       <!-- Tahap 7c: penyesuaian tersimpan yang belum masuk versi tersimpan -->
       <div class="kartu" id="kartu-pny-tertunda" hidden>
         <div class="judul-kartu">Penyesuaian belum masuk versi tersimpan</div>
@@ -204,6 +219,8 @@
           </div>
           <button id="btn-batch-opsi" class="tombol-sekunder" type="button">Hitung semua…</button>
         </div>
+        <!-- Tahap 7i: alasan tombol Hitung semua belum bisa dipakai -->
+        <div id="batch-alasan" class="alasan-nonaktif" hidden></div>
         <div id="kartu-batch-opsi" class="kotak-opsi" hidden>
           <p class="teks-kecil">Grup dihitung berurutan dengan cara yang sama seperti <b>Hitung grup ini</b> (centang KC, Top-N grup,
             penyesuaian tersimpan). Grup <b>tanpa temuan</b> selalu langsung disimpan. Temuan = kontrak Individu baru, agunan sistem berubah pada
@@ -463,7 +480,7 @@
         <div class="label-isian">Penandatangan</div>
         <div id="dr-ttd" class="ttd-isian"></div>
         <div class="baris-tombol jarak-atas">
-          <button id="dr-pratinjau" class="tombol-utama" type="button">Pratinjau</button>
+          <button id="dr-pratinjau" class="tombol-utama" type="button">Preview</button>
           <button id="dr-simpan" class="tombol-sekunder" type="button">Simpan isian</button>
         </div>
         <div id="dr-hasil" role="status"></div>
@@ -513,11 +530,11 @@
       <div class="kartu" id="kartu-memo-lgd" hidden></div>
     </div>
 
-    <!-- ---------- Pratinjau dokumen (A4) ---------- -->
+    <!-- ---------- Preview dokumen (A4) ---------- -->
     <div class="kartu" id="kartu-pratinjau" hidden>
       <div class="baris-antara">
         <div>
-          <div class="judul-kartu" id="pv-judul">Pratinjau</div>
+          <div class="judul-kartu" id="pv-judul">Preview</div>
           <div class="teks-kecil" id="pv-sub"></div>
         </div>
         <button id="pv-tutup" class="tautan" type="button">Tutup</button>
@@ -535,14 +552,15 @@
   <!-- ================= Analisis: Tren · Komposisi · Versi ================= -->
   <section id="tab-analisis" class="isi-tab" role="tabpanel" hidden>
     <div class="segmen sub-nav" role="group" aria-label="Bagian analisis" data-grup="analisis">
-      <button type="button" data-sub="tren" aria-pressed="true">Tren</button>
-      <button type="button" data-sub="rincian" aria-pressed="false">Rincian</button>
-      <button type="button" data-sub="komposisi" aria-pressed="false">Komposisi</button>
+      <!-- Tahap 7j: urutan mengikuti alur kerja — rincian hasil, versi, lalu tren & komposisi -->
+      <button type="button" data-sub="rincian" aria-pressed="true">Rincian</button>
       <button type="button" data-sub="versi" aria-pressed="false">Versi</button>
+      <button type="button" data-sub="tren" aria-pressed="false">Tren</button>
+      <button type="button" data-sub="komposisi" aria-pressed="false">Komposisi</button>
     </div>
 
     <!-- ---------- Analisis › Tren (riwayat antarperiode) ---------- -->
-    <div id="sub-tren" class="isi-sub">
+    <div id="sub-tren" class="isi-sub" hidden>
       <div class="kartu">
         <div class="baris-antara">
           <div class="judul-kartu">Riwayat antarperiode</div>
@@ -571,7 +589,7 @@
 
     <!-- ---------- Analisis › Komposisi (penjelasan CKPN + analisis PD) ---------- -->
     <!-- ---------- Analisis › Rincian (Tahap 6c): CKPN Individu vs Kolektif, EAD/PD/LGD ---------- -->
-    <div id="sub-rincian" class="isi-sub" hidden>
+    <div id="sub-rincian" class="isi-sub">
       <div class="kartu">
         <div class="baris-antara">
           <div class="judul-kartu">Individu vs Kolektif per grup</div>

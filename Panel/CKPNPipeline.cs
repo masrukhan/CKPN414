@@ -422,7 +422,11 @@ namespace CKPNLibrary.Panel
                 {
                     DateTime tgl;
                     if (ParameterMaster.BacaTanggalLaporan(_wbApp, out tgl))
+                    {
                         Data.Periode.CatatHitung(tgl.ToString("yyyy-MM-dd"), _param.KCList, Ids(_antrian));
+                        // Tahap 7h: label lingkup kertas kerja → "belum disimpan"
+                        LabelLingkup.Tulis(_wbApp, LabelLingkup.Info(tgl.ToString("yyyy-MM-dd"), _param.KCList));
+                    }
                 }
                 catch (Exception ex) { CatatanLog.Tulis("Catat konteks hitung gagal: " + ex.Message); }
             }

@@ -78,7 +78,7 @@
   //   Periode yang ditampilkan dipilih sekali di header (#pilih-periode) dan berlaku untuk semua tab.
   var tombolTab = document.querySelectorAll('.tab [role="tab"]');
   var tabAktif = "ringkasan", tabSebelum = "ringkasan";
-  var subAktif = { hitung: "pergrup", analisis: "tren", dokumen: "dokringkas" };
+  var subAktif = { hitung: "pergrup", analisis: "rincian", dokumen: "dokringkas" };
 
   // Periode terpilih untuk dimuat ulang: "" = ikuti Master!C4 (bila yang tampil memang periode Master)
   function periodeTerpilih() {
@@ -121,6 +121,7 @@
       nama = "ringkasan"; sub = null;
     }
     if (nama !== tabAktif && tabAktif !== "pengaturan") tabSebelum = tabAktif;
+    if (nama !== tabAktif && simpanSelesai && !$("kartu-simpan").hidden) tutupKartuSimpan();   // Tahap 7i
     tabAktif = nama;
     tombolTab.forEach(function (x) {
       var aktif = x.getAttribute("data-tab") === nama;
@@ -520,11 +521,55 @@
   ];
   var dataSimpan = null;
 
+  // Tahap 7i: setelah Simpan berhasil, kartu simpan otomatis ditutup (hitung mundur) atau saat pindah tab
+  var DETIK_KEMBALI = 8;
+  var simpanSelesai = false, timerKembali = null;
+
+  function hentikanHitungMundur() {
+    if (timerKembali) { clearInterval(timerKembali); timerKembali = null; }
+    var hm = $("simpan-mundur");
+    if (hm) hm.remove();
+  }
+
+  function tutupKartuSimpan() {
+    hentikanHitungMundur();
+    simpanSelesai = false;
+    tampil("kartu-simpan", false);
+    tampil("kartu-langkah", true);
+    segarkanPerGrup();
+  }
+
+  function mulaiHitungMundur(wadah) {
+    hentikanHitungMundur();
+    var sisa = DETIK_KEMBALI;
+    var box = el("div", "hitung-mundur");
+    box.id = "simpan-mundur";
+    var teksM = el("span", "", "");
+    var tetap = tombol("Tetap di sini", "tautan", function (e) { if (e) e.stopPropagation(); hentikanHitungMundur(); });
+    box.appendChild(teksM);
+    box.appendChild(tetap);
+    wadah.insertBefore(box, wadah.firstChild);
+    function tulis() { teksM.textContent = "Kembali ke daftar grup dalam " + sisa + " detik · "; }
+    tulis();
+    timerKembali = setInterval(function () {
+      sisa--;
+      if (sisa <= 0) { tutupKartuSimpan(); pindahTab("hitung", "pergrup"); return; }
+      tulis();
+    }, 1000);
+  }
+
+  // Interaksi lain di kartu (buka snapshot, gulir pesan) menghentikan hitung mundur
+  $("kartu-simpan").addEventListener("click", function (e) {
+    if (timerKembali && !(e.target && e.target.closest && e.target.closest("#simpan-mundur"))) hentikanHitungMundur();
+  });
+
   function bukaSimpan() {
     if (edisiLite()) { tampilkanBatasLite("simpan"); return; }   // Tahap 7
     tampil("kartu-hasil", false);
     tampil("kartu-langkah", false);
     tampil("kartu-simpan", true);
+    hentikanHitungMundur();
+    simpanSelesai = false;
     $("simpan-hasil").innerHTML = "";
     $("kartu-simpan").scrollIntoView({ block: "start" });
     periksaSimpan();
@@ -640,8 +685,7 @@
       var ke = el("button", "tombol-sekunder lebar", "Lihat grup berikutnya (Hitung › Per grup)");
       ke.type = "button";
       ke.addEventListener("click", function () {
-        tampil("kartu-simpan", false);
-        tampil("kartu-langkah", true);
+        tutupKartuSimpan();
         pindahTab("hitung", "pergrup");
       });
       box.appendChild(ke);
@@ -654,6 +698,8 @@
       w.appendChild(box);
       $("simpan-perubahan").innerHTML = "";
       $("simpan-catatan").value = "";
+      simpanSelesai = true;
+      mulaiHitungMundur(box);
     }).catch(function (e) {
       $("simpan-hasil").innerHTML = "";
       $("simpan-hasil").appendChild(el("div", "peringatan-box", "Gagal menyimpan: " + e.message));
@@ -663,11 +709,7 @@
 
   $("btn-ke-simpan").addEventListener("click", bukaSimpan);
   $("btn-simpan-periksa").addEventListener("click", periksaSimpan);
-  $("btn-simpan-batal").addEventListener("click", function () {
-    tampil("kartu-simpan", false);
-    tampil("kartu-langkah", true);
-    segarkanPerGrup();
-  });
+  $("btn-simpan-batal").addEventListener("click", tutupKartuSimpan);
 
   // =====================================================================
   // 6b. Hitung ulang Summary saja (setelah edit, sebelum simpan)
@@ -715,6 +757,7 @@
       gambarAlur(d);
       gambarBerikut(d);
       gambarGrup(d);
+      gambarExcel(d);
       gambarSyarat(d);
       gambarKonsolidasi(d);
       gambarVersi(d);
@@ -769,7 +812,7 @@
   function gambarHeader(d) {
     var final = d.status === "Final";
     var bagian = [];
-    if (d.periodeMaster) bagian.push(d.kodeKCMaster ? "Workbook " + d.kodeKCMaster : "Workbook: belum ada KC dicentang");
+    if (d.periodeMaster) { if (!d.kodeKCMaster) bagian.push("Workbook: belum ada KC dicentang"); }   // Tahap 7h: isi workbook di chip Excel
     else bagian.push("Hanya-baca · Master!C4 = " + (d.tanggalMaster ? tanggalPanjang(d.tanggalMaster) : "kosong"));
     bagian.push(d.metode ? NAMA_METODE[d.metode] : "metode belum ditetapkan");
     bagian.push(d.grupTersimpan + "/" + d.jumlahGrup + " grup tersimpan");
@@ -838,7 +881,9 @@
     var baris = [];
     if (final) baris.push("Periode dikunci oleh " + d.dikunciOleh + " · " + d.dikunciWaktu);
     if (!d.periodeMaster) baris.push("Hanya-baca: Master!C4 berisi periode " + (d.tanggalMaster || "—") + ". Ubah Master!C4 untuk menghitung periode ini.");
-    else baris.push("Workbook saat ini: " + (d.kodeKCMaster || "tidak ada KC dicentang"));
+    else baris.push("Workbook saat ini: " + (d.kodeKCMaster
+      ? (d.workbook && d.workbook.nama ? d.workbook.nama + " (" + d.kodeKCMaster + ")" : d.kodeKCMaster)
+      : "tidak ada KC dicentang"));
     if (!d.susunanDitetapkan) baris.push("Susunan grup tahun " + d.tahun + " belum ditetapkan — sementara ditampilkan satu grup per kode.");
     else if (d.susunanTahun !== d.tahun) baris.push("Memakai susunan grup tahun " + d.susunanTahun + ".");
     if (d.susunanDitetapkan) baris.push(d.metode
@@ -849,6 +894,130 @@
     if (!d.bolehMenulis) baris.push(d.infoPengirim);
     baris.forEach(function (b) { info.appendChild(el("div", "", b)); });
   }
+
+  // ---------------- Tahap 7i: kenapa "Hitung semua" belum bisa dipakai ----------------
+  function gambarAlasanBatch(d, final) {
+    var w = $("batch-alasan");
+    w.innerHTML = "";
+    var alasan = [];   // [teks, labelAksi, fungsiAksi]
+    if (!d.periodeMaster)
+      alasan.push(["Panel sedang menampilkan periode " + tanggalPanjang(d.tanggal) + ", sedangkan Master!C4 berisi " +
+        (d.tanggalMaster ? tanggalPanjang(d.tanggalMaster) : "tanggal kosong") + ". Hitung semua hanya untuk periode Master.",
+        d.tanggalMaster ? "Tampilkan periode Master" : null, function () { muatPeriode(d.tanggalMaster); }]);
+    if (final)
+      alasan.push(["Periode sudah ditetapkan (Final). Buka kunci periode di Tetapkan bila perlu menghitung ulang.",
+        "Buka Tetapkan", function () { pindahTab("tetapkan"); }]);
+    if (!d.bolehMenulis)
+      alasan.push([d.infoPengirim || "User ini hanya bisa melihat (tidak terdaftar sebagai pengirim).", null, null]);
+    if (!d.susunanDitetapkan)
+      alasan.push(["Susunan grup tahun " + d.tahun + " belum ditetapkan. Tetapkan grup segmen, Top-N, dan metode konsolidasi, lalu simpan.",
+        "Atur susunan grup", function () { bukaSusunan("susunan-metode"); }]);
+    if (batchAktif)
+      alasan.push(["Hitung semua grup sedang berjalan.", null, null]);
+
+    if (!alasan.length) {
+      // Tidak memblokir, tapi tetap diingatkan: konsolidasi butuh metode
+      if (d.susunanDitetapkan && !d.metode) {
+        w.appendChild(el("div", "teks-kecil", "Metode konsolidasi tahun " + d.tahun + " belum dipilih; Hitung semua tetap bisa, " +
+          "tetapi Konsolidasi vs PPKA baru tersedia setelah metode dipilih."));
+        var t0 = tombol("Pilih metode", "tautan", function () { bukaSusunan("susunan-metode"); });
+        w.appendChild(t0);
+        w.hidden = false;
+      } else w.hidden = true;
+      return;
+    }
+    w.appendChild(el("div", "judul-alasan", "Hitung semua belum bisa dipakai:"));
+    var ul = el("ul");
+    alasan.forEach(function (a) {
+      var li = el("li", "", a[0]);
+      if (a[1]) { li.appendChild(document.createTextNode(" ")); li.appendChild(tombol(a[1], "tautan", a[2])); }
+      ul.appendChild(li);
+    });
+    w.appendChild(ul);
+    w.hidden = false;
+  }
+
+  // ---------------- Tahap 7h: isi kertas kerja Excel (satu grup) vs database ----------------
+  var SINGKAT_EXCEL = { belum: "belum tercatat", dihitung: "belum disimpan", manual: "manual · belum disimpan" };
+
+  function teksSingkatExcel(wb) {
+    if (wb.status === "sama") return "sama dengan v" + wb.versiSheet;
+    if (wb.status === "beda") return "database v" + wb.versiDb + " ≠ sheet v" + wb.versiSheet;
+    return SINGKAT_EXCEL[wb.status] || wb.status;
+  }
+
+  function gambarExcel(d) {
+    var wb = d.workbook, chip = $("chip-excel"), kartu = $("kartu-excel");
+    if (!wb || !wb.kodeKC || !wb.tanggal) { chip.hidden = true; kartu.hidden = true; return; }
+    var nama = wb.nama || wb.kodeKC;
+    var bulan = NAMA_BULAN[+wb.tanggal.substr(5, 2) - 1] + " " + wb.tanggal.substr(0, 4);
+    chip.textContent = "Sheet Excel: " + nama + (d.tanggal !== wb.tanggal ? " · " + bulan : "") + " · " + teksSingkatExcel(wb);
+    chip.className = "chip-excel " + wb.status;
+    chip.title = "Isi kertas kerja Excel: " + nama + " (" + wb.kodeKC + ") · " + bulan + ". " + (wb.label || "") +
+      " Klik untuk detail dan pencocokan.";
+    chip.hidden = false;
+
+    kartu.hidden = false;
+    var w = $("ke-isi");
+    w.innerHTML = "";
+    var st = el("div", "ke-status");
+    st.appendChild(el("span", "ke-grup", nama));
+    st.appendChild(el("span", "teks-kecil", wb.kodeKC + " · " + bulan +
+      (d.tanggal !== wb.tanggal ? " · panel sedang menampilkan periode lain" : "")));
+    w.appendChild(st);
+    w.appendChild(el("div", "ke-label " + wb.status, wb.label || ""));
+    if (wb.status === "beda")
+      w.appendChild(el("div", "teks-kecil jarak-atas", "Agar sheet sama lagi dengan database, hitung ulang grup ini " +
+        "(penyesuaian tersimpan ikut diterapkan) lalu simpan."));
+    if (pesanCocok && pesanCocok.kodeKC === wb.kodeKC && pesanCocok.tanggal === wb.tanggal) gambarHasilCocok(pesanCocok.hasil);
+    else $("ke-hasil").innerHTML = "";
+  }
+
+  var pesanCocok = null;
+  function gambarHasilCocok(h) {
+    var w = $("ke-hasil");
+    w.innerHTML = "";
+    if (!h.adaVersi) {
+      w.appendChild(el("div", "teks-kecil jarak-atas", "Grup ini belum punya versi tersimpan untuk periode tersebut — belum ada yang bisa dicocokkan."));
+      return;
+    }
+    w.appendChild(el("div", "teks-kecil jarak-atas" + (h.jumlahBeda ? " kurang" : ""),
+      h.jumlahBeda ? h.jumlahBeda + " angka Summary berbeda dengan versi tersimpan." : "Semua angka Summary sama dengan versi tersimpan."));
+    var t = el("table", "tabel-cocok");
+    var hd = el("tr");
+    ["Angka", "Sheet Excel", "Database", "Selisih"].forEach(function (x) { hd.appendChild(el("th", "", x)); });
+    t.appendChild(hd);
+    h.baris.forEach(function (b) {
+      var tr = el("tr", b.sama ? "" : "beda");
+      var tdl = el("td", "", b.label);
+      tdl.title = "Summary!" + b.sel;
+      tr.appendChild(tdl);
+      tr.appendChild(el("td", "", rp(b.excel)));
+      tr.appendChild(el("td", "", rp(b.database)));
+      tr.appendChild(el("td", "", b.excel !== null && b.database !== null ? rp(b.excel - b.database) : "—"));
+      t.appendChild(tr);
+    });
+    var g = el("div", "gulir-x");
+    g.appendChild(t);
+    w.appendChild(g);
+  }
+
+  $("btn-cocok-excel").addEventListener("click", function () {
+    var b = this;
+    b.disabled = true;
+    $("ke-hasil").textContent = "Mencocokkan…";
+    panggil("cocokExcel", {}).then(function (h) {
+      pesanCocok = { kodeKC: h.info.kodeKC, tanggal: h.info.tanggal, hasil: h };
+      gambarHasilCocok(h);
+    }).catch(function (e) { $("ke-hasil").textContent = e.message; })
+      .then(function () { b.disabled = false; });
+  });
+
+  $("chip-excel").addEventListener("click", function () {
+    if (edisiLite()) return;   // edisi Lite: sub-tab Per grup tidak tersedia; detail cukup di tooltip
+    pindahTab("hitung", "pergrup");
+    setTimeout(function () { $("kartu-excel").scrollIntoView({ block: "start", behavior: "smooth" }); }, 50);
+  });
 
   // ---------------- Hitung › Per grup: baris grup ringkas yang bisa dibuka (Tahap 5f) ----------------
   var grupTerbuka = {};   // kodeKC → true/false (pilihan user dipertahankan saat daftar digambar ulang)
@@ -861,8 +1030,9 @@
     var bolehHitung = d.periodeMaster && !final;
     var bolehSemua = bolehHitung && d.bolehMenulis && d.susunanDitetapkan;
     $("btn-batch-opsi").disabled = !bolehSemua;
-    $("btn-batch-opsi").title = bolehSemua ? "" : "Tersedia untuk periode Master yang belum Final, setelah susunan grup ditetapkan, bagi user pengirim.";
+    $("btn-batch-opsi").title = bolehSemua ? "" : "Belum bisa dipakai — lihat keterangan di bawah tombol.";
     if (!bolehSemua) tampil("kartu-batch-opsi", false);
+    gambarAlasanBatch(d, final);
 
     var grup = d.grup || [];
     var nWb = grup.filter(function (g) { return g.diWorkbook; }).length;
@@ -1305,7 +1475,14 @@
       var tr = el("tr");
       var c1 = el("td");
       c1.appendChild(el("div", "", g.nama));
-      c1.appendChild(el("div", "teks-kecil", "v" + g.versi));
+      var ver = el("div", "teks-kecil", "v" + g.versi);
+      var wbk = statusP && statusP.workbook;   // Tahap 7h: grup yang sedang ada di sheet Excel
+      if (wbk && wbk.kodeKC === g.kodeKC && wbk.tanggal === k.tanggal) {
+        var tg = el("span", "tag-excel", "di sheet Excel");
+        tg.title = "Sheet Summary di Excel berisi grup ini. " + (wbk.label || "");
+        ver.appendChild(tg);
+      }
+      c1.appendChild(ver);
       tr.appendChild(c1);
       tr.appendChild(el("td", g.dipakai === "nf" ? "dipakai" : "", rp(g.nf)));
       tr.appendChild(el("td", g.dipakai === "mig" ? "dipakai" : "", rp(g.mig)));
@@ -3504,12 +3681,12 @@
   // 12. Dokumen (Tahap 6): ringkasan bulanan, memo CKPN Individu, memo LGD CS
   //   Data angka: versi grup aktif periode di header (dokumenData, statusPeriode, konsolidasi,
   //   overviewTersimpan, parameterAba). Isian petugas: tabel memo (simpanMemo).
-  //   Pratinjau A4 di panel → "Buat PDF & buka" (PrintToPdf di C#) atau "Cetak…" (window.print).
+  //   Preview A4 di panel → "Buat PDF & buka" (PrintToPdf di C#) atau "Cetak…" (window.print).
   // =====================================================================
   var dok = { tanggal: null, d: null, nomor: 0 };
   var mi = null;   // editor memo Individu aktif
   var ml = null;   // editor memo LGD CS aktif
-  var pv = null;   // pratinjau aktif { nama }
+  var pv = null;   // preview aktif { nama }
 
   var KET_PN = {
     npf: "NPF (kualitas 3–5)", kol2: "Kolektibilitas 2", restrukturisasi: "Restrukturisasi",
@@ -4032,7 +4209,7 @@
       aksi.appendChild(tombol("Simpan draf", "tombol-sekunder", function () { simpanInd("Draf"); }));
       aksi.appendChild(tombol("Tetapkan Final", "tombol-utama", function () { simpanInd("Final"); }));
     }
-    aksi.appendChild(tombol("Pratinjau", "tombol-sekunder", function () {
+    aksi.appendChild(tombol("Preview", "tombol-sekunder", function () {
       tampilkanPratinjau("Memo CKPN Individu · " + g.nama, "", [dokMemoInd(g, mi.isi, memoInd(mi.cif))], namaFileInd(g));
     }));
     w.appendChild(aksi);
@@ -4266,7 +4443,7 @@
       aksi.appendChild(tombol("Simpan draf", "tombol-sekunder", function () { simpanLgd("Draf"); }));
       aksi.appendChild(tombol("Tetapkan Final", "tombol-utama", function () { simpanLgd("Final"); }));
     }
-    aksi.appendChild(tombol("Pratinjau", "tombol-sekunder", function () {
+    aksi.appendChild(tombol("Preview", "tombol-sekunder", function () {
       tampilkanPratinjau("Memo LGD CS · " + (c.nama || c.rek), "", [dokMemoLgd(c, ml.isi, memoLgd(ml.rek))], namaFileLgd(c));
     }));
     w.appendChild(aksi);
@@ -4662,7 +4839,7 @@
   }
 
   // =====================================================================
-  // Pratinjau, PDF, cetak
+  // Preview, PDF, cetak
   // =====================================================================
   function tampilkanPratinjau(judul, sub, docs, namaFile) {
     var isi = $("pratinjau-isi");

@@ -33,13 +33,15 @@ namespace CKPNLibrary.Data
         // KONTEKS WORKBOOK (lokal per user): grup apa yang terakhir dihitung
         // di PC ini, dan apakah sudah disimpan.
         // =================================================================
-        public static void CatatHitung(string tanggal, string kodeKC, IEnumerable<string> langkah)
+        /// <param name="sumber">"panel" atau "manual" (tombol Master, Tahap 7h)</param>
+        public static void CatatHitung(string tanggal, string kodeKC, IEnumerable<string> langkah, string sumber = "panel")
         {
             var k = BacaKonteks() ?? new Dictionary<string, object>();
             k["tanggal"] = tanggal;
             k["kodeKC"] = kodeKC;
             k["waktuHitung"] = Database.Sekarang();
             k["langkah"] = new List<string>(langkah);
+            k["sumber"] = sumber;
             k["tersimpanVersi"] = null;
             k["waktuSimpan"] = null;
             SimpanKonteks(k);

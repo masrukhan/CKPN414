@@ -23,7 +23,7 @@ namespace CKPNLibrary
             {
                 var app = (Excel.Application)ExcelDnaUtil.Application;
                 if (!Protection.CekProteksi(app)) return;
-                sheetKCList = CKPNLibrary.Panel.Lisensi.KCEfektif(sheetKCList);   // Tahap 7b: Lite = seluruh KC0600–KC1100
+                sheetKCList = CKPNLibrary.Panel.Lisensi.KCEfektif(sheetKCList); CKPNLibrary.Panel.LabelLingkup.TandaiManual(app, sheetKCList);   // Tahap 7b: Lite = seluruh KC0600–KC1100
                 int    topN   = (int)topNDbl;
                 bool   npf    = flagNPF.Trim().Equals("Ya",    StringComparison.OrdinalIgnoreCase);
                 bool   kol2   = flagKol2.Trim().Equals("Ya",   StringComparison.OrdinalIgnoreCase);

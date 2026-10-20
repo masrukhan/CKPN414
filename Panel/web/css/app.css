@@ -458,7 +458,7 @@ details.kartu[open] > summary { margin-bottom: 8px; }
 .pilih-periode { width: 100%; border: none; background: transparent; font: inherit; font-size: 15px; font-weight: 600;
   color: var(--teks); padding: 3px 0; cursor: pointer; }
 .pilih-periode:focus-visible { outline: 2px solid var(--aksen); outline-offset: 1px; border-radius: 4px; }
-.periode-global-sub { display: flex; justify-content: space-between; align-items: center; gap: 8px;
+.periode-global-sub { display: flex; justify-content: space-between; align-items: center; gap: 4px 8px; flex-wrap: wrap;
   font-size: 12px; color: var(--teks-2); }
 .periode-global-sub #hp-sub { min-width: 0; overflow-wrap: anywhere; }
 .chip-status { font-size: 11px; padding: 1px 8px; border-radius: 999px; white-space: nowrap; flex-shrink: 0; }
@@ -692,3 +692,31 @@ button.baris-atur:focus-visible { outline: 2px solid var(--aksen); outline-offse
 .tabel-edisi caption { caption-side: bottom; text-align: left; padding-top: 4px; }
 #ls-detail dd { word-break: break-word; }
 .baris-atur:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ---------- Tahap 7h: isi kertas kerja Excel ---------- */
+.chip-excel { font: inherit; font-size: 11px; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--garis);
+  background: #F2F2F2; color: var(--teks-2); cursor: pointer; text-align: left; order: 9; max-width: 100%; }
+.chip-excel.sama { background: #E2EFDA; border-color: #C5DDB5; color: var(--sukses); }
+.chip-excel.dihitung, .chip-excel.manual, .chip-excel.beda { background: var(--peringatan-bg); border-color: #EBD3A6; color: var(--peringatan); }
+.ke-status { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; margin-top: 6px; }
+.ke-grup { font-weight: 600; font-size: 14px; }
+.ke-label { padding: 6px 10px; border-radius: 6px; margin-top: 6px; background: #F2F2F2; }
+.ke-label.sama { background: #E2EFDA; }
+.ke-label.dihitung, .ke-label.manual, .ke-label.beda { background: var(--peringatan-bg); color: var(--peringatan); }
+.tabel-cocok { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px; }
+.tabel-cocok th, .tabel-cocok td { padding: 4px 6px; border-bottom: 1px solid var(--garis); text-align: right; white-space: nowrap; }
+.tabel-cocok th:first-child, .tabel-cocok td:first-child { text-align: left; white-space: normal; min-width: 92px; }
+.tabel-cocok tr.beda td { color: var(--galat); font-weight: 600; }
+.tag-excel { display: inline-block; white-space: nowrap; font-size: 10.5px; padding: 0 6px; margin-left: 6px; border-radius: 999px;
+  background: #EEF0EE; color: var(--teks-2); vertical-align: middle; }
+
+/* ---------- Tahap 7i: tombol Hitung semua & kembali otomatis ---------- */
+.tombol-sekunder:disabled { opacity: .5; cursor: not-allowed; background: #F3F2EE; }
+.tombol-sekunder:disabled:hover { background: #F3F2EE; }
+.alasan-nonaktif { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: var(--peringatan-bg);
+  color: var(--peringatan); font-size: 12px; }
+.alasan-nonaktif .judul-alasan { font-weight: 600; margin-bottom: 2px; }
+.alasan-nonaktif ul { margin: 0; padding-left: 18px; }
+.alasan-nonaktif li { margin-top: 2px; }
+.alasan-nonaktif .tautan { font-size: 12px; }
+.hitung-mundur { font-size: 12px; color: var(--teks-2); margin-bottom: 6px; }
