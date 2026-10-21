@@ -83,6 +83,15 @@ namespace CKPNLibrary.Panel
         };
         private static string _alasanOverview;
 
+        /// <summary>
+        /// Tahap 8 (mode per kantor): salin file sumber dan buang baris kantor di luar grup (Master!H8), lalu
+        /// ganti path sumber langkah berikutnya dengan salinan itu. Modul perhitungan tidak berubah.
+        /// </summary>
+        private static readonly Langkah LangkahLingkup = new Langkah
+        {
+            Id = "lingkup", Nama = "Saring sumber per grup", SheetDitulis = "— (salinan file sumber di folder lokal)", Jalankan = JalankanLingkup
+        };
+
         /// <summary>Keputusan acuan pada MulaiGrup terakhir (untuk BatchGrup/panel); null = tidak relevan.</summary>
         public static string CatatanAcuan { get; private set; }
 
@@ -169,6 +178,25 @@ namespace CKPNLibrary.Panel
             string tolakLisensi = Lisensi.TolakHitung(p.KC);
             if (tolakLisensi != null) return tolakLisensi;
 
+            // Tahap 8: lingkup mode perhitungan. Mode akad → saringan Master!H8 dikosongkan (sisa mode lain).
+            // Mode kantor → seluruh KC0600–KC1100 dicentang; file sumber disaring per sandi kantor (langkah "lingkup").
+            try
+            {
+                bool berubah = false;
+                if (ModeHitung.Aktif.Utama)
+                {
+                    Excel.Worksheet mF = ParameterMaster.CariSheet(wb, "Master");
+                    if (ModeHitung.BacaFilterMentah(mF).Length > 0) { ModeHitung.BersihkanFilterBilaAkad(wb); berubah = true; }
+                }
+                else if (p.KC.Length != ModeHitung.SemuaKC.Length)
+                {
+                    ParameterMaster.SetKCDicentang(wb, ModeHitung.SemuaKC);
+                    berubah = true;
+                }
+                if (berubah) p = ParameterMaster.Baca(wb);
+            }
+            catch (Exception ex) { return "Lingkup mode " + ModeHitung.Aktif.NamaPendek + " gagal disiapkan di Master: " + PesanError(ex); }
+
             var pilih = new HashSet<string>(idDipilih ?? new string[0], StringComparer.OrdinalIgnoreCase);
             var antrian = new List<Langkah>();
             var masalah = new List<string>();
@@ -198,6 +226,14 @@ namespace CKPNLibrary.Panel
             }
             catch (Exception ex) { CatatanLog.Tulis("Cek snapshot overview gagal: " + PesanError(ex)); }
 
+            // Tahap 8: mode per kantor — saring sumber sebelum langkah hitung pertama (sesudah overview)
+            if (!ModeHitung.Aktif.Utama && FilterLingkup.Dari(app) != null &&
+                antrian.Exists(x => x.Id == "individu" || x.Id == "netflow" || x.Id == "migration" || x.Id == "lgdcs" || x.Id == "summary"))
+            {
+                int pos = antrian.Count > 0 && antrian[0].Id == "overview" ? 1 : 0;
+                antrian.Insert(pos, LangkahLingkup);
+            }
+
             _wbApp        = wb;
             _param        = p;
             _acuan        = acuan;
@@ -220,6 +256,7 @@ namespace CKPNLibrary.Panel
                 daftar.Add(new Dictionary<string, object> { { "id", l.Id }, { "nama", l.Nama } });
 
             CatatanLog.Tulis("=== RUN MULAI oleh " + Environment.UserName + " · periode " + p.BulanLaporan +
+                             " · mode " + ModeHitung.Aktif.Id + (ModeHitung.Aktif.Utama ? "" : " [" + p.KodeGrup + "]") +
                              " · KC " + p.KCList + " · langkah: " + string.Join(",", Ids(antrian)));
 
             // Log proses (Tahap 5): semua catatan modul selama run ini memakai id jalan yang sama
@@ -229,6 +266,8 @@ namespace CKPNLibrary.Panel
             var namaLangkah = new List<string>();
             foreach (var l in antrian) namaLangkah.Add(l.Nama);
             LogProses.Catat("Panel", "Jalan mulai", LogProses.Info, LogProses.R()
+                .Tambah("Mode", ModeHitung.Aktif.Nama)
+                .TambahBila(!ModeHitung.Aktif.Utama, "Lingkup", ModeHitung.LabelKode(p.KodeGrup))
                 .Tambah("KC", p.KCList)
                 .Tambah("Bulan laporan", p.BulanLaporan)
                 .Tambah("Langkah", string.Join(", ", namaLangkah.ToArray()))
@@ -238,6 +277,7 @@ namespace CKPNLibrary.Panel
             PanelBridge.Siarkan("runMulai", new Dictionary<string, object>
             {
                 { "langkah", daftar }, { "periode", p.BulanLaporan }, { "kc", p.KCList },
+                { "kodeGrup", p.KodeGrup }, { "labelKode", ModeHitung.LabelKode(p.KodeGrup) },
                 { "penyesuaian", terapkanPenyesuaian }
             });
 
@@ -368,8 +408,21 @@ namespace CKPNLibrary.Panel
             if (SedangBerjalan) return "Perhitungan lain sedang berjalan.";
             Excel.Workbook wb = PanelBridge.CariWorkbookAplikasi(app);
             if (wb == null) return "Workbook aplikasi CKPN tidak sedang terbuka.";
-            try { ParameterMaster.SetKCDicentang(wb, kodeKC.Split(',')); }
+
+            // Tahap 8: mode kantor — pastikan semua sandi kantor di template masuk susunan grup
+            // (mode jenis penggunaan: unit tetap 1–3 dan isian kosong → Konsumsi, cukup cek susunan)
+            ModeHitung.Mode mode = ModeHitung.Aktif;
+            if (!mode.Utama)
+            {
+                string tolakCakupan;
+                try { tolakCakupan = CekCakupanSandi(app, wb, kodeKC); }
+                catch (Exception ex) { tolakCakupan = "Cakupan grup tidak dapat diperiksa: " + PesanError(ex); }
+                if (tolakCakupan != null) return tolakCakupan;
+            }
+            try { ParameterMaster.SetKCDicentang(wb, ModeHitung.KCGrup(mode, kodeKC)); }
             catch (Exception ex) { return "Tidak dapat mengubah centang KC di Master: " + PesanError(ex); }
+            try { ModeHitung.TulisFilter(wb, mode, mode.Utama ? "" : kodeKC); }
+            catch (Exception ex) { return "Tidak dapat menulis lingkup grup ke Master!" + ModeHitung.SelFilter + ": " + PesanError(ex); }
 
             // Top-N debitur Individu mengikuti ketetapan grup di susunan tahunan (SOP) — ditulis ke Master!C10
             DateTime tgl;
@@ -413,6 +466,53 @@ namespace CKPNLibrary.Panel
                          (BatchGrup.Aktif ? "Panel · Semua grup · " : "Panel · Grup ") + grupLog, acuan);
         }
 
+        /// <summary>
+        /// Tahap 8 (mode kantor): tolak hitung grup bila ada sandi kantor di template periode ini yang tidak
+        /// masuk grup mana pun di susunan tahun tersebut, atau ada baris pembiayaan tanpa sandi kantor —
+        /// pembiayaan itu tidak akan masuk CKPN grup mana pun. Hasil pindai template di-cache per file.
+        /// </summary>
+        private static string CekCakupanSandi(Excel.Application app, Excel.Workbook wb, string kodeKC)
+        {
+            DateTime tgl;
+            if (!ParameterMaster.BacaTanggalLaporan(wb, out tgl)) return "Tanggal laporan (Master!C4) belum diisi.";
+            if (string.IsNullOrEmpty(ModeHitung.NormKode(ModeHitung.Aktif, kodeKC))) return "Grup tanpa " + ModeHitung.Aktif.NamaUnit + " tidak dapat dihitung.";
+            List<Data.Periode.Grup> susunan = null;
+            int sumber = 0;
+            if (Data.Database.Ada)
+                using (var con = Data.Database.Buka(false)) susunan = Data.Periode.Susunan(con, tgl.Year, out sumber);
+            if (susunan == null)
+                return "Susunan grup mode " + ModeHitung.Aktif.NamaPendek + " tahun " + tgl.Year +
+                       " belum ditetapkan. Atur di ⚙ Pengaturan › Susunan grup.";
+
+            var tercakup = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var g in susunan) foreach (var k in g.KodeKC.Split(',')) tercakup.Add(k);
+            if (ModeHitung.Aktif.Id != ModeHitung.Kantor)
+            {
+                var kurang = new List<string>();
+                for (int i = 0; i < ModeHitung.JenisPenggunaan.GetLength(0); i++)
+                    if (!tercakup.Contains(ModeHitung.JenisPenggunaan[i, 0])) kurang.Add(ModeHitung.JenisPenggunaan[i, 1]);
+                return kurang.Count == 0 ? null
+                    : "Jenis penggunaan " + string.Join(", ", kurang.ToArray()) + " belum masuk grup mana pun di susunan " + sumber + ".";
+            }
+            int kosong;
+            string path = ParameterMaster.BacaPathTemplate(wb);
+            var diTemplate = Data.SandiKantor.SandiTemplate(app, path, tgl.ToString("yyyy-MM-dd"), out kosong);
+            try { wb.Activate(); } catch { }
+            var luar = diTemplate.FindAll(x => !tercakup.Contains(x));
+            if (luar.Count == 0 && kosong == 0) return null;
+
+            var pesan = new List<string>();
+            if (luar.Count > 0)
+                pesan.Add("Sandi kantor " + string.Join(", ", luar.ToArray()) + " ada di template " + System.IO.Path.GetFileName(path) +
+                          " tetapi belum masuk grup mana pun di susunan " + sumber + ". Tambahkan ke susunan grup (⚙ Pengaturan) lalu hitung ulang.");
+            if (kosong > 0)
+                pesan.Add(kosong + " baris pembiayaan di template tidak memiliki sandi kantor (kolom B). Lengkapi template terlebih dahulu.");
+            LogProses.CatatPanel(tgl.ToString("yyyy-MM-dd"), "Mode per kantor", "Cakupan sandi kantor", LogProses.Gagal, LogProses.R()
+                .Tambah("Template", path).TambahBila(luar.Count > 0, "Sandi di luar susunan", string.Join(", ", luar.ToArray()))
+                .TambahBila(kosong > 0, "Baris tanpa sandi", kosong));
+            return string.Join("\n", pesan.ToArray());
+        }
+
         private static void Akhiri(Excel.Application app, string status, string error)
         {
             // Catat grup yang kini ada di workbook (dipakai tab Periode untuk status grup)
@@ -423,9 +523,9 @@ namespace CKPNLibrary.Panel
                     DateTime tgl;
                     if (ParameterMaster.BacaTanggalLaporan(_wbApp, out tgl))
                     {
-                        Data.Periode.CatatHitung(tgl.ToString("yyyy-MM-dd"), _param.KCList, Ids(_antrian));
+                        Data.Periode.CatatHitung(tgl.ToString("yyyy-MM-dd"), _param.KodeGrup, Ids(_antrian));
                         // Tahap 7h: label lingkup kertas kerja → "belum disimpan"
-                        LabelLingkup.Tulis(_wbApp, LabelLingkup.Info(tgl.ToString("yyyy-MM-dd"), _param.KCList));
+                        LabelLingkup.Tulis(_wbApp, LabelLingkup.Info(tgl.ToString("yyyy-MM-dd"), _param.KodeGrup));
                     }
                 }
                 catch (Exception ex) { CatatanLog.Tulis("Catat konteks hitung gagal: " + ex.Message); }
@@ -554,6 +654,23 @@ namespace CKPNLibrary.Panel
         private static void JalankanLgdCs(Excel.Application app, ParameterCKPN p)
         {
             new LGDCollateralShortfall(app).Hitung(p.LgdCs.FileConfigStr, p.LgdCs.Haircut, p.KCList);
+        }
+
+        private static void JalankanLingkup(Excel.Application app, ParameterCKPN p)
+        {
+            FilterLingkup f = FilterLingkup.Dari(app);
+            if (f == null) return;
+            var ids = new List<string>(Ids(_antrian));
+            var sw = Stopwatch.StartNew();
+            var ringkas = SumberLingkup.Siapkan(app, p, f, ids);
+            AktifkanWorkbookAplikasi();
+            LogProses.Catat("Mode " + ModeHitung.Aktif.NamaPendek.ToLowerInvariant(), "Saring sumber · " + f.Label, LogProses.OK, LogProses.R()
+                .Tambah("File", ringkas.Count == 0 ? "-" : string.Join("; ", ringkas.ToArray()))
+                .Tambah("Folder salinan", SumberLingkup.Folder)
+                .Tambah("Durasi", (sw.ElapsedMilliseconds / 1000.0).ToString("0.0", LogProses.Id) + " dtk")
+                .Tambah("Catatan", "Sheet KC0600–KC1100 disaring kolom " + f.Kolom + (f.ModeId == ModeHitung.Penggunaan
+                    ? " (baris agunan mengikuti kontraknya; kosong → Konsumsi)" : "") +
+                    "; KC0500 (ABA), KC2900, dan GB tidak diubah. LGD ER disaring lewat referensi hapus buku."));
         }
 
         private static void JalankanAcuan(Excel.Application app, ParameterCKPN p)

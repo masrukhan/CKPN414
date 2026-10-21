@@ -450,8 +450,8 @@ namespace CKPNLibrary.Data
         public static Dictionary<string, PenyesuaianIndividu> MuatIndividu()
         {
             var hasil = new Dictionary<string, PenyesuaianIndividu>(StringComparer.OrdinalIgnoreCase);
-            if (!Database.Ada) return hasil;
-            using (var con = Database.Buka(false))
+            if (!Database.AdaBersama) return hasil;   // Tahap 8: tabel bersama semua mode
+            using (var con = Database.BukaBersama(false))
             using (var cmd = Database.Cmd(con,
                 "SELECT no_kontrak, jaminan, biaya_jual, jaminan_sistem, alasan, pengguna, waktu, periode FROM penyesuaian_individu"))
             using (var rd = cmd.ExecuteReader())
@@ -475,8 +475,8 @@ namespace CKPNLibrary.Data
         public static Dictionary<string, PenyesuaianLgdCs> MuatLgdCs()
         {
             var hasil = new Dictionary<string, PenyesuaianLgdCs>(StringComparer.OrdinalIgnoreCase);
-            if (!Database.Ada) return hasil;
-            using (var con = Database.Buka(false))
+            if (!Database.AdaBersama) return hasil;   // Tahap 8: tabel bersama semua mode
+            using (var con = Database.BukaBersama(false))
             using (var cmd = Database.Cmd(con,
                 "SELECT no_rek, jenis, nilai_agunan, recovery, nama, pokok_awal, thn_diserahkan, thn_eksekusi, " +
                 "alasan, pengguna, waktu, periode FROM penyesuaian_lgdcs"))

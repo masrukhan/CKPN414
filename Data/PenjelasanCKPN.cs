@@ -37,7 +37,7 @@ namespace CKPNLibrary.Data
                 // diganti/diperbarui setelah snapshot disimpan (lihat StatusOverview).
                 string cap = CapTemplate(data.ContainsKey("pathTemplate") ? Convert.ToString(data["pathTemplate"]) : "");
                 if (cap != null) data["capTemplate"] = cap;
-                using (var con = Database.Buka(true))
+                using (var con = Database.BukaBersama(true))   // Tahap 8: overview bersama semua mode
                     Database.Exec(con,
                         "INSERT OR REPLACE INTO overview_periode(tanggal,data,sumber,pengguna,waktu) VALUES(@p0,@p1,@p2,@p3,@p4)",
                         tanggal, _json.Serialize(data), sumber ?? "", Environment.UserName, Database.Sekarang());
@@ -86,9 +86,9 @@ namespace CKPNLibrary.Data
         /// </summary>
         public static Dictionary<string, object> OverviewTersimpan(string tanggal)
         {
-            if (string.IsNullOrEmpty(tanggal) || !Database.Ada) return new Dictionary<string, object> { { "ada", false } };
+            if (string.IsNullOrEmpty(tanggal) || !Database.AdaBersama) return new Dictionary<string, object> { { "ada", false } };
             Dictionary<string, object> d;
-            using (var con = Database.Buka(false)) d = BacaOverview(con, tanggal);
+            using (var con = Database.BukaBersama(false)) d = BacaOverview(con, tanggal);
             if (d == null) return new Dictionary<string, object> { { "ada", false } };
             d["ada"] = true;
             d["templateBerubah"] = TemplateBerubah(d, d.ContainsKey("pathTemplate") ? Convert.ToString(d["pathTemplate"]) : "");
@@ -114,11 +114,11 @@ namespace CKPNLibrary.Data
             string info;
             if (string.IsNullOrEmpty(tanggal) || string.IsNullOrEmpty(pathTemplate) || !System.IO.File.Exists(pathTemplate)) return false;
             if (!Database.BolehMenulis(out info)) return false;
-            if (!Database.Ada) { alasan = "snapshot belum ada"; return true; }
+            if (!Database.AdaBersama) { alasan = "snapshot belum ada"; return true; }
             try
             {
                 Dictionary<string, object> d;
-                using (var con = Database.Buka(false)) d = BacaOverview(con, tanggal);
+                using (var con = Database.BukaBersama(false)) d = BacaOverview(con, tanggal);
                 if (d == null) { alasan = "snapshot belum ada"; return true; }
                 string pathLama = d.ContainsKey("pathTemplate") ? Convert.ToString(d["pathTemplate"]) : "";
                 if (!string.Equals(SafeFull(pathLama), SafeFull(pathTemplate), StringComparison.OrdinalIgnoreCase))

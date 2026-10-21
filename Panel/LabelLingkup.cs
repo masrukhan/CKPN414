@@ -39,6 +39,7 @@ namespace CKPNLibrary.Panel
         public const string SManual    = "manual";       // dihitung dari tombol Master, belum disimpan
         public const string SSama      = "sama";         // sama dengan versi aktif database
         public const string SBeda      = "beda";         // database sudah versi lain (koreksi / PC lain)
+        public const string SModeLain  = "mode-lain";    // Tahap 8: isi sheet hasil mode perhitungan lain
 
         // =================================================================
         // Info: grup di workbook + status terhadap database
@@ -51,6 +52,24 @@ namespace CKPNLibrary.Panel
                 { "status", SBelum }, { "versiSheet", null }, { "versiDb", null }, { "koreksiDb", false },
                 { "waktuHitung", null }, { "label", "" }
             };
+            // Tahap 8: mode perhitungan
+            ModeHitung.Mode mode = ModeHitung.Aktif;
+            h["mode"] = mode.Id; h["namaMode"] = mode.NamaPendek; h["modeUtama"] = mode.Utama;
+            h["labelKode"] = ModeHitung.LabelKode(mode, kodeKCMaster);
+            var kAwal = Periode.BacaKonteks();
+            if (kAwal != null && Periode.ModeKonteks(kAwal) != mode.Id && Convert.ToString(Ambil(kAwal, "tanggal")) == tanggalMaster &&
+                !string.IsNullOrEmpty(Convert.ToString(Ambil(kAwal, "kodeKC"))))
+            {
+                // Sheet masih berisi hasil mode lain (mis. baru ganti mode): jangan dibandingkan dengan database mode ini
+                var asal = ModeHitung.Cari(Periode.ModeKonteks(kAwal)) ?? ModeHitung.Utama;
+                h["kodeKC"] = Convert.ToString(Ambil(kAwal, "kodeKC"));
+                h["labelKode"] = ModeHitung.LabelKode(asal, (string)h["kodeKC"]);
+                h["status"] = SModeLain; h["modeSheet"] = asal.Id; h["namaModeSheet"] = asal.NamaPendek;
+                h["lite"] = EdisiLite();
+                h["menyeluruh"] = asal.Utama && SeluruhSegmen((string)h["kodeKC"]);
+                h["label"] = TeksStatus(h);
+                return h;
+            }
             if (string.IsNullOrEmpty(tanggalMaster) || string.IsNullOrEmpty(kodeKCMaster)) return h;
 
             DateTime tgl;
@@ -83,8 +102,8 @@ namespace CKPNLibrary.Panel
             h["versiDb"] = versiDb;
             h["koreksiDb"] = koreksiDb;
 
-            // ---- konteks lokal: apa yang terakhir terjadi pada sheet di PC ini ----
-            var k = Periode.BacaKonteks();
+            // ---- konteks lokal: apa yang terakhir terjadi pada sheet di PC ini (mode yang sama) ----
+            var k = Periode.BacaKonteksModeIni();
             bool cocok = k != null &&
                          Convert.ToString(Ambil(k, "tanggal")) == tanggalMaster &&
                          string.Equals(Convert.ToString(Ambil(k, "kodeKC")), kodeKCMaster, StringComparison.OrdinalIgnoreCase);
@@ -108,7 +127,11 @@ namespace CKPNLibrary.Panel
             }
 
             h["lite"] = EdisiLite();
-            h["menyeluruh"] = SeluruhSegmen(kodeKCMaster);
+            h["menyeluruh"] = mode.Utama && SeluruhSegmen(kodeKCMaster);
+            int thM = tgl.Year;
+            var resmi = ModeHitung.ModeResmi(thM);
+            h["simulasi"] = resmi.Mode != mode.Id;
+            h["namaResmi"] = (ModeHitung.Cari(resmi.Mode) ?? ModeHitung.Utama).NamaPendek;
             h["label"] = TeksStatus(h);
             return h;
         }
@@ -125,6 +148,9 @@ namespace CKPNLibrary.Panel
                 case SDihitung: return "Belum disimpan ke database" + (vd != null ? " (database masih v" + vd + ")" : "") + ".";
                 case SManual:   return "Dihitung dari tombol Master (manual), belum disimpan ke database.";
                 case SSama:     return "Sama dengan versi tersimpan v" + vs + ".";
+                case SModeLain:
+                    return "Isi sheet hasil mode " + Ambil(h, "namaModeSheet") + "; panel sedang mode " + Ambil(h, "namaMode") +
+                           ". Hitung ulang grup di mode ini sebelum menyimpan.";
                 case SBeda:
                     return "Database sudah v" + vd + ((bool)Ambil(h, "koreksiDb") ? " (hasil koreksi dari database)" : "") +
                            "; angka sheet ini v" + vs + ". Angka yang berlaku: versi database.";
@@ -147,7 +173,7 @@ namespace CKPNLibrary.Panel
                 if (!ParameterMaster.BacaTanggalLaporan(wb, out t)) return;
                 Excel.Worksheet m = ParameterMaster.CariSheet(wb, "Master");
                 if (m == null) return;
-                string kode = string.Join(",", ParameterMaster.BacaKCDicentang(m).ToArray());
+                string kode = ModeHitung.KodeGrupWorkbook(m);
                 Tulis(wb, Info(t.ToString("yyyy-MM-dd"), kode));
             }
             catch (Exception ex) { CatatanLog.Tulis("Label lingkup: " + ex.Message); }
@@ -162,6 +188,15 @@ namespace CKPNLibrary.Panel
             string grup = JudulGrup(info);
             string periode = Bulan(Convert.ToString(Ambil(info, "tanggal")));
             string st = Convert.ToString(Ambil(info, "label"));
+            // Tahap 8: mode selain akad diberi awalan nama mode; status mode lain → abu-abu
+            bool modeUtama = !(Ambil(info, "modeUtama") is bool) || (bool)Ambil(info, "modeUtama");
+            if (status == SModeLain)
+            {
+                warna = WarnaAbu;
+                modeUtama = Convert.ToString(Ambil(info, "modeSheet")) == ModeHitung.Akad;
+            }
+            string awalanMode = modeUtama ? "" : "MODE " + Convert.ToString(Ambil(info, status == SModeLain ? "namaModeSheet" : "namaMode")).ToUpperInvariant() + " · ";
+            bool simulasi = Ambil(info, "simulasi") is bool && (bool)Ambil(info, "simulasi") && status != SModeLain;
 
             bool lite = Ambil(info, "lite") is bool && (bool)Ambil(info, "lite");
             bool menyeluruh = Ambil(info, "menyeluruh") is bool && (bool)Ambil(info, "menyeluruh");
@@ -187,8 +222,10 @@ namespace CKPNLibrary.Panel
             {
                 rujukan = lite
                     ? "Edisi Lite: ini hasil lama satu grup. Hitung ulang untuk mendapatkan hasil seluruh segmen."
-                    : "Total seluruh grup & usulan jurnal: Panel › Tetapkan › Konsolidasi vs PPKA OJK.";
-                judulPpka = "PPKA per KC (KC grup ini + ABA)";
+                    : simulasi
+                        ? "Simulasi: mode resmi tahun ini " + Ambil(info, "namaResmi") + ". Total & jurnal resmi ada di mode resmi (Panel › Tetapkan)."
+                        : "Total seluruh grup & usulan jurnal: Panel › Tetapkan › Konsolidasi vs PPKA OJK.";
+                judulPpka = modeUtama ? "PPKA per KC (KC grup ini + ABA)" : "PPKA per KC (lingkup grup ini + ABA)";
                 judulE = "E. Perbandingan PPKA vs CKPN — HANYA GRUP INI (bukan dasar jurnal)";
                 teksCatatan =
                     "Catatan: bagian E hanya menghitung grup di atas. CKPN ABA (C26) ikut di Summary setiap grup, " +
@@ -196,8 +233,8 @@ namespace CKPNLibrary.Panel
                     "Panel › Tetapkan › Konsolidasi vs PPKA OJK.";
             }
 
-            string teksSum = (menyeluruh ? "" : "HANYA GRUP: ") + grup + " · " + periode + "\n" + st + "\n" + rujukan;
-            string teksBaris = (menyeluruh ? "" : "Grup: ") + grup + " · " + periode + " — " + st;
+            string teksSum = awalanMode + (menyeluruh ? "" : "HANYA GRUP: ") + grup + " · " + periode + "\n" + st + "\n" + rujukan;
+            string teksBaris = awalanMode + (menyeluruh ? "" : "Grup: ") + grup + " · " + periode + " — " + st;
 
             Pasang(wb, SheetSum,
                 ws => Teks(ws, "A2") == teksSum && Warna(ws, "A2") == warna && Teks(ws, "A28") == judulE &&
@@ -279,6 +316,18 @@ namespace CKPNLibrary.Panel
                 if (wb == null || !ParameterMaster.BacaTanggalLaporan(wb, out t)) return;
                 string kode = string.IsNullOrEmpty(sheetKCList) ? "" : string.Join(",", sheetKCList.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries));
                 if (kode.Length == 0) return;
+                // Tahap 8: mode selain akad — kunci grup = lingkup Master!H8 (boleh kosong = tanpa saringan)
+                if (!ModeHitung.Aktif.Utama)
+                {
+                    kode = ModeHitung.KodeGrupWorkbook(ParameterMaster.CariSheet(wb, "Master"));
+                    System.Windows.Forms.MessageBox.Show(
+                        "Panel CKPN sedang di mode " + ModeHitung.Aktif.Nama + ".\n\n" +
+                        "Tombol di sheet Master menghitung dari file sumber tanpa saringan grup, sehingga hasilnya " +
+                        "tidak dapat disimpan sebagai grup mode ini. Untuk mode ini, hitung grup dari panel (Hitung › Per grup).\n\n" +
+                        "Perhitungan tetap dilanjutkan.",
+                        "CKPN — mode " + ModeHitung.Aktif.NamaPendek,
+                        System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
+                }
                 Periode.CatatHitung(t.ToString("yyyy-MM-dd"), kode, new[] { "manual" }, "manual");
                 Tulis(wb, Info(t.ToString("yyyy-MM-dd"), kode));
             }
@@ -307,7 +356,7 @@ namespace CKPNLibrary.Panel
             if (!ParameterMaster.BacaTanggalLaporan(wb, out t)) throw new InvalidOperationException("Tanggal laporan (Master!C4) belum diisi.");
             string tanggal = t.ToString("yyyy-MM-dd");
             Excel.Worksheet m = ParameterMaster.CariSheet(wb, "Master");
-            string kode = m == null ? "" : string.Join(",", ParameterMaster.BacaKCDicentang(m).ToArray());
+            string kode = ModeHitung.KodeGrupWorkbook(m);
             var info = Info(tanggal, kode);
 
             Excel.Worksheet ws = ParameterMaster.CariSheet(wb, SheetSum);
@@ -366,7 +415,8 @@ namespace CKPNLibrary.Panel
         private static string JudulGrup(Dictionary<string, object> info)
         {
             string nama = Convert.ToString(Ambil(info, "nama"));
-            string kode = Convert.ToString(Ambil(info, "kodeKC"));
+            string kode = Convert.ToString(Ambil(info, "labelKode"));
+            if (string.IsNullOrEmpty(kode)) kode = Convert.ToString(Ambil(info, "kodeKC"));
             return string.IsNullOrEmpty(nama) ? kode : nama + " (" + kode + ")";
         }
 

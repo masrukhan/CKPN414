@@ -193,7 +193,7 @@ namespace CKPNLibrary.Panel
                                 DateTime tA;
                                 d["tanggal"] = ParameterMaster.BacaTanggalLaporan(wbA, out tA) ? tA.ToString("yyyy-MM-dd") : "";
                                 Excel.Worksheet mA = ParameterMaster.CariSheet(wbA, "Master");
-                                d["kodeKC"] = mA == null ? "" : string.Join(",", ParameterMaster.BacaKCDicentang(mA).ToArray());
+                                d["kodeKC"] = ModeHitung.KodeGrupWorkbook(mA);
                                 d["workbook"] = true;
                                 return d;
                             });
@@ -245,10 +245,70 @@ namespace CKPNLibrary.Panel
                             {
                                 { "ditemukan", true },
                                 { "tanggal", ParameterMaster.BacaTanggalLaporan(wbM, out tM) ? tM.ToString("yyyy-MM-dd") : "" },
-                                { "kodeKC", mM == null ? "" : string.Join(",", ParameterMaster.BacaKCDicentang(mM).ToArray()) },
+                                { "kodeKC", ModeHitung.KodeGrupWorkbook(mM) },
                                 { "topN", ParameterMaster.BacaTopN(wbM) }
                             };
                         });
+                        break;
+
+                    // ---- Tahap 8: mode perhitungan (per akad / per sandi kantor) ----
+                    case "infoMode":
+                        Balas(host, id, ModeHitung.Info(Convert.ToInt32(Ambil(args, "tahun") ?? DateTime.Today.Year)));
+                        break;
+
+                    case "pilihMode":
+                        string modeBaru = Convert.ToString(Ambil(args, "mode") ?? "");
+                        int tahunMode = Convert.ToInt32(Ambil(args, "tahun") ?? DateTime.Today.Year);
+                        JalankanDiExcel(host, id, app =>
+                        {
+                            ModeHitung.Pilih(modeBaru);
+                            // Saringan lingkup mode sebelumnya di Master!H8 dihapus: grup berikutnya menulisnya lagi
+                            Excel.Workbook wbMode = CariWorkbookAplikasi(app);
+                            if (wbMode != null)
+                                try { ModeHitung.TulisFilter(wbMode, ModeHitung.Utama, ""); }
+                                catch (Exception ex) { CatatanLog.Tulis("Kosongkan Master!" + ModeHitung.SelFilter + ": " + ex.Message); }
+                            return ModeHitung.Info(tahunMode);
+                        });
+                        break;
+
+                    case "perbandinganMode":
+                        Balas(host, id, PerbandinganMode.Data(Convert.ToString(Ambil(args, "tanggal") ?? "")));
+                        break;
+
+                    case "tetapkanModeResmi":
+                        Balas(host, id, ModeHitung.TetapkanResmi(Convert.ToInt32(Ambil(args, "tahun")),
+                            Convert.ToString(Ambil(args, "mode") ?? ""), Convert.ToString(Ambil(args, "dasar") ?? "")));
+                        break;
+
+                    case "pindaiSandiKantor":
+                        JalankanDiExcel(host, id, app =>
+                        {
+                            if (CKPNPipeline.SedangBerjalan || BatchGrup.Aktif)
+                                throw new InvalidOperationException("Perhitungan sedang berjalan. Coba lagi setelah selesai.");
+                            string infoTulis;
+                            if (!Database.BolehMenulis(out infoTulis)) throw new InvalidOperationException(infoTulis);
+                            Excel.Workbook wbS = CariWorkbookAplikasi(app);
+                            if (wbS == null) throw new InvalidOperationException("Workbook aplikasi CKPN tidak sedang terbuka.");
+                            DateTime tS;
+                            string tglS = ParameterMaster.BacaTanggalLaporan(wbS, out tS) ? tS.ToString("yyyy-MM-dd") : "";
+                            CKPNPipeline.MatikanGhostingSekali();
+                            var hasilPindai = SandiKantor.Pindai(app, ParameterMaster.BacaPathTemplate(wbS), tglS);
+                            try { wbS.Activate(); } catch { }
+                            SandiKantor.Simpan(hasilPindai);
+                            return new Dictionary<string, object>
+                            {
+                                { "unit", Periode.UnitSusunan() }, { "kosong", hasilPindai.Kosong },
+                                { "file", System.IO.Path.GetFileName(hasilPindai.File) }, { "tanggal", tglS }
+                            };
+                        });
+                        break;
+
+                    case "simpanNamaKantor":
+                        var namaK = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                        var nkMap = Ambil(args, "nama") as Dictionary<string, object>;
+                        if (nkMap != null) foreach (var kv in nkMap) namaK[kv.Key] = Convert.ToString(kv.Value);
+                        SandiKantor.SimpanNama(namaK);
+                        Balas(host, id, Periode.UnitSusunan());
                         break;
 
                     // ---- Tahap 3b: alur periode ----
@@ -438,12 +498,18 @@ namespace CKPNLibrary.Panel
 
                     // ---- Tahap 6d: referensi Kode KC rekening hapus buku KC2900 (LGD ER) ----
                     case "referensiKC":
-                        Balas(host, id, ReferensiKC.Data(GrupDariArgs(Ambil(args, "grup"))));
+                        Balas(host, id, ReferensiKC.Data(GrupDariArgs(Ambil(args, "grup")), UnitDariArgs(Ambil(args, "grup"))));
                         break;
 
                     case "simpanReferensiKC":
                         Balas(host, id, ReferensiKC.SimpanManual(Ambil(args, "item") as System.Collections.IList,
                                                                  Convert.ToString(Ambil(args, "alasan") ?? "")));
+                        break;
+
+                    // Tahap 8c: jenis penggunaan rekening hapus buku (isian manual)
+                    case "simpanReferensiGuna":
+                        Balas(host, id, ReferensiKC.SimpanManualGuna(Ambil(args, "item") as System.Collections.IList,
+                                                                     Convert.ToString(Ambil(args, "alasan") ?? "")));
                         break;
 
                     case "panjangReferensiKC":
@@ -593,6 +659,12 @@ namespace CKPNLibrary.Panel
             });
         }
 
+        private static object ModeAman()
+        {
+            try { return ModeHitung.Info(DateTime.Today.Year); }
+            catch (Exception ex) { CatatanLog.Tulis("Info mode gagal: " + ex.Message); return null; }
+        }
+
         private static object LisensiAman()
         {
             try { return Lisensi.InfoPanel(); }
@@ -600,6 +672,22 @@ namespace CKPNLibrary.Panel
         }
 
         /// <summary>[{nama, kc:[...]}] dari panel → pasangan nama grup + kode KC (Tahap 6d).</summary>
+        /// <summary>Tahap 8: nama grup → kode unit (sandi kantor) untuk status lingkup LGD ER mode per kantor.</summary>
+        private static Dictionary<string, string> UnitDariArgs(object v)
+        {
+            var hasil = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var daftar = v as System.Collections.IEnumerable;
+            if (daftar == null) return hasil;
+            foreach (var o in daftar)
+            {
+                var g = o as Dictionary<string, object>;
+                if (g == null) continue;
+                string unit = Convert.ToString(Ambil(g, "unit") ?? "");
+                if (unit.Length > 0) hasil[Convert.ToString(Ambil(g, "nama") ?? "")] = unit;
+            }
+            return hasil;
+        }
+
         private static List<KeyValuePair<string, string[]>> GrupDariArgs(object v)
         {
             var hasil = new List<KeyValuePair<string, string[]>>();
@@ -644,8 +732,9 @@ namespace CKPNLibrary.Panel
                 { "folderLibrary", AppPaths.FolderLibrary },
                 { "folderData",    AppPaths.FolderData },
                 { "fileLog",       CatatanLog.LokasiAktif },
-                { "databaseAda",   File.Exists(AppPaths.FileDatabase) },
-                { "fileDatabase",  AppPaths.FileDatabase },
+                { "databaseAda",   File.Exists(AppPaths.FileDatabaseMode) },
+                { "fileDatabase",  AppPaths.FileDatabaseMode },
+                { "mode",          ModeAman() },
                 { "user",          Environment.UserName },
                 { "bolehMenulis",  BolehMenulisAman() },
                 { "komputer",      Environment.MachineName }
@@ -707,7 +796,7 @@ namespace CKPNLibrary.Panel
             DateTime tglLap;
             string namaGrupMaster = null;
             int? topNTahun = ParameterMaster.BacaTanggalLaporan(wb, out tglLap)
-                ? Periode.TopNGrup(tglLap.Year, p.KCList, out namaGrupMaster) : null;
+                ? Periode.TopNGrup(tglLap.Year, p.KodeGrup, out namaGrupMaster) : null;
 
             return new Dictionary<string, object>
             {
@@ -716,6 +805,8 @@ namespace CKPNLibrary.Panel
                 { "tahun", tglLap == DateTime.MinValue ? 0 : tglLap.Year },
                 { "periode",  p.BulanLaporan },
                 { "kc",       p.KC },
+                { "kodeGrup", p.KodeGrup }, { "labelKode", ModeHitung.LabelKode(p.KodeGrup) },
+                { "mode",     ModeHitung.Aktif.Id },
                 { "langkah",  langkah },
                 { "berjalan", CKPNPipeline.SedangBerjalan }
             };
@@ -733,7 +824,7 @@ namespace CKPNLibrary.Panel
                 DateTime t;
                 if (ParameterMaster.BacaTanggalLaporan(wb, out t)) tanggalMaster = t.ToString("yyyy-MM-dd");
                 Excel.Worksheet m = ParameterMaster.CariSheet(wb, "Master");
-                if (m != null) kodeKCMaster = string.Join(",", ParameterMaster.BacaKCDicentang(m).ToArray());
+                if (m != null) kodeKCMaster = ModeHitung.KodeGrupWorkbook(m);   // Tahap 8: kunci grup menurut mode aktif
             }
             string tanggal = string.IsNullOrEmpty(tanggalDiminta) ? tanggalMaster : tanggalDiminta;
             if (string.IsNullOrEmpty(tanggal))

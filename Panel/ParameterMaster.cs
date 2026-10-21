@@ -75,6 +75,12 @@ namespace CKPNLibrary.Panel
         public string   KCList = "";               // "KC0600,KC0700"
         public string[] KC     = new string[0];
 
+        /// <summary>
+        /// Tahap 8: kunci grup menurut mode aktif — mode akad = KCList; mode kantor = sandi di Master!H8
+        /// ("001,002"; "" = tanpa saringan). Dipakai untuk konteks, label, dan Simpan grup.
+        /// </summary>
+        public string   KodeGrup = "";
+
         public ParamIndividu  Individu;
         public ParamNetFlow   NetFlow;
         public ParamMigration Migration;
@@ -124,6 +130,7 @@ namespace CKPNLibrary.Panel
             var kc = BacaKCDicentang(m);
             p.KC     = kc.ToArray();
             p.KCList = string.Join(",", p.KC);
+            p.KodeGrup = ModeHitung.KodeGrupWorkbook(m);
             if (kc.Count == 0)
                 foreach (var id in CKPNPipeline.IdLangkahHitung) p.Tambah(id, "Tidak ada sheet KC yang dicentang.");
 

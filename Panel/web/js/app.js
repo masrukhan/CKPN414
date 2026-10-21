@@ -582,7 +582,7 @@
     $("simpan-perubahan").innerHTML = "";
     panggil("periksaSimpan").then(function (d) {
       dataSimpan = d;
-      teks("simpan-info", d.periode + " · " + (d.namaGrup ? d.namaGrup + " (" + d.kodeKC + ")" : d.kodeKC) +
+      teks("simpan-info", d.periode + " · " + (d.namaGrup ? d.namaGrup + " (" + labelKode(d.kodeKC) + ")" : labelKode(d.kodeKC)) +
         " · akan disimpan sebagai versi " + d.versi +
         " · " + d.jumlahIndividu + " kontrak individu, " + d.jumlahLgdCs + " baris LGD CS");
       var pw = $("simpan-peringatan");
@@ -671,7 +671,7 @@
       w.innerHTML = "";
       var box = el("div", "hasil-simpan");
       segarkanPerGrup();
-      box.appendChild(el("div", "status-hasil ok", "Tersimpan · " + r.kodeKC + " versi " + r.versi));
+      box.appendChild(el("div", "status-hasil ok", "Tersimpan · " + labelKode(r.kodeKC) + " versi " + r.versi));
       box.appendChild(el("div", "teks-kecil",
         "CKPN Net Flow " + rp(r.nfTotal) + " · Migration " + rp(r.migTotal) + " · PPKA " + rp(r.ppkaTotal) +
         " · " + r.jumlahPerubahan + " perubahan penyesuaian"));
@@ -737,6 +737,18 @@
   // =====================================================================
   var statusP = null;   // hasil statusPeriode terakhir
 
+  // ---------------- Tahap 8: mode perhitungan (per akad / per sandi kantor) ----------------
+  var modeInfo = null;   // statusP.mode: aktif, resmi, simulasi, daftar mode, lite
+  function modeAkad() { return !modeInfo || modeInfo.aktif === "akad"; }
+  var NAMA_GUNA = { "1": "Modal Kerja", "2": "Investasi", "3": "Konsumsi" };
+  function modeId() { return modeInfo ? modeInfo.aktif : "akad"; }
+  function labelKode(k) {
+    if (!k) return k || "";
+    if (modeAkad()) return k;
+    if (modeId() === "penggunaan") return String(k).split(",").map(function (x) { return NAMA_GUNA[x] || x; }).join(", ");
+    return "sandi " + String(k).split(",").join(", ");
+  }
+
   var LABEL_STATUS = {
     "belum": "Belum dihitung",
     "dihitung": "Dihitung — belum disimpan",
@@ -751,6 +763,8 @@
     return panggil("statusPeriode", { tanggal: tanggal || "" }).then(function (d) {
       if (nomor !== nomorMuatPeriode) return;
       statusP = d;
+      modeInfo = d.mode || modeInfo;
+      gambarMode();
       muatAcuan();
       gambarPilihPeriode(d);
       gambarHeader(d);
@@ -812,7 +826,7 @@
   function gambarHeader(d) {
     var final = d.status === "Final";
     var bagian = [];
-    if (d.periodeMaster) { if (!d.kodeKCMaster) bagian.push("Workbook: belum ada KC dicentang"); }   // Tahap 7h: isi workbook di chip Excel
+    if (d.periodeMaster) { if (!d.kodeKCMaster && modeAkad()) bagian.push("Workbook: belum ada KC dicentang"); }   // Tahap 7h: isi workbook di chip Excel
     else bagian.push("Hanya-baca · Master!C4 = " + (d.tanggalMaster ? tanggalPanjang(d.tanggalMaster) : "kosong"));
     bagian.push(d.metode ? NAMA_METODE[d.metode] : "metode belum ditetapkan");
     bagian.push(d.grupTersimpan + "/" + d.jumlahGrup + " grup tersimpan");
@@ -882,8 +896,10 @@
     if (final) baris.push("Periode dikunci oleh " + d.dikunciOleh + " · " + d.dikunciWaktu);
     if (!d.periodeMaster) baris.push("Hanya-baca: Master!C4 berisi periode " + (d.tanggalMaster || "—") + ". Ubah Master!C4 untuk menghitung periode ini.");
     else baris.push("Workbook saat ini: " + (d.kodeKCMaster
-      ? (d.workbook && d.workbook.nama ? d.workbook.nama + " (" + d.kodeKCMaster + ")" : d.kodeKCMaster)
-      : "tidak ada KC dicentang"));
+      ? (d.workbook && d.workbook.nama ? d.workbook.nama + " (" + labelKode(d.kodeKCMaster) + ")" : labelKode(d.kodeKCMaster))
+      : modeAkad() ? "tidak ada KC dicentang" : "belum ada grup kantor yang dihitung"));
+    if (modeInfo && !modeAkad())
+      baris.push("Mode " + modeInfo.namaAktif + (modeInfo.simulasi ? " — simulasi (mode resmi " + d.tahun + ": " + modeInfo.namaResmi + ")" : " — mode resmi " + d.tahun) + ".");
     if (!d.susunanDitetapkan) baris.push("Susunan grup tahun " + d.tahun + " belum ditetapkan — sementara ditampilkan satu grup per kode.");
     else if (d.susunanTahun !== d.tahun) baris.push("Memakai susunan grup tahun " + d.susunanTahun + ".");
     if (d.susunanDitetapkan) baris.push(d.metode
@@ -938,7 +954,7 @@
   }
 
   // ---------------- Tahap 7h: isi kertas kerja Excel (satu grup) vs database ----------------
-  var SINGKAT_EXCEL = { belum: "belum tercatat", dihitung: "belum disimpan", manual: "manual · belum disimpan" };
+  var SINGKAT_EXCEL = { belum: "belum tercatat", dihitung: "belum disimpan", manual: "manual · belum disimpan", "mode-lain": "hasil mode lain" };
 
   function teksSingkatExcel(wb) {
     if (wb.status === "sama") return "sama dengan v" + wb.versiSheet;
@@ -949,11 +965,12 @@
   function gambarExcel(d) {
     var wb = d.workbook, chip = $("chip-excel"), kartu = $("kartu-excel");
     if (!wb || !wb.kodeKC || !wb.tanggal) { chip.hidden = true; kartu.hidden = true; return; }
-    var nama = wb.nama || wb.kodeKC;
+    var kodeTampil = wb.labelKode || wb.kodeKC;
+    var nama = wb.nama || kodeTampil;
     var bulan = NAMA_BULAN[+wb.tanggal.substr(5, 2) - 1] + " " + wb.tanggal.substr(0, 4);
     chip.textContent = "Sheet Excel: " + nama + (d.tanggal !== wb.tanggal ? " · " + bulan : "") + " · " + teksSingkatExcel(wb);
     chip.className = "chip-excel " + wb.status;
-    chip.title = "Isi kertas kerja Excel: " + nama + " (" + wb.kodeKC + ") · " + bulan + ". " + (wb.label || "") +
+    chip.title = "Isi kertas kerja Excel: " + nama + " (" + kodeTampil + ") · " + bulan + ". " + (wb.label || "") +
       " Klik untuk detail dan pencocokan.";
     chip.hidden = false;
 
@@ -962,7 +979,7 @@
     w.innerHTML = "";
     var st = el("div", "ke-status");
     st.appendChild(el("span", "ke-grup", nama));
-    st.appendChild(el("span", "teks-kecil", wb.kodeKC + " · " + bulan +
+    st.appendChild(el("span", "teks-kecil", kodeTampil + " · " + bulan +
       (d.tanggal !== wb.tanggal ? " · panel sedang menampilkan periode lain" : "")));
     w.appendChild(st);
     w.appendChild(el("div", "ke-label " + wb.status, wb.label || ""));
@@ -1051,7 +1068,8 @@
       var sum = el("summary");
       var kiri = el("span", "bg-kiri");
       kiri.appendChild(el("span", "nama-grup", g.nama));
-      kiri.appendChild(el("span", "teks-kecil", g.kc.join(", ") + (g.topN ? " · Top-N " + g.topN : " · Top-N belum ditetapkan") +
+      kiri.appendChild(el("span", "teks-kecil", (modeAkad() ? g.kc.join(", ") : g.labelKode || labelKode(g.kodeKC)) +
+        (g.topN ? " · Top-N " + g.topN : " · Top-N belum ditetapkan") +
         (g.diWorkbook ? " · di workbook" : "")));
       sum.appendChild(kiri);
       var kanan = el("span", "bg-kanan");
@@ -1263,6 +1281,90 @@
       ? "User Windows Anda: " + infoPing.user + " — " + (boleh ? "boleh menyimpan." : "belum terdaftar; tambahkan nama ini ke pengirim.txt agar bisa menyimpan.")
       : "";
   }
+  // ---------------- Tahap 8: mode perhitungan — chip header & ⚙ Pengaturan ----------------
+  function namaPendekMode(id) {
+    var x = ((modeInfo && modeInfo.daftar) || []).filter(function (d) { return d.id === id; })[0];
+    return x ? x.namaPendek : id;
+  }
+  function gambarMode() {
+    var m = modeInfo, chip = $("chip-mode");
+    if (!m) { chip.hidden = true; teks("pt-mode", "—"); return; }
+    var lainAda = (m.daftar || []).some(function (x) { return !x.utama && x.adaDatabase; });
+    chip.hidden = !(!m.lite && (m.aktif !== "akad" || m.resmi !== "akad" || lainAda));
+    chip.className = "chip-mode" + (m.simulasi ? " simulasi" : "");
+    chip.textContent = m.namaPendekAktif + (m.simulasi ? " · simulasi" : " · resmi");
+    chip.title = "Mode perhitungan: " + m.namaAktif + (m.simulasi
+      ? ". Mode resmi " + m.tahun + ": " + m.namaResmi + " — hasil mode ini hanya pembanding."
+      : ". Mode resmi tahun " + m.tahun + ".") + " Klik untuk melihat atau mengganti.";
+    teks("pt-mode", m.lite ? "Per akad (edisi Lite)" :
+      m.namaPendekAktif + (m.simulasi ? " · simulasi (resmi " + m.tahun + ": " + namaPendekMode(m.resmi) + ")" : " · resmi " + m.tahun));
+    if (!$("kartu-mode").hidden) isiKartuMode();
+  }
+  function bukaMode() {
+    if (tabAktif !== "pengaturan") pindahTab("pengaturan");
+    if (!modeInfo) return;
+    $("mode-pakai-hasil").innerHTML = "";
+    $("mode-resmi-hasil").innerHTML = "";
+    isiKartuMode();
+    tampil("kartu-mode", true);
+    $("kartu-mode").scrollIntoView({ block: "start" });
+  }
+  function isiKartuMode() {
+    var m = modeInfo, w = $("mode-pilihan");
+    w.innerHTML = "";
+    (m.daftar || []).forEach(function (x) {
+      var lab = el("label", "opsi opsi-mode");
+      var r = el("input");
+      r.type = "radio"; r.name = "mode-aktif"; r.value = x.id; r.checked = x.id === m.aktif;
+      r.disabled = m.lite && !x.utama;
+      lab.appendChild(r);
+      var sp = el("span");
+      sp.appendChild(el("b", "", x.nama + (x.id === m.resmi ? " · resmi " + m.tahun : "")));
+      sp.appendChild(el("span", "teks-kecil blok", x.keterangan + (x.adaDatabase ? "" : " Belum pernah dipakai.")));
+      lab.appendChild(sp);
+      w.appendChild(lab);
+    });
+    if (m.lite) w.appendChild(el("div", "teks-kecil", "Edisi Lite hanya menghitung per jenis akad. Mode lain tersedia di edisi Pro."));
+    $("btn-mode-pakai").disabled = !!m.lite;
+    teks("mode-resmi-judul", "Mode resmi tahun " + m.tahun);
+    teks("mode-resmi-info", m.resmiTahun
+      ? namaPendekMode(m.resmi) + " · " + (m.resmiTahun !== m.tahun ? "mengikuti penetapan " + m.resmiTahun
+                                                                     : "ditetapkan " + m.resmiWaktu + " oleh " + m.resmiPengguna) +
+        (m.resmiDasar ? " · dasar: " + m.resmiDasar : "")
+      : "Belum pernah ditetapkan — bawaan " + m.namaResmi + ".");
+    var sel = $("mode-resmi-pilih");
+    sel.innerHTML = "";
+    (m.daftar || []).forEach(function (x) { var o = el("option", "", x.nama); o.value = x.id; o.selected = x.id === m.resmi; sel.appendChild(o); });
+    tampil("mode-resmi-form", m.bolehMenulis && !m.lite);
+  }
+  $("btn-atur-mode").addEventListener("click", bukaMode);
+  $("chip-mode").addEventListener("click", bukaMode);
+  $("btn-mode-tutup").addEventListener("click", function () { tampil("kartu-mode", false); });
+  $("btn-mode-pakai").addEventListener("click", function () {
+    var r = document.querySelector('input[name="mode-aktif"]:checked');
+    if (!r || !modeInfo) return;
+    if (r.value === modeInfo.aktif) { pesanDi("mode-pakai-hasil", "Mode ini sudah aktif.", true); return; }
+    if (run || batchAktif) { pesanDi("mode-pakai-hasil", "Perhitungan sedang berjalan. Ganti mode setelah selesai.", false); return; }
+    var b = this;
+    b.disabled = true;
+    panggil("pilihMode", { mode: r.value, tahun: statusP ? statusP.tahun : new Date().getFullYear() }).then(function () {
+      window.location.reload();   // seluruh panel dimuat ulang dari database mode yang baru
+    }).catch(function (e) { pesanDi("mode-pakai-hasil", e.message, false); b.disabled = false; });
+  });
+  $("btn-mode-resmi").addEventListener("click", function () {
+    var mode = $("mode-resmi-pilih").value, dasar = $("mode-resmi-dasar").value;
+    if (!window.confirm("Tetapkan " + namaPendekMode(mode) + " sebagai mode resmi tahun " + modeInfo.tahun + "?\n" +
+                        "Penetapan Final dan jurnal tahun ini hanya dari mode tersebut. Perubahan dicatat di log aktivitas.")) return;
+    var b = this;
+    b.disabled = true;
+    panggil("tetapkanModeResmi", { tahun: modeInfo.tahun, mode: mode, dasar: dasar }).then(function (m) {
+      modeInfo = m;
+      pesanDi("mode-resmi-hasil", "Mode resmi tahun " + m.tahun + ": " + m.namaResmi + ".", true);
+      muatPeriode(statusP ? statusP.tanggal : "");
+    }).catch(function (e) { pesanDi("mode-resmi-hasil", e.message, false); })
+      .then(function () { b.disabled = false; });
+  });
+
   // ---------------- ⚙ Pengaturan › PD & LGD ABA (Tahap 5h) ----------------
   var infoAba = null;
   function persenAba(v) { return v === null || v === undefined ? "kosong" : (v * 100).toLocaleString("id-ID", { maximumFractionDigits: 4 }) + "%"; }
@@ -1370,7 +1472,7 @@
       var row = el("div", "baris-versi" + (v.dihapus ? " terhapus" : ""));
       var rg = v.ringkasan || {};
       var ket = el("div");
-      ket.appendChild(el("span", "", (v.kodeKC && terbuka ? v.kodeKC + " · " : "") + "v" + v.versi + (v.aktif ? " (aktif)" : "") +
+      ket.appendChild(el("span", "", (v.kodeKC && terbuka ? labelKode(v.kodeKC) + " · " : "") + "v" + v.versi + (v.aktif ? " (aktif)" : "") +
         " · NF " + rp(rg.nf_total) + " · Mig " + rp(rg.mig_total)));
       ket.appendChild(el("div", "teks-kecil", v.pengguna + " · " + v.waktu +
         (v.dihapus ? " · dihapus " + v.penggunaHapus + ": " + v.alasanHapus : (v.catatan ? " · " + v.catatan : ""))));
@@ -1426,6 +1528,7 @@
   }
 
   function gambarKonsolidasi(d) {
+    muatBandingMode(d);   // Tahap 8: tetap tampil walau mode aktif belum lengkap
     var w = $("konsolidasi-isi");
     w.innerHTML = "";
     var final = d.status === "Final";
@@ -1438,11 +1541,106 @@
     w.appendChild(el("div", "", "Memuat…"));
     panggil("konsolidasi", { tanggal: d.tanggal }).then(function (k) {
       w.innerHTML = "";
+      if (k.mode && k.mode.simulasi) {
+        var sim = el("div", "peringatan-box", "Simulasi — mode aktif " + k.mode.namaAktif + ", sedangkan mode resmi tahun " +
+          d.tahun + " adalah " + k.mode.namaResmi + ". Angka di bawah hanya pembanding; penetapan Final dan jurnal hanya dari mode resmi. ");
+        sim.appendChild(tombol("Mode perhitungan", "tautan", function () { bukaMode(); }));
+        w.appendChild(sim);
+      }
       gambarMetode(w, k);
       gambarTabelKonsolidasi(w, k);
       if (k.jurnal) gambarJurnal(w, k, d, final);
       gambarAksiKonsolidasi(w, k, d, final);
     }).catch(function (e) { w.textContent = e.message; });
+  }
+
+  // ---------------- Tahap 8: pembanding antarmode ----------------
+  function adaModeLain() {
+    return !!(modeInfo && !modeInfo.lite && (modeInfo.daftar || []).filter(function (x) { return x.adaDatabase; }).length > 1);
+  }
+  function muatBandingMode(d) {
+    var kartu = $("kartu-banding-mode");
+    if (!adaModeLain() || !d) { kartu.hidden = true; return; }
+    kartu.hidden = false;
+    var w = $("banding-mode-isi");
+    w.textContent = "Memuat…";
+    panggil("perbandinganMode", { tanggal: d.tanggal }).then(function (h) { gambarBandingMode(h); })
+      .catch(function (e) { w.textContent = e.message; });
+  }
+  $("btn-banding-mode").addEventListener("click", function () { muatBandingMode(statusP); });
+
+  function gambarBandingMode(h) {
+    var w = $("banding-mode-isi");
+    w.innerHTML = "";
+    // Kolom = mode (2–3), baris = angka → tetap terbaca di panel sempit
+    var mode = h.mode;
+    var resmi = mode.filter(function (m) { return m.resmi; })[0];
+    var t = el("table", "tabel-konsolidasi tabel-banding");
+    var hd = el("tr");
+    hd.appendChild(el("th", "", ""));
+    mode.forEach(function (m) {
+      var th = el("th", m.aktif ? "kolom-aktif" : "");
+      th.appendChild(el("span", "", m.namaPendek));
+      if (m.resmi) { th.appendChild(document.createElement("br")); th.appendChild(el("span", "chip-mini", "resmi")); }
+      hd.appendChild(th);
+    });
+    t.appendChild(hd);
+    function ada(m) { return m.adaDatabase && m.grupTersimpan !== undefined; }
+    var baris = [
+      ["Grup tersimpan", function (m) { return m.grupTersimpan + "/" + m.jumlahGrup + (m.status === "Final" ? " · Final" : ""); }],
+      ["CKPN Individu", function (m) { return jt(m.individu); }],
+      ["CKPN Kolektif", function (m) { return jt(m.kolektif); }],
+      ["CKPN ABA", function (m) { return jt(m.aba); }],
+      ["Total CKPN", function (m) { return m.ckpn === null ? "belum lengkap" : jt(m.ckpn); }, "total"],
+      ["PPKA OJK", function (m) { return jt(m.ppka); }],
+      ["CKPN − PPKA", function (m) { return m.ckpn === null ? "—" : jtTanda(m.ckpn - m.ppka); }]
+    ];
+    if (resmi && ada(resmi) && resmi.ckpn !== null)
+      baris.push(["Selisih vs mode resmi", function (m) {
+        if (m.resmi) return "—";
+        return m.ckpn === null ? "—" : jtTanda(m.ckpn - resmi.ckpn) +
+          (resmi.ckpn ? " (" + ((m.ckpn - resmi.ckpn) / resmi.ckpn * 100).toFixed(2).replace(".", ",") + "%)" : "");
+      }]);
+    baris.forEach(function (b) {
+      var tr = el("tr", b[2] || "");
+      tr.appendChild(el("td", "", b[0]));
+      mode.forEach(function (m) { tr.appendChild(el("td", m.aktif ? "kolom-aktif" : "", ada(m) ? b[1](m) : "—")); });
+      t.appendChild(tr);
+    });
+    var g = el("div", "gulir-x");
+    g.appendChild(t);
+    w.appendChild(g);
+    mode.forEach(function (m) {
+      if (!ada(m) && m.catatan) w.appendChild(el("div", "teks-kecil", m.namaPendek + ": " + m.catatan));
+    });
+    h.mode.forEach(function (m) {
+      if (m.catatan && m.grupTersimpan !== undefined) w.appendChild(el("div", "teks-kecil", m.namaPendek + ": " + m.catatan));
+    });
+    // Rincian per grup tiap mode (dapat dibuka)
+    h.mode.forEach(function (m) {
+      if (!m.grup || !m.grup.length) return;
+      var det = el("details", "jarak-atas");
+      det.appendChild(el("summary", "", "Rincian grup " + m.namaPendek + " (" + m.grup.length + ")"));
+      var tt = el("table", "tabel-konsolidasi");
+      var h2 = el("tr");
+      ["Grup", "Individu", "Kolektif", "CKPN", "PPKA"].forEach(function (x) { h2.appendChild(el("th", "", x)); });
+      tt.appendChild(h2);
+      m.grup.forEach(function (gr) {
+        var tr = el("tr");
+        var c0 = el("td", "", gr.nama);
+        c0.title = gr.labelKode || "";
+        tr.appendChild(c0);
+        tr.appendChild(el("td", "", jt(gr.ind)));
+        tr.appendChild(el("td", "", jt(gr.kol)));
+        tr.appendChild(el("td", "", gr.ckpn === null ? "—" : jt(gr.ckpn)));
+        tr.appendChild(el("td", "", jt(gr.ppka)));
+        tt.appendChild(tr);
+      });
+      var g2 = el("div", "gulir-x");
+      g2.appendChild(tt);
+      det.appendChild(g2);
+      w.appendChild(det);
+    });
   }
 
   function gambarMetode(w, k) {
@@ -1580,7 +1778,7 @@
     if (final) {
       w.appendChild(el("div", "teks-kecil jarak-atas", "Ditetapkan oleh " + d.dikunciOleh + " · " + d.dikunciWaktu +
         (d.catatanKunci ? " · " + d.catatanKunci : "")));
-      if (d.bolehMenulis) {
+      if (d.bolehMenulis && !(k.mode && k.mode.simulasi)) {
         w.appendChild(tombol("Buka kunci periode", "tombol-sekunder lebar", function () {
           var alasan = window.prompt("Alasan membuka kunci periode " + d.tanggal + ":");
           if (!alasan) return;
@@ -1591,6 +1789,7 @@
       return;
     }
     if (!d.bolehMenulis || !k.metode) return;
+    if (k.mode && k.mode.simulasi) return;   // Tahap 8: Final & jurnal hanya dari mode resmi
 
     var lab = el("label", "label-isian", "Catatan penetapan (opsional)");
     lab.setAttribute("for", "konsolidasi-catatan");
@@ -1630,20 +1829,31 @@
     b.addEventListener("click", function () { bukaSusunan(b.getAttribute("data-fokus")); });
   });
 
+  // Tahap 8: unit penyusun grup mengikuti mode — KC0600–KC1100 (per akad) atau sandi kantor (per kantor)
+  var KC_SEMUA = ["KC0600", "KC0700", "KC0800", "KC0900", "KC1000", "KC1100"];
+  function unitSusunan() {
+    var u = (statusP && statusP.unitSusunan) || [];
+    if (u.length || !modeAkad()) return u;
+    return KC_SEMUA.map(function (k) { return { kode: k, label: k }; });
+  }
+
   function isiEditorSusunan() {
-    teks("susunan-judul", "Susunan grup tahun " + statusP.tahun);
-    var w = $("susunan-isi");
-    w.innerHTML = "";
-    var nama = {};
-    (statusP.grup || []).forEach(function (g) { g.kc.forEach(function (k) { nama[k] = g.nama; }); });
-    ["KC0600", "KC0700", "KC0800", "KC0900", "KC1000", "KC1100"].forEach(function (kc) {
-      var lab = el("label", "kode", kc);
-      lab.setAttribute("for", "sg-" + kc);
-      var inp = el("input", "isian");
-      inp.type = "text"; inp.id = "sg-" + kc; inp.value = nama[kc] || kc;
-      inp.addEventListener("input", gambarTopNGrup);
-      w.appendChild(lab); w.appendChild(inp);
-    });
+    var akad = modeAkad();
+    teks("susunan-judul", "Susunan grup tahun " + statusP.tahun + (akad ? "" : " · " + modeInfo.namaAktif));
+    teks("susunan-pengantar", akad
+      ? "Beri nama grup untuk setiap kode segmen. Kode dengan nama grup yang sama dihitung bersama (PD & LGD gabungan). Berlaku untuk seluruh periode di tahun ini."
+      : "Beri nama grup untuk setiap sandi kantor (kolom B template APOLLO). Sandi dengan nama grup yang sama dihitung bersama: " +
+        "seluruh jenis akad KC0600–KC1100, PD & LGD gabungan. Kantor kecil boleh digabung. Sandi tanpa rekening boleh dikosongkan. " +
+        "Berlaku untuk seluruh periode di tahun ini.");
+    var guna = modeId() === "penggunaan";
+    if (guna) teks("susunan-pengantar", "Beri nama grup untuk setiap jenis penggunaan (kolom S template APOLLO). Jenis dengan nama grup " +
+      "yang sama dihitung bersama: seluruh jenis akad KC0600–KC1100, PD & LGD gabungan. Baris agunan mengikuti kontraknya; " +
+      "isian kosong dihitung sebagai Konsumsi. Berlaku untuk seluruh periode di tahun ini.");
+    $("btn-susunan-perkc").textContent = akad ? "Satu grup per kode" : guna ? "Satu grup per jenis" : "Satu grup per kantor";
+    tampil("susunan-pindai-baris", modeId() === "kantor");
+    $("btn-susunan-pindai").disabled = !statusP.bolehMenulis;
+    $("susunan-pindai-hasil").textContent = "";
+    gambarUnitSusunan();
     // nilai awal Top-N per nama grup: ketetapan tersimpan → Master!C10 → 10
     $("susunan-topn-grup").innerHTML = "";   // buang isian sesi sebelumnya
     topNIsian = {};
@@ -1657,17 +1867,68 @@
     $("btn-susunan-simpan").disabled = !statusP.bolehMenulis;
     tampil("kartu-susunan", true);
   }
+
+  function gambarUnitSusunan() {
+    var akad = modeAkad();
+    var w = $("susunan-isi");
+    w.innerHTML = "";
+    var nama = {};
+    if (statusP.susunanDitetapkan || akad)
+      (statusP.grup || []).forEach(function (g) { (g.unit || g.kc).forEach(function (k) { nama[k] = g.nama; }); });
+    var units = unitSusunan();
+    if (!units.length) {
+      w.appendChild(el("div", "teks-kecil kolom-penuh", "Belum ada sandi kantor. Klik \u201cPindai sandi kantor\u201d untuk membaca kolom B " +
+        "template APOLLO (Master!D14)."));
+      return;
+    }
+    units.forEach(function (u, i) {
+      var rek = u.rekening;
+      var lab = el("label", "kode", akad ? u.kode : u.wajib ? u.label : u.kode + (rek !== null && rek !== undefined ? " · " + rek + " rek" : ""));
+      lab.setAttribute("for", "sg-" + i);
+      if (!akad && u.rincian) {
+        var r = Object.keys(u.rincian).map(function (kc) { return kc + ": " + u.rincian[kc]; });
+        lab.title = (u.nama ? u.nama + " · " : "") + (r.length ? r.join(", ") : "tidak ada rekening di template terakhir") +
+          (u.tanggal ? " (template " + u.tanggal + ")" : "");
+      }
+      var inp = el("input", "isian");
+      inp.type = "text"; inp.id = "sg-" + i; inp.dataset.kode = u.kode;
+      inp.value = nama[u.kode] !== undefined ? nama[u.kode] : akad ? u.kode : u.wajib ? u.nama : (rek ? (u.nama || "Kantor " + u.kode) : "");
+      if (!akad && !rek && !u.wajib) inp.placeholder = "tidak ada rekening — boleh dikosongkan";
+      inp.addEventListener("input", gambarTopNGrup);
+      w.appendChild(lab); w.appendChild(inp);
+    });
+  }
+
   $("btn-susunan-perkc").addEventListener("click", function () {
-    ["KC0600", "KC0700", "KC0800", "KC0900", "KC1000", "KC1100"].forEach(function (kc) { $("sg-" + kc).value = kc; });
+    var akad = modeAkad();
+    $("susunan-isi").querySelectorAll("input[data-kode]").forEach(function (inp) {
+      var u = unitSusunan().filter(function (x) { return x.kode === inp.dataset.kode; })[0] || {};
+      inp.value = akad ? inp.dataset.kode : u.wajib ? u.nama : (u.rekening ? (u.nama || "Kantor " + inp.dataset.kode) : "");
+    });
     gambarTopNGrup();
+  });
+
+  $("btn-susunan-pindai").addEventListener("click", function () {
+    var b = this;
+    b.disabled = true;
+    teks("susunan-pindai-hasil", "Membaca kolom B sheet KC0600–KC1100 di template…");
+    panggil("pindaiSandiKantor", {}).then(function (r) {
+      statusP.unitSusunan = r.unit;
+      var ada = r.unit.filter(function (u) { return u.rekening > 0; }).length;
+      teks("susunan-pindai-hasil", ada + " sandi kantor dengan rekening di " + r.file + (r.tanggal ? " (" + tanggalPanjang(r.tanggal) + ")" : "") + "." +
+        (r.kosong ? " Perhatian: " + r.kosong + " baris pembiayaan tanpa sandi kantor — lengkapi template sebelum menghitung." : ""));
+      gambarUnitSusunan();
+      gambarTopNGrup();
+    }).catch(function (e) { teks("susunan-pindai-hasil", e.message); })
+      .then(function () { b.disabled = !statusP.bolehMenulis; });
   });
 
   // ---- Top-N per grup: daftar isian dibangun ulang setiap nama grup berubah ----
   var topNIsian = {};   // nama grup → Top-N yang sudah diketik (dipertahankan saat daftar dibangun ulang)
   function namaGrupSusunan() {
     var urut = [];
-    ["KC0600", "KC0700", "KC0800", "KC0900", "KC1000", "KC1100"].forEach(function (kc) {
-      var n = $("sg-" + kc).value.trim();
+    $("susunan-isi").querySelectorAll("input[data-kode]").forEach(function (inp) {
+      var n = inp.value.trim();
       if (n && urut.indexOf(n) < 0) urut.push(n);
     });
     return urut;
@@ -1690,7 +1951,7 @@
   $("btn-susunan-batal").addEventListener("click", function () { tampil("kartu-susunan", false); });
   $("btn-susunan-simpan").addEventListener("click", function () {
     var peta = {};
-    ["KC0600", "KC0700", "KC0800", "KC0900", "KC1000", "KC1100"].forEach(function (kc) { peta[kc] = $("sg-" + kc).value.trim(); });
+    $("susunan-isi").querySelectorAll("input[data-kode]").forEach(function (inp) { peta[inp.dataset.kode] = inp.value.trim(); });
     var m = document.querySelector('input[name="susunan-metode"]:checked');
     if (!m) {
       $("susunan-hasil").innerHTML = "";
@@ -2261,7 +2522,125 @@
     var log = $("ov-log");
     log.innerHTML = "";
     (d.log || []).forEach(function (x) { log.appendChild(el("div", "peringatan-box", x)); });
+    gambarOverviewKantor(d);
   }
+
+  // ---------------- Tahap 8b: portofolio per sandi lokasi kantor ----------------
+  // Grup kantor (mode per kantor, susunan ditetapkan): sandi → nama grup
+  function grupKantorPeta(mode) {
+    var peta = {};
+    if (modeId() !== (mode || "kantor") || !statusP || !statusP.susunanDitetapkan) return null;
+    (statusP.grup || []).forEach(function (g) { (g.unit || []).forEach(function (u) { peta[u] = g.nama; }); });
+    return peta;
+  }
+  function gabungKantor(list, peta) {
+    var per = {}, urut = [];
+    list.forEach(function (k) {
+      var nama = peta[k.kode] || "Di luar susunan";
+      if (!per[nama]) {
+        per[nama] = { kode: nama, ada: true, debitur: 0, os: [0, 0, 0, 0, 0], ead: [0, 0, 0, 0, 0], ppka: [0, 0, 0, 0, 0], sandi: [] };
+        urut.push(nama);
+      }
+      var g = per[nama];
+      g.debitur += k.debitur; g.sandi.push(k.kode);
+      for (var i = 0; i < 5; i++) { g.os[i] += k.os[i]; g.ead[i] += k.ead[i]; g.ppka[i] += k.ppka[i]; }
+    });
+    return urut.map(function (n) {
+      var g = per[n], s = function (a) { return a.reduce(function (x, y) { return x + y; }, 0); };
+      g.totalOS = s(g.os); g.totalEAD = s(g.ead); g.totalPPKA = s(g.ppka); g.selisih = g.totalEAD - g.totalOS;
+      g.npfNominal = g.os[2] + g.os[3] + g.os[4];
+      g.npf = g.totalOS > 0 ? g.npfNominal / g.totalOS : null;
+      return g;
+    });
+  }
+
+  // Kartu per unit (kantor / jenis penggunaan): baris per unit atau per grup mode, dengan rincian kualitas
+  var OV_UNIT = {
+    kantor: {
+      data: "kantor", wadah: "ov-kantor", pilih: "ov-kantor-tampil", judulKolom: "Kantor",
+      kosong: "Data per kantor belum ada di snapshot ini. Tekan \u201cMuat dari template\u201d untuk mengambilnya.",
+      label: function (s) { return s.kode === "(kosong)" ? "Tanpa sandi" : "Sandi " + s.kode + (s.nama ? " · " + s.nama : ""); },
+      sub: function (s) { return "sandi " + s.sandi.join(", "); },
+      catatan: "Sandi kantor dari kolom B sheet KC0600–KC1100."
+    },
+    penggunaan: {
+      data: "penggunaan", wadah: "ov-guna", pilih: "ov-guna-tampil", judulKolom: "Jenis penggunaan",
+      kosong: "Data per jenis penggunaan belum ada di snapshot ini. Tekan \u201cMuat dari template\u201d untuk mengambilnya.",
+      label: function (s) { return s.kode + " · " + (s.nama || NAMA_GUNA[s.kode] || s.kode); },
+      sub: function (s) { return s.sandi.map(function (x) { return NAMA_GUNA[x] || x; }).join(", "); },
+      catatan: "Jenis penggunaan dari kolom S sheet KC0600–KC1100; baris agunan mengikuti kontraknya, isian kosong dihitung sebagai Konsumsi."
+    }
+  };
+
+  function gambarOverviewKantor(d) { gambarOverviewUnit(d, "kantor"); gambarOverviewUnit(d, "penggunaan"); }
+
+  function gambarOverviewUnit(d, jenis) {
+    var c = OV_UNIT[jenis];
+    var w = $(c.wadah), pilih = $(c.pilih);
+    w.innerHTML = "";
+    var data = d[c.data];
+    if (!data) {
+      pilih.hidden = true;
+      w.appendChild(el("div", "", c.kosong));
+      return;
+    }
+    var peta = grupKantorPeta(jenis);
+    pilih.hidden = !peta;
+    var perGrup = !!peta && pilih.value === "grup";
+    var baris = perGrup ? gabungKantor(data, peta) : data;
+    var totOS = d.total.totalOS || 0;
+
+    var tb = el("table", "tabel-konsolidasi tabel-ov");
+    var h = el("tr");
+    [perGrup ? "Grup" : c.judulKolom, "OS", "Porsi", "EAD", "NPF"].forEach(function (x) { h.appendChild(el("th", "", x)); });
+    tb.appendChild(h);
+    baris.concat([d.total]).forEach(function (s) {
+      var total = s === d.total;
+      var tr = el("tr", total ? "total" : "baris-klik");
+      var c1 = el("td");
+      c1.appendChild(el("div", "", total ? "Total" : perGrup ? s.kode : c.label(s)));
+      var sub = total ? s.debitur + " debitur"
+        : perGrup ? c.sub(s) + " · " + s.debitur + " debitur"
+        : (peta && peta[s.kode] ? peta[s.kode] + " · " : "") + s.debitur + " debitur";
+      c1.appendChild(el("div", "teks-kecil", sub));
+      tr.appendChild(c1);
+      tr.appendChild(el("td", "", nilaiOv(s.totalOS)));
+      tr.appendChild(el("td", "", totOS ? (s.totalOS / totOS * 100).toFixed(1).replace(".", ",") + "%" : "—"));
+      tr.appendChild(el("td", "", nilaiOv(s.totalEAD)));
+      tr.appendChild(el("td", s.npf !== null && d.total.npf !== null && s.npf > d.total.npf ? "kurang" : "", persenOv(s.npf)));
+      tb.appendChild(tr);
+      if (total) return;
+
+      var trD = el("tr", "rinci");
+      trD.hidden = true;
+      var td = el("td");
+      td.colSpan = 5;
+      td.appendChild(tabelKualitas(s));
+      if (s.perKC) {
+        var kc = Object.keys(s.perKC).sort().map(function (k) { return k + " " + nilaiOv(s.perKC[k]); });
+        if (kc.length) td.appendChild(el("div", "teks-kecil jarak-atas", "OS per segmen: " + kc.join(" · ")));
+      }
+      trD.appendChild(td);
+      tb.appendChild(trD);
+      tr.tabIndex = 0;
+      tr.setAttribute("aria-expanded", "false");
+      function buka() {
+        trD.hidden = !trD.hidden;
+        tr.setAttribute("aria-expanded", trD.hidden ? "false" : "true");
+      }
+      tr.addEventListener("click", buka);
+      tr.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); buka(); } });
+    });
+    var g = el("div", "gulir-x");
+    g.appendChild(tb);
+    w.appendChild(g);
+    var cat = c.catatan + " Klik baris untuk rincian per kualitas dan OS per segmen. NPF yang lebih tinggi dari NPF bank ditandai merah.";
+    if (jenis === "penggunaan" && d.penggunaanCadangan)
+      cat += " " + d.penggunaanCadangan + " baris pembiayaan tanpa isian jenis penggunaan dihitung sebagai Konsumsi.";
+    w.appendChild(el("p", "teks-kecil catatan", cat));
+  }
+  $("ov-kantor-tampil").addEventListener("change", function () { if (dataOverview) gambarOverviewUnit(dataOverview, "kantor"); });
+  $("ov-guna-tampil").addEventListener("change", function () { if (dataOverview) gambarOverviewUnit(dataOverview, "penggunaan"); });
 
   function tabelKualitas(s) {
     var t = el("table", "tabel-kualitas");
@@ -2344,7 +2723,7 @@
       var kepala = el("div", "baris-antara");
       var kiri = el("div");
       kiri.appendChild(el("div", "nama-grup", g.nama));
-      kiri.appendChild(el("div", "teks-kecil", g.kodeKC + (g.topN ? " · Top-N " + g.topN : "")));
+      kiri.appendChild(el("div", "teks-kecil", labelKode(g.kodeKC) + (g.topN ? " · Top-N " + g.topN : "")));
       kepala.appendChild(kiri);
       kepala.appendChild(el("span", "status-grup", LABEL_BATCH.antre));
       li.appendChild(kepala);
@@ -2939,9 +3318,11 @@
       kc = g.kodeKC.split(",");
     }
     a.kc = kc;
-    if (ov && ov.segmen) {
+    // Tahap 8b/8c: grup mode per kantor / jenis penggunaan memakai overview per unit tersebut
+    var sumberOv = ov && (!grup || modeAkad()) ? ov.segmen : ov ? ov[modeId()] : null;
+    if (sumberOv && kc.length) {
       var os = 0, ead = 0, k25 = 0, npf = 0;
-      ov.segmen.forEach(function (s) {
+      sumberOv.forEach(function (s) {
         if (kc.indexOf(s.kode) < 0) return;
         os += s.totalOS || 0; ead += s.totalEAD || 0;
         k25 += (s.os[1] || 0) + (s.os[2] || 0) + (s.os[3] || 0) + (s.os[4] || 0);
@@ -3262,7 +3643,7 @@
   function gambarKoreksi() {
     var d = kr.d;
     teks("kr-judul", "Data " + (kr.nama || d.kodeKC) + " · v" + d.versi + (d.aktif ? "" : " (tidak aktif)"));
-    teks("kr-sub", tanggalPanjang(d.tanggal) + " · " + d.kodeKC + " · disimpan " + d.waktu + " oleh " + d.pengguna +
+    teks("kr-sub", tanggalPanjang(d.tanggal) + " · " + labelKode(d.kodeKC) + " · disimpan " + d.waktu + " oleh " + d.pengguna +
       (d.catatan ? " · " + d.catatan : ""));
     var tolak = $("kr-tolak");
     tolak.hidden = d.bolehKoreksi;
@@ -4507,12 +4888,17 @@
     $("dr-lamp-ind").checked = dr.lampiran.ind !== false;
     $("dr-lamp-lgd").checked = dr.lampiran.lgd !== false;
     $("dr-lamp-memo").checked = !!dr.lampiran.memo;
-    editorTtd($("dr-ttd"), dr.ttd, !bolehTulisDok());
-    $("dr-simpan").disabled = !bolehTulisDok();
+    // Tahap 8: ringkasan bulanan hanya disusun dari mode resmi; mode simulasi = preview saja
+    var simDok = !!(dok.d.mode && dok.d.mode.simulasi);
+    editorTtd($("dr-ttd"), dr.ttd, !bolehTulisDok() || simDok);
+    $("dr-simpan").disabled = !bolehTulisDok() || simDok;
     var st = $("dr-status");
     st.className = "status-grup " + (d && d.status === "Final" ? "tersimpan" : "dihitung");
     st.textContent = d && d.status === "Final" ? "Periode Final" : "Draf · periode terbuka";
     var w = $("dr-syarat"); w.innerHTML = "";
+    if (simDok) w.appendChild(el("div", "peringatan-box", "Simulasi — mode aktif " + dok.d.mode.namaAktif + "; mode resmi " +
+      dok.d.mode.tahun + " adalah " + dok.d.mode.namaResmi + ". Preview dapat dilihat (bertanda SIMULASI), tetapi isian ringkasan " +
+      "hanya disimpan dari mode resmi."));
     if (d && !d.siapKonsolidasi) w.appendChild(el("div", "peringatan-box", "Baru " + d.grupTersimpan + "/" + d.jumlahGrup +
       " grup tersimpan — ringkasan hanya memuat grup tersimpan dan konsolidasi belum lengkap."));
     if (ovStatus.tanggal === dok.tanggal && ovStatus.ada === false) w.appendChild(el("div", "peringatan-box", "Snapshot overview periode ini belum ada — bagian portofolio kosong."));
@@ -4750,9 +5136,12 @@
   // ---------------- Ringkasan bulanan ----------------
   function dokRingkasan(d, k, ov) {
     var met = d.metode || "nf", nm = NAMA_METODE[met] || met, final = d.status === "Final";
+    var md = d.mode || modeInfo, sim = !!(md && md.simulasi);   // Tahap 8
     var h = hal("dok-ringkasan");
     h.appendChild(kop("LAPORAN RINGKASAN PERHITUNGAN CKPN", "Sesuai PSAK 414 · Posisi " + tanggalPanjang(d.tanggal),
-      "No. CKPN-RKS/" + bulanDok(d.tanggal), final ? "" : "DRAF — periode belum ditetapkan (Final)"));
+      "No. CKPN-RKS/" + bulanDok(d.tanggal),
+      sim ? "SIMULASI — " + md.namaAktif + " (mode resmi " + d.tahun + ": " + md.namaResmi + "), bukan dasar pembukuan"
+          : final ? "" : "DRAF — periode belum ditetapkan (Final)"));
 
     // 1. Ikhtisar
     h.appendChild(judulBag("1. Ikhtisar"));
@@ -4760,6 +5149,7 @@
     h.appendChild(kv([
       ["Status periode", final ? "Final · ditetapkan " + d.dikunciOleh + " · " + d.dikunciWaktu : "Terbuka (" + d.grupTersimpan + "/" + d.jumlahGrup + " grup tersimpan)"],
       ["Metode konsolidasi " + d.tahun, d.metode ? nm + " + LGD weighted" : "belum ditetapkan"],
+      md && (sim || md.aktif !== "akad") ? ["Mode perhitungan", md.namaAktif + (sim ? " · simulasi" : " · mode resmi " + d.tahun)] : null,
       ["Total CKPN (metode + ABA)", k ? "Rp " + rp(k.total.ckpn) : "—"],
       ["PPKA OJK", k ? "Rp " + rp(k.total.ppka) : "—"],
       ["Selisih CKPN − PPKA", k && k.total.ckpn !== null ? (k.total.ckpn - k.total.ppka >= 0 ? "+" : "−") + "Rp " + rp(Math.abs(k.total.ckpn - k.total.ppka)) : "—"],
@@ -4771,11 +5161,30 @@
 
     // 2. Portofolio per KC
     if (ov) {
-      h.appendChild(judulBag("2. Portofolio per KC"));
+      h.appendChild(judulBag("2. Portofolio" + (ov.kantor || ov.penggunaan ? " per KC, kantor, dan jenis penggunaan" : " per KC")));
+      if (ov.kantor || ov.penggunaan) h.appendChild(d_("h3", "dok-subjudul", "Per KC"));
       h.appendChild(tabelDok(["KC", "Grup", "Debitur", "OS (Rp)", "EAD (Rp)", "NPF"],
-        ov.segmen.map(function (s) { return [s.kode, namaGrupKC(s.kode) || "—", s.ada ? fmt.format(s.debitur) : "—", rp(s.totalOS), rp(s.totalEAD), persenDok(s.npf)]; })
+        ov.segmen.map(function (s) { return [s.kode, modeAkad() ? (namaGrupKC(s.kode) || "—") : "lintas grup", s.ada ? fmt.format(s.debitur) : "—", rp(s.totalOS), rp(s.totalEAD), persenDok(s.npf)]; })
           .concat([{ kelas: "total", sel: ["Total", "", fmt.format(ov.total.debitur), rp(ov.total.totalOS), rp(ov.total.totalEAD), persenDok(ov.total.npf)] }]),
         { angka: [2, 3, 4, 5], kecil: true }));
+      // Tahap 8b/8c: portofolio per sandi kantor dan per jenis penggunaan
+      [["kantor", "Per kantor", "Kantor", function (s) { return s.kode === "(kosong)" ? "Tanpa sandi" : s.kode + (s.nama ? " · " + s.nama : ""); }],
+       ["penggunaan", "Per jenis penggunaan", "Jenis penggunaan", function (s) { return s.kode + " · " + (s.nama || NAMA_GUNA[s.kode] || ""); }]]
+        .forEach(function (u) {
+          var data = ov[u[0]];
+          if (!data || !data.length) return;
+          var peta = grupKantorPeta(u[0]);
+          h.appendChild(d_("h3", "dok-subjudul", u[1]));
+          var tot = ov.total.totalOS || 0;
+          h.appendChild(tabelDok([u[2], "Grup", "Debitur", "OS (Rp)", "Porsi", "EAD (Rp)", "NPF"],
+            data.map(function (s) {
+              return [u[3](s), peta ? (peta[s.kode] || "—") : "—", fmt.format(s.debitur), rp(s.totalOS),
+                tot ? (s.totalOS / tot * 100).toFixed(1).replace(".", ",") + "%" : "—", rp(s.totalEAD), persenDok(s.npf)];
+            }).concat([{ kelas: "total", sel: ["Total", "", fmt.format(ov.total.debitur), rp(ov.total.totalOS), "100,0%", rp(ov.total.totalEAD), persenDok(ov.total.npf)] }]),
+            { angka: [2, 3, 4, 5, 6], kecil: true }));
+        });
+      if (ov.penggunaanCadangan)
+        h.appendChild(paragraf(ov.penggunaanCadangan + " baris pembiayaan tanpa isian jenis penggunaan dihitung sebagai Konsumsi.", "kecil"));
       h.appendChild(paragraf("Sumber: snapshot overview " + (ov.fileTemplate || "") + (ov.waktuSnapshot ? " · " + ov.waktuSnapshot : ""), "kecil"));
     }
 
@@ -5171,6 +5580,7 @@
   function muatDiagnostik() {
     return panggil("ping").then(function (d) {
       infoPing = d;
+      if (d.mode && !modeInfo) { modeInfo = d.mode; gambarMode(); }   // Tahap 8
       tampil("banner-koneksi", false);
       gambarPengaturan();
       $("d-jembatan").innerHTML = '<span class="ok">Terhubung</span>';
@@ -5211,7 +5621,7 @@
   function namaKC(k) { return k ? k + (NAMA_KC[k] ? " · " + NAMA_KC[k] : "") : "—"; }
 
   function grupUntukRef() {
-    return statusP ? (statusP.grup || []).map(function (g) { return { nama: g.nama, kc: g.kc }; }) : [];
+    return statusP ? (statusP.grup || []).map(function (g) { return { nama: g.nama, kc: g.kc, unit: modeAkad() ? "" : g.kodeKC }; }) : [];
   }
 
   function muatRefKC() {
@@ -5313,6 +5723,7 @@
     if (!d.ada) { ["refkc-status", "refkc-ringkas", "refkc-tanpa", "refkc-produk", "refkc-manual", "refkc-bedam", "refkc-kecuali"].forEach(function (id) { $(id).innerHTML = ""; }); return; }
 
     gambarRefStatus(d);
+    gambarRefGuna(d);
     gambarRefSumber(d);
     gambarRefTanpa(d);
     gambarRefProduk(d);
@@ -5386,6 +5797,135 @@
     }
     return li;
   }
+
+  // ---------------- Tahap 8c: jenis penggunaan rekening hapus buku ----------------
+  var ubahGuna = {};
+  function pilihGuna(nilai, kosong, label) {
+    var s = el("select", "isian pilih-kc");
+    var o = el("option", "", kosong || "— pilih jenis —");
+    o.value = "";
+    s.appendChild(o);
+    ["1", "2", "3"].forEach(function (k) { var x = el("option", "", k + " · " + NAMA_GUNA[k]); x.value = k; s.appendChild(x); });
+    s.value = nilai || "";
+    s.disabled = !refKC.bolehMenulis;
+    if (label) s.setAttribute("aria-label", label);
+    return s;
+  }
+  function catatGuna(jenis, kunci, kode) {
+    ubahGuna[jenis + "|" + kunci] = { jenis: jenis, kunci: kunci, kode: kode };
+    var n = Object.keys(ubahGuna).length;
+    $("btn-refkc-guna-simpan").textContent = n ? "Simpan " + n + " isian jenis penggunaan" : "Simpan isian jenis penggunaan";
+    $("btn-refkc-guna-simpan").disabled = !n || !refKC.bolehMenulis;
+  }
+  function gambarRefGuna(d) {
+    var gu = d.guna;
+    ubahGuna = {};
+    $("btn-refkc-guna-simpan").textContent = "Simpan isian jenis penggunaan";
+    $("btn-refkc-guna-simpan").disabled = true;
+    ["refkc-guna-ringkas", "refkc-guna-tanpa", "refkc-guna-produk", "refkc-guna-manual", "refkc-guna-hasil"].forEach(function (id) { $(id).innerHTML = ""; });
+    if (!gu) return;
+    var tanpa = gu.tanpa || [];
+    teks("refkc-guna-judul", "Jenis penggunaan rekening hapus buku" + (tanpa.length ? " · " + tanpa.length + " perlu dilengkapi" : " · lengkap"));
+    if (modeId() === "penggunaan" && tanpa.length) $("refkc-guna-blok").open = true;
+
+    // ringkasan per jenis + asal penentuan (cohort)
+    var tb = el("table", "tabel-ringkas");
+    gu.perKode.forEach(function (k) {
+      var tr = el("tr");
+      tr.appendChild(el("td", "", k.kode + " · " + k.nama));
+      tr.appendChild(el("td", "", k.n + " rek"));
+      tr.appendChild(el("td", "", jt(k.baki)));
+      tb.appendChild(tr);
+    });
+    var tr0 = el("tr", tanpa.length ? "kurang" : "");
+    tr0.appendChild(el("td", "", "Tanpa jenis penggunaan"));
+    tr0.appendChild(el("td", "", gu.ringkas.tanpa.n + " rek"));
+    tr0.appendChild(el("td", "", jt(gu.ringkas.tanpa.baki)));
+    tb.appendChild(tr0);
+    $("refkc-guna-ringkas").appendChild(el("div", "label-kecil", "Rekening cohort " + (d.currYear - 5) + "–" + d.currYear));
+    $("refkc-guna-ringkas").appendChild(tb);
+    var asal = { "manual-rek": "isian per rekening", "rekening": "rekening di KC0600–KC1100", "manual-produk": "isian per kode produk", "produk": "jenis terbanyak kode produk" };
+    var teksAsal = Object.keys(asal).filter(function (k) { return gu.ringkas[k] && gu.ringkas[k].n; })
+      .map(function (k) { return asal[k] + " " + gu.ringkas[k].n; });
+    if (teksAsal.length) $("refkc-guna-ringkas").appendChild(el("div", "teks-kecil", "Asal: " + teksAsal.join(" · ")));
+
+    // rekening tanpa jenis penggunaan
+    teks("refkc-guna-tanpa-judul", tanpa.length ? "Belum ada jenis penggunaan · " + tanpa.length + " rek (" +
+      jt(tanpa.reduce(function (a, r) { return a + r.baki; }, 0)) + ")" : "Belum ada jenis penggunaan");
+    if (!tanpa.length) $("refkc-guna-tanpa").appendChild(el("div", "teks-kecil", "Semua rekening cohort sudah memiliki jenis penggunaan."));
+    else {
+      var ul = el("ul", "daftar-rek-ref");
+      tanpa.slice(0, 300).forEach(function (r) {
+        var li = el("li", "baris-antara");
+        var info = el("div");
+        info.appendChild(el("div", "", (r.rek || r.kunci) + (r.nama ? " · " + r.nama : "")));
+        info.appendChild(el("div", "teks-kecil", "Hapus buku " + r.tahunHB + " · " + jt(r.baki) + " · kode produk " + r.awalan + (r.produk ? " · " + r.produk : "")));
+        li.appendChild(info);
+        var sel = pilihGuna("", "— jenis —", "Jenis penggunaan rekening " + (r.rek || r.kunci));
+        sel.addEventListener("change", function () { catatGuna("rek", r.kunci, sel.value); });
+        li.appendChild(sel);
+        ul.appendChild(li);
+      });
+      $("refkc-guna-tanpa").appendChild(ul);
+      if (tanpa.length > 300) $("refkc-guna-tanpa").appendChild(el("div", "teks-kecil", "Ditampilkan 300 rekening dengan baki terbesar. Isi per kode produk untuk sisanya."));
+    }
+
+    // per kode produk
+    var produk = gu.produk || [];
+    teks("refkc-guna-produk-judul", "Per kode produk · " + produk.length + " kode");
+    var tp = el("table", "tabel-ringkas");
+    var hp = el("tr");
+    ["Kode", "Rek HB", "Sebaran rek aktif", "Dipakai", "Isian"].forEach(function (x) { hp.appendChild(el("th", "", x)); });
+    tp.appendChild(hp);
+    produk.forEach(function (pr) {
+      var tr = el("tr");
+      tr.appendChild(el("td", "", pr.awalan));
+      tr.appendChild(el("td", "", String(pr.hapusBuku)));
+      tr.appendChild(el("td", "", pr.distribusi.length ? pr.distribusi.map(function (x) { return NAMA_GUNA[x.kode] + " " + x.n; }).join(" · ") : "—"));
+      var dipakai = pr.manual || pr.pemenang;
+      tr.appendChild(el("td", "", dipakai ? NAMA_GUNA[dipakai] + (pr.manual ? " (isian)" : "") : "—"));
+      var td = el("td");
+      var sel = pilihGuna(pr.manual || "", "otomatis", "Jenis penggunaan kode produk " + pr.awalan);
+      sel.addEventListener("change", function () { catatGuna("produk", pr.awalan, sel.value); });
+      td.appendChild(sel);
+      tr.appendChild(td);
+      tp.appendChild(tr);
+    });
+    var gp = el("div", "gulir-x");
+    gp.appendChild(tp);
+    $("refkc-guna-produk").appendChild(gp);
+
+    // isian manual per rekening yang sudah ada
+    var manRek = (gu.manual || []).filter(function (m) { return m.jenis === "rek"; });
+    if (manRek.length) {
+      var w = $("refkc-guna-manual");
+      w.appendChild(el("div", "label-kecil jarak-atas", "Isian per rekening · " + manRek.length));
+      var ul2 = el("ul", "daftar-rek-ref");
+      manRek.forEach(function (m) {
+        var li = el("li", "baris-antara");
+        li.appendChild(el("div", "teks-kecil", m.kunci + " · " + m.nama + " · " + m.pengguna + " " + m.waktu + (m.alasan ? " · " + m.alasan : "")));
+        var sel = pilihGuna(m.kode, "hapus isian", "Jenis penggunaan rekening " + m.kunci);
+        sel.addEventListener("change", function () { catatGuna("rek", m.kunci, sel.value); });
+        li.appendChild(sel);
+        ul2.appendChild(li);
+      });
+      w.appendChild(ul2);
+    }
+  }
+  $("btn-refkc-guna-simpan").addEventListener("click", function () {
+    var item = Object.keys(ubahGuna).map(function (k) { return ubahGuna[k]; });
+    var alasan = $("refkc-alasan").value.trim();
+    if (!alasan) { pesanDi("refkc-guna-hasil", "Isi dasar / alasan pengisian di atas terlebih dahulu.", false); $("refkc-alasan").focus(); return; }
+    var b = this;
+    b.disabled = true;
+    panggil("simpanReferensiGuna", { item: item, alasan: alasan }).then(function (r) {
+      ubahGuna = {};
+      return muatRefKC().then(function () {
+        if (!$("kartu-refkc").hidden) gambarRefKC();
+        pesanDi("refkc-guna-hasil", r.jumlah + " isian jenis penggunaan tersimpan. Hitung ulang grup agar LGD ER memakai referensi terbaru.", true);
+      });
+    }).catch(function (e) { pesanDi("refkc-guna-hasil", e.message, false); b.disabled = false; });
+  });
 
   function gambarRefTanpa(d) {
     var w = $("refkc-tanpa");

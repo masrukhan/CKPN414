@@ -6,6 +6,7 @@ using System.Globalization;
 using System.IO;
 using System.Web.Script.Serialization;
 using CKPNLibrary.Helpers;
+using CKPNLibrary.Panel;
 
 namespace CKPNLibrary.Data
 {
@@ -42,6 +43,7 @@ namespace CKPNLibrary.Data
             k["waktuHitung"] = Database.Sekarang();
             k["langkah"] = new List<string>(langkah);
             k["sumber"] = sumber;
+            k["mode"] = ModeHitung.Aktif.Id;   // Tahap 8: isi sheet milik mode ini
             k["tersimpanVersi"] = null;
             k["waktuSimpan"] = null;
             SimpanKonteks(k);
@@ -51,11 +53,13 @@ namespace CKPNLibrary.Data
         {
             var k = BacaKonteks() ?? new Dictionary<string, object>();
             if (Convert.ToString(k.ContainsKey("tanggal") ? k["tanggal"] : "") != tanggal ||
-                Convert.ToString(k.ContainsKey("kodeKC") ? k["kodeKC"] : "") != kodeKC)
+                Convert.ToString(k.ContainsKey("kodeKC") ? k["kodeKC"] : "") != kodeKC ||
+                ModeKonteks(k) != ModeHitung.Aktif.Id)
             {
                 k["tanggal"] = tanggal; k["kodeKC"] = kodeKC;
                 k["waktuHitung"] = null; k["langkah"] = new List<string>();
             }
+            k["mode"] = ModeHitung.Aktif.Id;
             k["tersimpanVersi"] = versi;
             k["waktuSimpan"] = Database.Sekarang();
             SimpanKonteks(k);
@@ -73,6 +77,21 @@ namespace CKPNLibrary.Data
             k["tersimpanVersi"] = null;
             k["waktuSimpan"] = null;
             SimpanKonteks(k);
+        }
+
+        /// <summary>Mode perhitungan isi sheet menurut konteks lokal (konteks sebelum Tahap 8 = akad).</summary>
+        public static string ModeKonteks(Dictionary<string, object> k)
+        {
+            object v;
+            string m = k != null && k.TryGetValue("mode", out v) && v != null ? Convert.ToString(v) : "";
+            return ModeHitung.Cari(m) != null ? m : ModeHitung.Akad;
+        }
+
+        /// <summary>Konteks lokal hanya bila isi sheet berasal dari mode yang sedang aktif; selain itu null.</summary>
+        public static Dictionary<string, object> BacaKonteksModeIni()
+        {
+            var k = BacaKonteks();
+            return k != null && ModeKonteks(k) == ModeHitung.Aktif.Id ? k : null;
         }
 
         public static Dictionary<string, object> BacaKonteks()
@@ -114,6 +133,13 @@ namespace CKPNLibrary.Data
         /// </summary>
         public static List<Grup> Susunan(SQLiteConnection con, int tahun, out int sumberTahun)
         {
+            return SusunanMode(con, tahun, out sumberTahun, null);
+        }
+
+        /// <summary>Tahap 8: susunan grup dari koneksi mode tertentu (KC per grup mengikuti mode tersebut).</summary>
+        public static List<Grup> SusunanMode(SQLiteConnection con, int tahun, out int sumberTahun, ModeHitung.Mode mode)
+        {
+            if (mode == null) mode = ModeHitung.Aktif;
             sumberTahun = 0;
             object t = Database.Scalar(con, "SELECT MAX(tahun) FROM susunan_grup WHERE tahun<=@p0", tahun);
             if (t == null || t is DBNull) return null;
@@ -129,7 +155,7 @@ namespace CKPNLibrary.Data
                         Urut = rd.GetInt32(0), Nama = rd.GetString(1), KodeKC = rd.GetString(2), Dasar = Str(rd[3]),
                         TopN = rd[4] is DBNull ? (int?)null : Convert.ToInt32(rd[4])
                     };
-                    g.KC.AddRange(g.KodeKC.Split(','));
+                    g.KC.AddRange(ModeHitung.KCGrup(mode, g.KodeKC));   // mode kantor: seluruh KC0600–KC1100
                     hasil.Add(g);
                 }
             return hasil;
@@ -197,13 +223,78 @@ namespace CKPNLibrary.Data
             return m == "nf" ? "Net Flow" : m == "mig" ? "Migration" : "—";
         }
 
-        /// <summary>Usulan awal bila belum ada susunan: satu grup per kode segmen.</summary>
+        /// <summary>
+        /// Usulan awal bila belum ada susunan: satu grup per kode segmen (mode akad) atau satu grup per
+        /// sandi kantor hasil pindai template (mode kantor; kosong bila belum pernah dipindai).
+        /// </summary>
         public static List<Grup> SusunanBawaan()
         {
             var hasil = new List<Grup>();
-            for (int i = 0; i < SemuaKC.Length; i++)
-                hasil.Add(new Grup { Urut = i + 1, Nama = SemuaKC[i], KodeKC = SemuaKC[i], KC = new List<string> { SemuaKC[i] } });
+            var unit = UnitSusunan();
+            for (int i = 0; i < unit.Count; i++)
+            {
+                string kode = (string)unit[i]["kode"];
+                hasil.Add(new Grup { Urut = i + 1, Nama = NamaUnitBawaan(unit[i]), KodeKC = kode, KC = new List<string>(ModeHitung.KCGrup(kode)) });
+            }
             return hasil;
+        }
+
+        /// <summary>
+        /// Unit penyusun grup menurut mode aktif: akad = KC0600–KC1100; kantor = sandi kantor tersimpan
+        /// (hasil pindai template) ditambah sandi yang sudah dipakai di susunan tahun-tahun sebelumnya.
+        /// </summary>
+        public static List<Dictionary<string, object>> UnitSusunan()
+        {
+            var m = ModeHitung.Aktif;
+            var hasil = new List<Dictionary<string, object>>();
+            if (m.Utama)
+            {
+                foreach (var kc in SemuaKC)
+                    hasil.Add(new Dictionary<string, object> { { "kode", kc }, { "label", kc }, { "nama", "" }, { "rekening", null } });
+                return hasil;
+            }
+            if (m.Id == ModeHitung.Penggunaan)
+            {
+                // Tahap 8c: unit tetap 1–3 (isian kosong / tidak dikenal masuk Konsumsi)
+                for (int i = 0; i < ModeHitung.JenisPenggunaan.GetLength(0); i++)
+                    hasil.Add(new Dictionary<string, object>
+                    {
+                        { "kode", ModeHitung.JenisPenggunaan[i, 0] }, { "label", ModeHitung.JenisPenggunaan[i, 0] + " · " + ModeHitung.JenisPenggunaan[i, 1] },
+                        { "nama", ModeHitung.JenisPenggunaan[i, 1] }, { "rekening", null }, { "wajib", true }
+                    });
+                return hasil;
+            }
+            var ada = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var d in SandiKantor.Daftar())
+            {
+                ada.Add((string)d["kode"]);
+                d["label"] = "Sandi " + d["kode"];
+                hasil.Add(d);
+            }
+            try
+            {
+                if (Database.Ada)
+                    using (var con = Database.Buka(false))
+                    using (var cmd = Database.Cmd(con, "SELECT DISTINCT kode_kc FROM susunan_grup"))
+                    using (var rd = cmd.ExecuteReader())
+                        while (rd.Read())
+                            foreach (var k in rd.GetString(0).Split(','))
+                                if (k.Length > 0 && ada.Add(k))
+                                    hasil.Add(new Dictionary<string, object>
+                                    {
+                                        { "kode", k }, { "label", "Sandi " + k }, { "nama", "" }, { "rekening", 0 },
+                                        { "rincian", new Dictionary<string, object>() }, { "tanggal", "" }, { "file", "" }
+                                    });
+            }
+            catch (Exception ex) { CatatanLog.Tulis("Baca sandi di susunan lama: " + ex.Message); }
+            hasil.Sort((a, b) => ModeHitung.BandingSandi((string)a["kode"], (string)b["kode"]));
+            return hasil;
+        }
+
+        private static string NamaUnitBawaan(Dictionary<string, object> u)
+        {
+            string nama = Convert.ToString(u.ContainsKey("nama") ? u["nama"] : "");
+            return string.IsNullOrEmpty(nama) ? (ModeHitung.Aktif.Utama ? (string)u["kode"] : "Kantor " + u["kode"]) : nama;   // penggunaan: nama jenis
         }
 
         /// <summary>
@@ -221,13 +312,34 @@ namespace CKPNLibrary.Data
                 throw new InvalidOperationException("Pilih metode konsolidasi (Net Flow atau Migration) untuk tahun " + tahun + ".");
             if (kebijakanSaldo != "maks") kebijakanSaldo = "ckpn";
 
+            // Tahap 8: unit penyusun mengikuti mode aktif (KC0600–KC1100 atau sandi kantor)
+            var mode = ModeHitung.Aktif;
+            var semuaUnit = new List<string>();
+            if (mode.Utama) semuaUnit.AddRange(SemuaKC);
+            else
+            {
+                foreach (var u in UnitSusunan())
+                {
+                    string k = (string)u["kode"];
+                    int nRek = u["rekening"] == null ? 0 : Convert.ToInt32(u["rekening"]);
+                    bool wajib = u.ContainsKey("wajib") && (bool)u["wajib"];
+                    string nm;
+                    // Sandi tanpa rekening di template terakhir boleh tidak dimasukkan (kantor tutup / sandi lama)
+                    if (wajib || nRek > 0 || (peta.TryGetValue(k, out nm) && !string.IsNullOrWhiteSpace(nm))) semuaUnit.Add(k);
+                }
+                if (semuaUnit.Count == 0)
+                    throw new InvalidOperationException("Belum ada sandi kantor. Pindai template APOLLO (Master!D14) dari editor susunan grup terlebih dahulu.");
+            }
+
             var grup = new List<Grup>();
             var index = new Dictionary<string, Grup>(StringComparer.OrdinalIgnoreCase);
-            foreach (var kc in SemuaKC)
+            foreach (var kc in semuaUnit)
             {
                 string nama;
                 if (!peta.TryGetValue(kc, out nama) || string.IsNullOrWhiteSpace(nama))
-                    throw new InvalidOperationException("Kode " + kc + " belum masuk grup mana pun.");
+                    throw new InvalidOperationException((mode.Utama ? "Kode " : mode.Id == ModeHitung.Penggunaan
+                        ? "Jenis penggunaan " + ModeHitung.NamaPenggunaan(kc) + " (" : "Sandi kantor ") + kc +
+                        (mode.Id == ModeHitung.Penggunaan ? ")" : "") + " belum masuk grup mana pun.");
                 nama = nama.Trim();
                 Grup g;
                 if (!index.TryGetValue(nama, out g))
@@ -246,7 +358,8 @@ namespace CKPNLibrary.Data
                 if (topNGrup == null || !topNGrup.TryGetValue(g.Nama, out n) || n < 1 || n > 1000)
                     throw new InvalidOperationException("Top-N debitur CKPN Individu grup '" + g.Nama + "' harus diisi (1–1000) sesuai SOP.");
                 g.TopN = n;
-                g.KodeKC = string.Join(",", g.KC.ToArray());
+                g.KodeKC = ModeHitung.NormKode(mode, string.Join(",", g.KC.ToArray()));
+                g.KC = new List<string>(ModeHitung.KCGrup(mode, g.KodeKC));
             }
 
             Database.Cadangkan();
@@ -300,7 +413,7 @@ namespace CKPNLibrary.Data
                 var ringkas = new List<string>();
                 foreach (var g in grup) ringkas.Add(g.Nama + "=" + g.KodeKC + " (Top-N " + g.TopN + ")");
                 Database.CatatAktivitas(con, tahun.ToString(), "susunan-grup",
-                    string.Join("; ", ringkas.ToArray()) + " | metode: " + NamaMetode(metode) +
+                    (mode.Utama ? "" : "[" + mode.NamaPendek + "] ") + string.Join("; ", ringkas.ToArray()) + " | metode: " + NamaMetode(metode) +
                     " | saldo: " + (kebijakanSaldo == "maks" ? "maks(CKPN, PPKA)" : "CKPN") +
                     " | dasar: " + dasar.Trim());
                 tx.Commit();
@@ -327,8 +440,10 @@ namespace CKPNLibrary.Data
             hasil["bolehMenulis"] = Database.BolehMenulis(out info);
             hasil["infoPengirim"] = info;
 
-            var konteks = BacaKonteks();
+            // Tahap 8: konteks lokal hanya berlaku bila isi sheet berasal dari mode yang sedang aktif
+            var konteks = BacaKonteksModeIni();
             hasil["konteks"] = konteks;
+            hasil["mode"] = ModeHitung.Info(tahun);
 
             List<Grup> susunan = null;
             PengaturanTahun peng = null;
@@ -373,6 +488,7 @@ namespace CKPNLibrary.Data
             bool susunanDitetapkan = susunan != null;
             if (susunan == null) susunan = SusunanBawaan();
             hasil["susunanDitetapkan"] = susunanDitetapkan;
+            hasil["unitSusunan"] = UnitSusunan();
             hasil["susunanTahun"] = sumberTahun;
             hasil["susunanDasar"] = susunan.Count > 0 ? susunan[0].Dasar : "";
             hasil["metode"] = peng == null ? null : peng.Metode;
@@ -404,6 +520,7 @@ namespace CKPNLibrary.Data
                 grupList.Add(new Dictionary<string, object>
                 {
                     { "urut", g.Urut }, { "nama", g.Nama }, { "kodeKC", g.KodeKC }, { "kc", g.KC }, { "topN", g.TopN },
+                    { "unit", g.KodeKC.Split(',') }, { "labelKode", ModeHitung.LabelKode(g.KodeKC) },
                     { "status", status }, { "aktif", aktif }, { "versi", versi },
                     { "diWorkbook", diWorkbook }, { "dihitungDiPC", dihitungDiPC },
                     { "waktuHitung", dihitungDiPC ? Ambil(konteks, "waktuHitung") : null }
@@ -422,8 +539,9 @@ namespace CKPNLibrary.Data
             return hasil;
         }
 
-        internal static List<Dictionary<string, object>> DaftarRun(SQLiteConnection con, string tanggal)
+        internal static List<Dictionary<string, object>> DaftarRun(SQLiteConnection con, string tanggal, ModeHitung.Mode mode = null)
         {
+            if (mode == null) mode = ModeHitung.Aktif;
             var runs = new List<Dictionary<string, object>>();
             using (var cmd = Database.Cmd(con,
                 "SELECT g.id, g.kode_kc, g.versi, g.aktif, g.dihapus, g.pengguna, g.waktu, g.catatan, g.snapshot, " +
@@ -447,7 +565,8 @@ namespace CKPNLibrary.Data
                 using (var rd = cmd.ExecuteReader())
                     while (rd.Read()) nilai[rd.GetString(0)] = Database.Dbl(rd[1]);
                 run["ringkasan"] = nilai;
-                run["ppkaGrup"] = PpkaGrup(nilai, ((string)run["kodeKC"]).Split(','));
+                run["ppkaGrup"] = PpkaGrup(nilai, ModeHitung.KCGrup(mode, (string)run["kodeKC"]));
+                run["labelKode"] = ModeHitung.LabelKode(mode, (string)run["kodeKC"]);
             }
             return runs;
         }
@@ -523,15 +642,23 @@ namespace CKPNLibrary.Data
 
         public static Dictionary<string, object> Konsolidasi(string tanggal)
         {
-            if (!Database.Ada) throw new InvalidOperationException("Database belum ada.");
+            return Konsolidasi(tanggal, null);
+        }
+
+        /// <param name="mode">Tahap 8: mode yang dibaca (null = mode aktif); dipakai pembanding antarmode</param>
+        public static Dictionary<string, object> Konsolidasi(string tanggal, ModeHitung.Mode mode)
+        {
+            bool modeAktif = mode == null || mode.Id == ModeHitung.Aktif.Id;
+            if (mode == null) mode = ModeHitung.Aktif;
+            if (!Database.AdaMode(mode)) throw new InvalidOperationException("Database belum ada.");
             int tahun = int.Parse(tanggal.Substring(0, 4));
 
-            using (var con = Database.Buka(false))
+            using (var con = Database.BukaMode(mode, false))
             {
                 int sumber;
-                var susunan = Susunan(con, tahun, out sumber);
+                var susunan = SusunanMode(con, tahun, out sumber, mode);
                 if (susunan == null) throw new InvalidOperationException("Susunan grup tahun " + tahun + " belum ditetapkan.");
-                var runs = DaftarRun(con, tanggal);
+                var runs = DaftarRun(con, tanggal, mode);
 
                 // ---- status periode & metode ----
                 long periodeId = 0;
@@ -581,7 +708,11 @@ namespace CKPNLibrary.Data
                     baris.Add(new Dictionary<string, object>
                     {
                         { "nama", g.Nama }, { "kodeKC", g.KodeKC }, { "runId", aktif["id"] }, { "versi", aktif["versi"] },
-                        { "nf", nf }, { "mig", mig }, { "ppka", ppka }, { "dipakai", dipakai }, { "ckpn", ckpn }
+                        { "nf", nf }, { "mig", mig }, { "ppka", ppka }, { "dipakai", dipakai }, { "ckpn", ckpn },
+                        { "labelKode", ModeHitung.LabelKode(mode, g.KodeKC) },
+                        // Tahap 8: rincian Individu / Kolektif untuk pembanding antarmode
+                        { "ind", dipakai == "mig" ? Nilai(rg, "mig_individu") : Nilai(rg, "nf_individu") },
+                        { "kol", dipakai == "mig" ? Nilai(rg, "mig_kolektif") : Nilai(rg, "nf_kolektif") }
                     });
                     string w = Convert.ToString(aktif["waktu"]);
                     if (string.CompareOrdinal(w, waktuTerbaru) > 0) { waktuTerbaru = w; ringkasTerbaru = rg; }
@@ -607,6 +738,7 @@ namespace CKPNLibrary.Data
                     { "metodeTahun", final && metodeFinal != "" ? tahun : (peng == null ? 0 : peng.Tahun) },
                     { "metodeCampuran", final && metodeFinal == "" && keputusan.Count > 0 },
                     { "kebijakanSaldo", kebijakan }, { "pembanding", pembanding },
+                    { "mode", modeAktif ? ModeHitung.Info(tahun) : null }, { "idMode", mode.Id },
                     { "total", new Dictionary<string, object>
                         {
                             { "ckpn", adaDipakai ? totDipakai + abaCkpn : (double?)null },
@@ -731,6 +863,9 @@ namespace CKPNLibrary.Data
         {
             string info;
             if (!Database.BolehMenulis(out info)) throw new InvalidOperationException(info);
+            // Tahap 8: Final & jurnal hanya dari mode resmi tahun ini
+            string tolakMode = ModeHitung.TolakResmi(tanggal, "Penetapan Final dan jurnal");
+            if (tolakMode != null) throw new InvalidOperationException(tolakMode);
             var k = Konsolidasi(tanggal);
             if (!(bool)k["lengkap"])
                 throw new InvalidOperationException("Belum semua grup tersimpan: " + string.Join(", ", ((List<string>)k["belum"]).ToArray()));
@@ -787,6 +922,8 @@ namespace CKPNLibrary.Data
             string info;
             if (!Database.BolehMenulis(out info)) throw new InvalidOperationException(info);
             if (string.IsNullOrWhiteSpace(alasan)) throw new InvalidOperationException("Alasan membuka kunci wajib diisi.");
+            string tolakMode = ModeHitung.TolakResmi(tanggal, "Membuka kunci periode");
+            if (tolakMode != null) throw new InvalidOperationException(tolakMode);
             Database.Cadangkan();
             using (var con = Database.Buka(true))
             using (var tx = con.BeginTransaction())

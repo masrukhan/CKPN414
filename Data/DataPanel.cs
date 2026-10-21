@@ -92,7 +92,7 @@ namespace CKPNLibrary.Data
         {
             var ind = new List<object>();
             var cs  = new List<object>();
-            if (Database.Ada)
+            if (Database.AdaBersama)   // Tahap 8: penyesuaian = tabel bersama semua mode
             {
                 var pakaiInd = PemakaianTerakhir(
                     "SELECT h.no_kontrak, p.tanggal, g.kode_kc, h.nama, h.kc FROM hasil_individu h " +
@@ -178,7 +178,7 @@ namespace CKPNLibrary.Data
             alasan = (alasan ?? "").Trim();
 
             Database.Cadangkan();
-            using (var con = Database.Buka(true))
+            using (var con = Database.BukaBersama(true))   // Tahap 8: penyesuaian bersama semua mode
             using (var tx = con.BeginTransaction())
             {
                 string sebelum, sesudah, aksi;
@@ -325,7 +325,7 @@ namespace CKPNLibrary.Data
             alasan = string.IsNullOrWhiteSpace(alasan) ? "Dihapus dari panel" : alasan.Trim();
 
             Database.Cadangkan();
-            using (var con = Database.Buka(true))
+            using (var con = Database.BukaBersama(true))
             using (var tx = con.BeginTransaction())
             {
                 int n = Convert.ToInt32(Database.Scalar(con, "SELECT COUNT(*) FROM " + tabel + " WHERE " + kol + "=@p0", kunci));
@@ -344,8 +344,8 @@ namespace CKPNLibrary.Data
         public static List<object> RiwayatPenyesuaian(string modul, string kunci)
         {
             var hasil = new List<object>();
-            if (!Database.Ada) return hasil;
-            using (var con = Database.Buka(false))
+            if (!Database.AdaBersama) return hasil;
+            using (var con = Database.BukaBersama(false))   // Tahap 8: log penyesuaian bersama semua mode
             using (var cmd = Database.Cmd(con,
                 "SELECT waktu, pengguna, periode, aksi, sebelum, sesudah, alasan FROM log_penyesuaian " +
                 "WHERE modul=@p0 AND kunci=@p1 ORDER BY id DESC LIMIT 50", modul, kunci))

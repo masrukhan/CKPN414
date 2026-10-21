@@ -720,3 +720,22 @@ button.baris-atur:focus-visible { outline: 2px solid var(--aksen); outline-offse
 .alasan-nonaktif li { margin-top: 2px; }
 .alasan-nonaktif .tautan { font-size: 12px; }
 .hitung-mundur { font-size: 12px; color: var(--teks-2); margin-bottom: 6px; }
+
+/* Tahap 8: mode perhitungan */
+.chip-mode { font: inherit; font-size: 11px; padding: 2px 9px; border-radius: 999px; border: 1px solid #B4C7E7;
+  background: #DEEAF6; color: #1F4E79; cursor: pointer; white-space: nowrap; }
+.chip-mode.simulasi { background: var(--peringatan-bg); border-color: #EBD3A6; color: var(--peringatan); }
+.chip-mode:focus-visible { outline: 2px solid var(--aksen); outline-offset: 1px; }
+.opsi-mode { margin: 6px 0; }
+.opsi-mode .blok { display: block; margin-top: 2px; }
+.susunan-isi .kolom-penuh { grid-column: 1 / -1; }
+#susunan-pindai-baris { align-items: center; flex-wrap: wrap; }
+.chip-mini { display: inline-block; font-size: 10px; padding: 0 6px; margin-left: 6px; border-radius: 999px;
+  background: #DEEAF6; color: #1F4E79; vertical-align: 1px; }
+.tabel-konsolidasi tr.baris-aktif td { font-weight: 600; }
+.tabel-banding td, .tabel-banding th { white-space: nowrap; }
+.tabel-banding td:first-child { white-space: normal; color: var(--teks-2); }
+.tabel-banding .kolom-aktif { font-weight: 600; }
+.tabel-banding tr.total td { border-top: 1px solid var(--garis); font-weight: 600; }
+#susunan-pindai-baris[hidden] { display: none; }
+.dok h3.dok-subjudul { font-size: 9.5pt; font-weight: 600; margin: 10px 0 3px; break-after: avoid; }

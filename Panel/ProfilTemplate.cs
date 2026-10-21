@@ -72,7 +72,7 @@ namespace CKPNLibrary.Panel
                 } },
             { "KC1100", new Peta
                 {
-                    Akad = "Ijarah", KolomNilaiDipakai = "AX",
+                    Akad = "Ijarah", KolomNilaiDipakai = "AY",
                     Kolom = Gabung(Identitas(), new[,] {
                         { "jenisAkad", "U" }, { "jenisAset", "V" }, { "waktuPerolehan", "W" }, { "hargaPerolehan", "X" }, { "periodeAngsuran", "AA" },
                         { "nilaiKontrak", "AB" }, { "sewaPerPeriode", "AC" }, { "imbalanAwal", "AD" }, { "imbalanKini", "AE" }, { "kualitas", "AF" },
@@ -210,13 +210,7 @@ namespace CKPNLibrary.Panel
                     if (v != null) ag[p.Agunan[i, 0]] = v;
                 }
                 object nilaiPakai = Sel(d, r, p.KolomNilaiDipakai);
-                double nilaiDipakai = nilaiPakai is double ? (double)nilaiPakai : 0.0;
-                // Tahap 7e: pengikatan 90 (tidak diikat) → nilai agunan diakui 0
-                object ikat;
-                if (ag.TryGetValue("pengikatan", out ikat) &&
-                    CKPNLibrary.Helpers.ExcelHelper.TanpaIkatan(Convert.ToString(ikat)))
-                    nilaiDipakai = 0;
-                ag["nilaiDipakai"] = nilaiDipakai;
+                ag["nilaiDipakai"] = nilaiPakai is double ? nilaiPakai : (object)0.0;
                 if (ag.ContainsKey("jenis") || ag.ContainsKey("nomor") || Angka(ag, "nilai") > 0)
                     ((List<object>)h["agunan"]).Add(ag);
             }
@@ -279,9 +273,9 @@ namespace CKPNLibrary.Panel
             string cap = PenjelasanCKPN.CapTemplate(path) ?? "";
             var perlu = new List<string>();
             var sudah = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            if (hanyaYangBelum && Database.Ada)
+            if (hanyaYangBelum && Database.AdaBersama)
             {
-                using (var con = Database.Buka(false))
+                using (var con = Database.BukaBersama(false))   // Tahap 8: profil template bersama semua mode
                 {
                     object capLama = Database.Scalar(con, "SELECT cap FROM profil_template_info WHERE tanggal=@p0 AND file=@p1", tanggal, Path.GetFullPath(path));
                     if (capLama != null && Convert.ToString(capLama) == cap)
@@ -297,7 +291,7 @@ namespace CKPNLibrary.Panel
             var hasil = Baca(app, path, perlu);
             var tidak = new List<string>();
             string now = Database.Sekarang();
-            using (var con = Database.Buka(true))
+            using (var con = Database.BukaBersama(true))
             using (var tx = con.BeginTransaction())
             {
                 foreach (var rek in perlu)

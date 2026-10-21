@@ -87,7 +87,15 @@ namespace CKPNLibrary.Modules
             public bool   AdaKeuangan;
             public double Asset, OSNeraca, CKPNNeraca, LabaLalu, LabaBerjalan;
             public List<Segmen> Segmen = new List<Segmen>();
+            /// <summary>Tahap 8b: agregat per sandi lokasi kantor (kolom B semua sheet KC0600–KC1100).</summary>
+            public Dictionary<string, Segmen> Kantor = new Dictionary<string, Segmen>(StringComparer.OrdinalIgnoreCase);
+            /// <summary>sandi → KC → OS (komposisi segmen tiap kantor)</summary>
+            public Dictionary<string, Dictionary<string, double>> KantorKC = new Dictionary<string, Dictionary<string, double>>(StringComparer.OrdinalIgnoreCase);
+            /// <summary>Tahap 8c: agregat per jenis penggunaan (kolom S; agunan ikut kontraknya; kosong → Konsumsi).</summary>
+            public Dictionary<string, Segmen> Guna = new Dictionary<string, Segmen>(StringComparer.OrdinalIgnoreCase);
+            public Dictionary<string, Dictionary<string, double>> GunaKC = new Dictionary<string, Dictionary<string, double>>(StringComparer.OrdinalIgnoreCase);
             public List<string> Log = new List<string>();
+            public int GunaCadangan;   // baris pembiayaan tanpa jenis penggunaan → Konsumsi
         }
 
         // ================================================================
@@ -127,9 +135,46 @@ namespace CKPNLibrary.Modules
                 segmen.Add(KeData(s.Kode, s.Ada, s.Pesan, s.Debitur, s.OS, s.EAD, s.PPKA));
             }
 
+            // Tahap 8b: per sandi lokasi kantor (urut numerik), nama kantor dari daftar sandi tersimpan bila ada
+            var namaKantor = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                foreach (var d in CKPNLibrary.Data.SandiKantor.Daftar())
+                    if (!string.IsNullOrEmpty(Convert.ToString(d["nama"]))) namaKantor[(string)d["kode"]] = Convert.ToString(d["nama"]);
+            }
+            catch { }
+            var kodeKantor = new List<string>(h.Kantor.Keys);
+            kodeKantor.Sort(CKPNLibrary.Panel.ModeHitung.BandingSandi);
+            var kantor = new List<object>();
+            foreach (var kode in kodeKantor)
+            {
+                var s = h.Kantor[kode];
+                var d = KeData(kode, true, "", s.Debitur, s.OS, s.EAD, s.PPKA);
+                string nm;
+                d["nama"] = namaKantor.TryGetValue(kode, out nm) ? nm : "";
+                Dictionary<string, double> perKC;
+                d["perKC"] = h.KantorKC.TryGetValue(kode, out perKC) ? perKC : new Dictionary<string, double>();
+                kantor.Add(d);
+            }
+
+            // Tahap 8c: per jenis penggunaan (urut kode 1–3)
+            var guna = new List<object>();
+            for (int i = 0; i < CKPNLibrary.Panel.ModeHitung.JenisPenggunaan.GetLength(0); i++)
+            {
+                string kode = CKPNLibrary.Panel.ModeHitung.JenisPenggunaan[i, 0];
+                Segmen s;
+                if (!h.Guna.TryGetValue(kode, out s)) continue;
+                var d = KeData(kode, true, "", s.Debitur, s.OS, s.EAD, s.PPKA);
+                d["nama"] = CKPNLibrary.Panel.ModeHitung.JenisPenggunaan[i, 1];
+                Dictionary<string, double> perKC;
+                d["perKC"] = h.GunaKC.TryGetValue(kode, out perKC) ? perKC : new Dictionary<string, double>();
+                guna.Add(d);
+            }
+
             return new Dictionary<string, object>
             {
                 { "periode", periode },
+                { "penggunaan", guna }, { "penggunaanCadangan", h.GunaCadangan },
                 { "fileTemplate", Path.GetFileName(pathTemplate) },
                 { "pathTemplate", pathTemplate },
                 { "waktu", DateTime.Now.ToString("yyyy-MM-dd HH:mm") },
@@ -140,6 +185,7 @@ namespace CKPNLibrary.Modules
                         { "labaLalu", h.LabaLalu }, { "labaBerjalan", h.LabaBerjalan }
                     } : null },
                 { "segmen", segmen },
+                { "kantor", kantor },
                 { "total", KeData("Total", true, "", totDebitur, totOS, totEAD, totPPKA) },
                 { "log", h.Log }
             };
@@ -225,11 +271,11 @@ namespace CKPNLibrary.Modules
             else h.Log.Add("Sheet 'GB0200' tidak ada di template.");
 
             foreach (string kode in SegmenOverview)
-                h.Segmen.Add(BacaSegmen(wbTpl, kode, h.Log));
+                h.Segmen.Add(BacaSegmen(wbTpl, kode, h.Log, h));
             return h;
         }
 
-        private Segmen BacaSegmen(Excel.Workbook wbTpl, string kode, List<string> log)
+        private Segmen BacaSegmen(Excel.Workbook wbTpl, string kode, List<string> log, HasilOverview h)
         {
             var s = new Segmen { Kode = kode };
             SheetSpec spec;
@@ -250,6 +296,19 @@ namespace CKPNLibrary.Modules
 
             int dataStart = spec.HeaderRow + 1;
             string[] namaArr = ExcelHelper.BacaKolomString(ws, spec.ColNama, dataStart, lastRow);
+            string[] sandiArr = ExcelHelper.BacaKolomString(ws, "B", dataStart, lastRow);   // Tahap 8b: sandi kantor
+            // Tahap 8c: jenis penggunaan (kolom S) per kontrak = isian baris pembiayaan pertama; kosong → Konsumsi
+            string[] gunaArr = ExcelHelper.BacaKolomString(ws, "S", dataStart, lastRow);
+            string[] rekArr  = ExcelHelper.BacaKolomString(ws, spec.ColNoRek, dataStart, lastRow);
+            var gunaKontrak = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < namaArr.Length; i++)
+            {
+                if (string.IsNullOrEmpty(namaArr[i])) continue;
+                string g = CKPNLibrary.Panel.ModeHitung.NormPenggunaan(i < gunaArr.Length ? gunaArr[i] : null);
+                if (g.Length == 0) { g = CKPNLibrary.Panel.ModeHitung.PenggunaanCadangan; h.GunaCadangan++; }
+                string r = i < rekArr.Length ? (rekArr[i] ?? "").Trim() : "";
+                if (r.Length > 0 && !gunaKontrak.ContainsKey(r)) gunaKontrak[r] = g;
+            }
             string[] kualArr = ExcelHelper.BacaKolomString(ws, spec.ColKualitas, dataStart, lastRow);
             double[] osArr   = BacaNilaiSegmen(ws, spec, kode, false, dataStart, lastRow);
             double[] eadArr  = BacaNilaiSegmen(ws, spec, kode, true,  dataStart, lastRow);
@@ -262,12 +321,38 @@ namespace CKPNLibrary.Modules
             {
                 int kual = NormKualitas(kualArr[i]);
                 if (kual < 1 || kual > 5) continue;
+                string sandi = i < sandiArr.Length ? CKPNLibrary.Panel.ModeHitung.NormSandi(sandiArr[i]) : "";
+                if (sandi.Length == 0) sandi = "(kosong)";
+                Segmen kt;
+                if (!h.Kantor.TryGetValue(sandi, out kt)) { kt = new Segmen { Kode = sandi, Ada = true }; h.Kantor[sandi] = kt; }
+                string rk = i < rekArr.Length ? (rekArr[i] ?? "").Trim() : "", kodeGuna;
+                if (!gunaKontrak.TryGetValue(rk, out kodeGuna))
+                {
+                    kodeGuna = CKPNLibrary.Panel.ModeHitung.NormPenggunaan(i < gunaArr.Length ? gunaArr[i] : null);
+                    if (kodeGuna.Length == 0) kodeGuna = CKPNLibrary.Panel.ModeHitung.PenggunaanCadangan;
+                }
+                Segmen gu;
+                if (!h.Guna.TryGetValue(kodeGuna, out gu)) { gu = new Segmen { Kode = kodeGuna, Ada = true }; h.Guna[kodeGuna] = gu; }
                 // PPKA dijumlah untuk semua baris berkualitas (sama seperti CONTROL PPKA di Dashboard)
                 s.PPKA[kual] += ppkaArr[i];
+                kt.PPKA[kual] += ppkaArr[i];
+                gu.PPKA[kual] += ppkaArr[i];
                 if (string.IsNullOrEmpty(namaArr[i])) continue;   // baris agunan
                 s.OS[kual]  += osArr[i];
                 s.EAD[kual] += eadArr[i];
                 s.Debitur++;
+                kt.OS[kual]  += osArr[i];
+                kt.EAD[kual] += eadArr[i];
+                kt.Debitur++;
+                gu.OS[kual]  += osArr[i];
+                gu.EAD[kual] += eadArr[i];
+                gu.Debitur++;
+                Dictionary<string, double> perKCg;
+                if (!h.GunaKC.TryGetValue(kodeGuna, out perKCg)) { perKCg = new Dictionary<string, double>(); h.GunaKC[kodeGuna] = perKCg; }
+                perKCg[kode] = (perKCg.ContainsKey(kode) ? perKCg[kode] : 0) + osArr[i];
+                Dictionary<string, double> perKC;
+                if (!h.KantorKC.TryGetValue(sandi, out perKC)) { perKC = new Dictionary<string, double>(); h.KantorKC[sandi] = perKC; }
+                perKC[kode] = (perKC.ContainsKey(kode) ? perKC[kode] : 0) + osArr[i];
             }
             return s;
         }

@@ -55,8 +55,19 @@ namespace CKPNLibrary.Helpers
         public static string FolderBackup { get { return Path.Combine(FolderLibrary, "backup"); } }
         public static string FolderLogs   { get { return Path.Combine(FolderLibrary, "logs");   } }
 
-        /// <summary>Lokasi database SQLite (staging & penyesuaian).</summary>
+        /// <summary>
+        /// Database UTAMA library\data\ckpn.db: data mode "per akad" sekaligus tabel BERSAMA semua mode
+        /// (penyesuaian, memo, parameter ABA, profil template, referensi KC, mode resmi per tahun).
+        /// Lokasinya tidak bergantung mode aktif (dipakai juga oleh pemeriksaan lisensi).
+        /// </summary>
         public static string FileDatabase { get { return Path.Combine(FolderData, "ckpn.db"); } }
+
+        /// <summary>
+        /// Tahap 8: database mode perhitungan yang AKTIF di panel (mis. ckpn.db untuk per akad,
+        /// ckpn_kantor.db untuk per sandi kantor). Versi, periode, konsolidasi, dan jurnal tiap mode
+        /// terpisah di file masing-masing.
+        /// </summary>
+        public static string FileDatabaseMode { get { return Path.Combine(FolderData, CKPNLibrary.Panel.ModeHitung.Aktif.FileDb); } }
 
         /// <summary>Snapshot .xlsx hasil tiap grup yang disimpan: library\staging\yyyy-MM\.</summary>
         public static string FolderStaging { get { return Path.Combine(FolderLibrary, "staging"); } }

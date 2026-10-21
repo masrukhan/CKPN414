@@ -63,7 +63,7 @@ namespace CKPNLibrary.Panel
             if (!ParameterMaster.BacaTanggalLaporan(wb, out tgl)) return "Tanggal laporan (Master!C4) belum diisi.";
             string tanggal = tgl.ToString("yyyy-MM-dd");
             Excel.Worksheet m = ParameterMaster.CariSheet(wb, "Master");
-            string kodeMaster = m == null ? "" : string.Join(",", ParameterMaster.BacaKCDicentang(m).ToArray());
+            string kodeMaster = ModeHitung.KodeGrupWorkbook(m);   // Tahap 8: kunci grup menurut mode aktif
 
             var status = Periode.Status(tanggal, kodeMaster, tanggal);
             if (!(bool)status["susunanDitetapkan"]) return "Susunan grup tahun " + tgl.Year + " belum ditetapkan.";
@@ -99,6 +99,7 @@ namespace CKPNLibrary.Panel
             var namaAntrian = new List<string>();
             foreach (var it in antrian) namaAntrian.Add(it.Nama);
             LogProses.CatatPanel(tanggal, "Hitung semua grup", "Mulai", LogProses.Info, LogProses.R()
+                .Tambah("Mode", ModeHitung.Aktif.Nama)
                 .Tambah("Grup", string.Join(", ", namaAntrian.ToArray()))
                 .Tambah("Bila ada temuan", berhentiBilaTemuan ? "review dulu (berhenti di grup itu)" : "simpan semua otomatis")
                 .Tambah("Lewati grup tersimpan", lewatiTersimpan ? "ya" : "tidak"));

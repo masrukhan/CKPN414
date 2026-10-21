@@ -48,10 +48,10 @@ namespace CKPNLibrary.Panel
         // =============================================================
         public static Nilai Baca(int tahun)
         {
-            if (!Database.Ada) return null;
+            if (!Database.AdaBersama) return null;   // Tahap 8: parameter ABA bersama semua mode (database utama)
             try
             {
-                using (var con = Database.Buka(false)) return Baca(con, tahun);
+                using (var con = Database.BukaBersama(false)) return Baca(con, tahun);
             }
             catch (Exception ex)
             {
@@ -77,10 +77,21 @@ namespace CKPNLibrary.Panel
             }
         }
 
-        private static bool AdaFinal(SQLiteConnection con, int tahun)
+        /// <summary>Tahap 8: ada periode Final di tahun ini pada mode perhitungan mana pun.</summary>
+        private static bool AdaFinal(int tahun)
         {
-            return Convert.ToInt32(Database.Scalar(con,
-                "SELECT COUNT(*) FROM periode WHERE status='Final' AND substr(tanggal,1,4)=@p0", tahun.ToString())) > 0;
+            foreach (var m in ModeHitung.Semua)
+            {
+                if (!Database.AdaMode(m)) continue;
+                try
+                {
+                    using (var con = Database.BukaMode(m, false))
+                        if (Convert.ToInt32(Database.Scalar(con,
+                            "SELECT COUNT(*) FROM periode WHERE status='Final' AND substr(tanggal,1,4)=@p0", tahun.ToString())) > 0) return true;
+                }
+                catch (Exception ex) { CatatanLog.Tulis("Cek periode Final (" + m.Id + "): " + ex.Message); }
+            }
+            return false;
         }
 
         private static void CekRasio(string label, double v)
@@ -101,13 +112,14 @@ namespace CKPNLibrary.Panel
             if (string.IsNullOrWhiteSpace(dasar)) throw new InvalidOperationException("Dasar penetapan (kebijakan / addendum / memo) wajib diisi.");
 
             var baru = new Nilai { Tahun = tahun, Pd = pd, LgdDijamin = lgdDijamin, LgdAtas = lgdAtas, Dasar = dasar.Trim() };
+            bool adaFinal = AdaFinal(tahun);
             Database.Cadangkan();
-            using (var con = Database.Buka(true))
+            using (var con = Database.BukaBersama(true))
             using (var tx = con.BeginTransaction())
             {
                 var lama = Baca(con, tahun);
                 bool berubah = lama == null || !SamaNilai(lama.Larik, baru.Larik);
-                if (lama != null && berubah && AdaFinal(con, tahun))
+                if (lama != null && berubah && adaFinal)
                     throw new InvalidOperationException("Parameter ABA tahun " + tahun + " tidak dapat diubah karena sudah ada periode Final di tahun itu (" +
                         lama.Ringkas() + "). Buka kunci periode tersebut terlebih dahulu bila perubahan memang disetujui.");
 
@@ -130,13 +142,14 @@ namespace CKPNLibrary.Panel
             string info;
             if (!Database.BolehMenulis(out info)) throw new InvalidOperationException(info);
             if (string.IsNullOrWhiteSpace(alasan)) throw new InvalidOperationException("Alasan wajib diisi.");
+            bool adaFinal = AdaFinal(tahun);
             Database.Cadangkan();
-            using (var con = Database.Buka(true))
+            using (var con = Database.BukaBersama(true))
             using (var tx = con.BeginTransaction())
             {
                 var lama = Baca(con, tahun);
                 if (lama == null) return Info(tahun, null);
-                if (AdaFinal(con, tahun))
+                if (adaFinal)
                     throw new InvalidOperationException("Parameter ABA tahun " + tahun + " tidak dapat dihapus karena sudah ada periode Final di tahun itu.");
                 Database.Exec(con, "DELETE FROM parameter_aba WHERE tahun=@p0", tahun);
                 Database.CatatAktivitas(con, tahun.ToString(), "parameter-aba-hapus", lama.Ringkas() + " · alasan: " + alasan.Trim());
@@ -154,11 +167,12 @@ namespace CKPNLibrary.Panel
             var h = new Dictionary<string, object> { { "tahun", tahun } };
             Nilai n = null;
             bool adaFinal = false;
-            if (Database.Ada)
+            if (Database.AdaBersama)
             {
                 try
                 {
-                    using (var con = Database.Buka(false)) { n = Baca(con, tahun); adaFinal = AdaFinal(con, tahun); }
+                    using (var con = Database.BukaBersama(false)) n = Baca(con, tahun);
+                    adaFinal = AdaFinal(tahun);
                 }
                 catch (Exception ex) { h["error"] = ex.Message; }
             }

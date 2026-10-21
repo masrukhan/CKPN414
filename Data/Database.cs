@@ -25,30 +25,93 @@ namespace CKPNLibrary.Data
     /// </summary>
     internal static class Database
     {
-        public const int VersiSkema = 10;
-        private static bool _skemaSiap;
+        public const int VersiSkema = 13;
+        private static readonly HashSet<string> _skemaSiap = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly object _kunci = new object();
+
+        /// <summary>
+        /// Tahap 8: tabel yang dipakai BERSAMA semua mode perhitungan. Tabel ini hanya ada di database
+        /// utama (ckpn.db). Database mode lain (mis. ckpn_kantor.db) tidak memilikinya; database utama
+        /// dilampirkan (ATTACH ... AS bersama) sehingga nama tabel tanpa awalan otomatis mengarah ke sana.
+        /// Migrasi skema berikutnya yang mengubah tabel ini harus dijalankan hanya di database utama.
+        /// </summary>
+        public static readonly string[] TabelBersama =
+        {
+            "penyesuaian_individu", "penyesuaian_lgdcs", "log_penyesuaian", "memo", "parameter_aba",
+            "profil_template", "profil_template_info", "overview_periode",
+            "ref_kc_manual", "ref_kc_produk", "ref_kc_hapusbuku", "ref_kc_lingkup", "ref_kc_info",
+            "mode_tahun", "sandi_kantor", "ref_guna_manual", "ref_guna_produk"
+        };
 
         // ================================================================
         // Koneksi
         // ================================================================
 
-        /// <summary>Buka koneksi. tulis=false → read-only.</summary>
+        /// <summary>
+        /// Buka database mode perhitungan yang aktif. tulis=false → read-only.
+        /// Mode selain "per akad": database mode + database utama dilampirkan sebagai "bersama".
+        /// </summary>
         public static SQLiteConnection Buka(bool tulis)
         {
-            NativeLoader.MuatSQLite();
+            return BukaMode(ModeHitung.Aktif, tulis);
+        }
 
-            string path = AppPaths.FileDatabase;
+        /// <summary>Buka database mode tertentu (dipakai pembanding antarmode dan pengecekan mode resmi).</summary>
+        public static SQLiteConnection BukaMode(ModeHitung.Mode mode, bool tulis)
+        {
+            NativeLoader.MuatSQLite();
+            if (mode == null || mode.Utama) return BukaFile(AppPaths.FileDatabase, tulis, true);
+
+            string bersama = AppPaths.FileDatabase;
+            if (tulis) { using (BukaFile(bersama, true, true)) { } }   // pastikan database utama ada & skemanya terbaru
+            else if (!File.Exists(bersama))
+                throw new FileNotFoundException("Database utama (ckpn.db) belum ada. Simpan grup pertama akan membuatnya.", bersama);
+
+            var con = BukaFile(PathMode(mode), tulis, false);
+            try
+            {
+                using (var cmd = new SQLiteCommand("ATTACH DATABASE @f AS bersama", con))
+                {
+                    cmd.Parameters.AddWithValue("@f", bersama);
+                    cmd.ExecuteNonQuery();
+                }
+            }
+            catch { con.Dispose(); throw; }
+            return con;
+        }
+
+        /// <summary>
+        /// Buka database UTAMA saja (tabel bersama: penyesuaian, memo, parameter ABA, profil, referensi KC,
+        /// mode resmi). Dipakai modul yang hanya membaca/menulis tabel bersama supaya tetap bekerja walau
+        /// database mode aktif belum dibuat.
+        /// </summary>
+        public static SQLiteConnection BukaBersama(bool tulis)
+        {
+            NativeLoader.MuatSQLite();
+            return BukaFile(AppPaths.FileDatabase, tulis, true);
+        }
+
+        public static string PathMode(ModeHitung.Mode mode)
+        {
+            return Path.Combine(AppPaths.FolderData, mode.FileDb);
+        }
+
+        private static SQLiteConnection BukaFile(string path, bool tulis, bool utama)
+        {
             if (!tulis && !File.Exists(path))
-                throw new FileNotFoundException("Database belum ada. Simpan grup pertama akan membuatnya.", path);
+                throw new FileNotFoundException(utama
+                    ? "Database belum ada. Simpan grup pertama akan membuatnya."
+                    : "Database mode ini belum ada. Simpan grup pertama pada mode ini akan membuatnya.", path);
 
             // Skema lama (mis. dibuat Tahap 3a) diperbarui otomatis oleh PENGIRIM saat
             // pertama kali dibaca, supaya kolom/tabel baru tersedia untuk semua fitur baca.
-            if (!tulis && !_skemaSiap)
+            bool siap;
+            lock (_kunci) siap = _skemaSiap.Contains(path);
+            if (!tulis && !siap)
             {
                 string tidakPerlu;
                 if (BolehMenulis(out tidakPerlu))
-                    using (Buka(true)) { }
+                    using (BukaFile(path, true, utama)) { }
             }
 
             if (tulis) Directory.CreateDirectory(Path.GetDirectoryName(path));
@@ -68,12 +131,32 @@ namespace CKPNLibrary.Data
             con.Open();
             Exec(con, "PRAGMA busy_timeout = 10000");
 
-            if (tulis) SiapkanSkema(con);
+            if (tulis) SiapkanSkema(con, path, utama);
             return con;
         }
 
-        /// <summary>True bila database sudah ada (untuk fitur baca).</summary>
-        public static bool Ada { get { return File.Exists(AppPaths.FileDatabase); } }
+        /// <summary>True bila database mode aktif sudah ada (untuk fitur baca).</summary>
+        public static bool Ada { get { return File.Exists(AppPaths.FileDatabaseMode); } }
+
+        /// <summary>True bila database utama (tabel bersama) sudah ada.</summary>
+        public static bool AdaBersama { get { return File.Exists(AppPaths.FileDatabase); } }
+
+        /// <summary>True bila database mode tertentu sudah ada.</summary>
+        public static bool AdaMode(ModeHitung.Mode mode) { return mode != null && File.Exists(PathMode(mode)); }
+
+        /// <summary>
+        /// True bila tabel ada di koneksi ini, termasuk di database "bersama" yang dilampirkan.
+        /// (sqlite_master hanya berisi tabel database utama koneksi.)
+        /// </summary>
+        public static bool TabelAda(SQLiteConnection con, string tabel)
+        {
+            if (Convert.ToInt32(Scalar(con, "SELECT COUNT(*) FROM main.sqlite_master WHERE type='table' AND name=@p0", tabel)) > 0) return true;
+            try
+            {
+                return Convert.ToInt32(Scalar(con, "SELECT COUNT(*) FROM bersama.sqlite_master WHERE type='table' AND name=@p0", tabel)) > 0;
+            }
+            catch { return false; }   // tidak ada database bersama yang dilampirkan
+        }
 
         // ================================================================
         // Hak tulis
@@ -131,41 +214,60 @@ namespace CKPNLibrary.Data
         // ================================================================
         public static void Cadangkan()
         {
+            // Mode selain per akad juga menulis tabel bersama (penyesuaian, memo) → keduanya dicadangkan
+            CadangkanFile(AppPaths.FileDatabaseMode);
+            if (!string.Equals(AppPaths.FileDatabaseMode, AppPaths.FileDatabase, StringComparison.OrdinalIgnoreCase))
+                CadangkanFile(AppPaths.FileDatabase);
+        }
+
+        private static void CadangkanFile(string db)
+        {
             try
             {
-                string db = AppPaths.FileDatabase;
                 if (!File.Exists(db)) return;
+                string stem = Path.GetFileNameWithoutExtension(db);
                 Directory.CreateDirectory(AppPaths.FolderBackup);
                 string tujuan = Path.Combine(AppPaths.FolderBackup,
-                    "ckpn_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".db");
+                    stem + "_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".db");
                 File.Copy(db, tujuan, false);
 
-                var lama = new List<string>(Directory.GetFiles(AppPaths.FolderBackup, "ckpn_*.db"));
+                // Rotasi per file: "ckpn_2026…" tidak tercampur dengan "ckpn_kantor_2026…"
+                var lama = new List<string>(Directory.GetFiles(AppPaths.FolderBackup, stem + "_2*.db"));
                 lama.Sort(StringComparer.OrdinalIgnoreCase);
                 for (int i = 0; i < lama.Count - 20; i++)
                     try { File.Delete(lama[i]); } catch { }
             }
             catch (Exception ex)
             {
-                CatatanLog.Tulis("Cadangan database gagal: " + ex.Message);
+                CatatanLog.Tulis("Cadangan database gagal (" + Path.GetFileName(db) + "): " + ex.Message);
             }
         }
 
         /// <summary>
         /// Salinan arsip sebelum penghapusan data (Tahap 3d). Nama diawali "arsip_" sehingga
         /// tidak ikut dirotasi oleh Cadangkan(). Melempar error bila gagal — penghapusan
-        /// tidak boleh berjalan tanpa arsip.
+        /// tidak boleh berjalan tanpa arsip. Tahap 8: database mode aktif (dan database utama
+        /// bila berbeda, karena penghapusan bisa menyentuh penyesuaian bersama).
         /// </summary>
         public static string Arsipkan(string label)
         {
-            string db = AppPaths.FileDatabase;
+            string db = AppPaths.FileDatabaseMode;
             if (!File.Exists(db)) throw new FileNotFoundException("Database belum ada.", db);
+            string hasil = ArsipkanFile(db, label);
+            if (!string.Equals(db, AppPaths.FileDatabase, StringComparison.OrdinalIgnoreCase) && File.Exists(AppPaths.FileDatabase))
+                ArsipkanFile(AppPaths.FileDatabase, label);
+            return hasil;
+        }
+
+        private static string ArsipkanFile(string db, string label)
+        {
             Directory.CreateDirectory(AppPaths.FolderBackup);
             var aman = new System.Text.StringBuilder();
             foreach (char c in label ?? "")
                 aman.Append(char.IsLetterOrDigit(c) || c == '-' ? c : '-');
+            string stem = Path.GetFileNameWithoutExtension(db);
             string tujuan = Path.Combine(AppPaths.FolderBackup,
-                "arsip_" + aman + "_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".db");
+                "arsip_" + (stem == "ckpn" ? "" : stem + "_") + aman + "_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".db");
             File.Copy(db, tujuan, false);
             return tujuan;
         }
@@ -173,11 +275,11 @@ namespace CKPNLibrary.Data
         // ================================================================
         // Skema
         // ================================================================
-        private static void SiapkanSkema(SQLiteConnection con)
+        private static void SiapkanSkema(SQLiteConnection con, string path, bool utama)
         {
             lock (_kunci)
             {
-                if (_skemaSiap) return;
+                if (_skemaSiap.Contains(path)) return;
                 Exec(con, "CREATE TABLE IF NOT EXISTS meta (kunci TEXT PRIMARY KEY, nilai TEXT)");
                 int versi = 0;
                 using (var cmd = new SQLiteCommand("SELECT nilai FROM meta WHERE kunci='versi_skema'", con))
@@ -194,7 +296,7 @@ namespace CKPNLibrary.Data
                         Exec(con, "INSERT OR REPLACE INTO meta(kunci,nilai) VALUES('versi_skema','1')");
                         tx.Commit();
                     }
-                    CatatanLog.Tulis("Database: skema v1 dibuat di " + AppPaths.FileDatabase);
+                    CatatanLog.Tulis("Database: skema v1 dibuat di " + path);
                 }
                 // ---- v2 (Tahap 3b): susunan grup, hapus versi, keputusan metode, kunci periode ----
                 if (versi < 2)
@@ -306,9 +408,44 @@ namespace CKPNLibrary.Data
                     }
                     CatatanLog.Tulis("Database: migrasi ke skema v11 selesai");
                 }
-                // Migrasi versi berikutnya ditambahkan di sini: if (versi < 12) { ... }
+                // ---- v12 (Tahap 8): mode perhitungan — mode resmi per tahun, daftar sandi kantor ----
+                if (versi < 12)
+                {
+                    using (var tx = con.BeginTransaction())
+                    {
+                        foreach (var sql in SkemaV12) Exec(con, sql);
+                        Exec(con, "INSERT OR REPLACE INTO meta(kunci,nilai) VALUES('versi_skema','12')");
+                        tx.Commit();
+                    }
+                    CatatanLog.Tulis("Database: migrasi ke skema v12 selesai (" + Path.GetFileName(path) + ")");
+                }
+                // ---- v13 (Tahap 8c): jenis penggunaan rekening hapus buku (mode per jenis penggunaan) ----
+                if (versi < 13)
+                {
+                    using (var tx = con.BeginTransaction())
+                    {
+                        // Semua isi v13 menyangkut tabel bersama → hanya di database utama
+                        // (database mode yang dibuat sebelumnya tidak lagi memiliki ref_kc_hapusbuku)
+                        if (utama) foreach (var sql in SkemaV13) Exec(con, sql);
+                        Exec(con, "INSERT OR REPLACE INTO meta(kunci,nilai) VALUES('versi_skema','13')");
+                        tx.Commit();
+                    }
+                    CatatanLog.Tulis("Database: migrasi ke skema v13 selesai (" + Path.GetFileName(path) + ")");
+                }
+                // Migrasi versi berikutnya ditambahkan di sini: if (versi < 14) { ... }
+                // (perubahan pada TabelBersama: jalankan hanya bila utama == true)
 
-                _skemaSiap = true;
+                if (!utama)
+                {
+                    // Database mode: tabel bersama tidak boleh ada di sini, supaya nama tabel tanpa awalan
+                    // mengarah ke database utama yang dilampirkan. Database mode baru membuatnya lewat
+                    // migrasi v1–v12 di atas (selalu kosong) → dibuang.
+                    foreach (var t in TabelBersama) Exec(con, "DROP TABLE IF EXISTS main." + t);
+                    Exec(con, "INSERT OR IGNORE INTO meta(kunci,nilai) VALUES('mode', @p0)", Path.GetFileNameWithoutExtension(path));
+                }
+                else Exec(con, "INSERT OR IGNORE INTO meta(kunci,nilai) VALUES('mode','utama')");
+
+                _skemaSiap.Add(path);
             }
         }
 
@@ -643,6 +780,52 @@ namespace CKPNLibrary.Data
             @"CREATE TABLE IF NOT EXISTS ref_kc_info (
                 kunci  TEXT PRIMARY KEY,
                 nilai  TEXT)"
+        };
+
+        private static readonly string[] SkemaV12 =
+        {
+            // Mode perhitungan resmi per tahun (Tahap 8). Penetapan Final & jurnal hanya dari mode ini.
+            // Bila tahun belum diisi, berlaku mode tahun terakhir sebelumnya; belum pernah diisi = 'akad'.
+            @"CREATE TABLE IF NOT EXISTS mode_tahun (
+                tahun     INTEGER PRIMARY KEY,
+                mode      TEXT NOT NULL,
+                dasar     TEXT,
+                pengguna  TEXT,
+                waktu     TEXT)",
+            // Sandi kantor (kolom B KC0600–KC1100) hasil pindai template APOLLO — bahan susunan grup mode per kantor
+            // Sandi kantor rekening hapus buku untuk LGD ER mode per kantor (KC2900 kolom B; bila kosong/0 dari rekening aktif)
+            "ALTER TABLE ref_kc_hapusbuku ADD COLUMN sandi_hb TEXT",
+            "ALTER TABLE ref_kc_hapusbuku ADD COLUMN sandi_rekening TEXT",
+            @"CREATE TABLE IF NOT EXISTS sandi_kantor (
+                sandi     TEXT PRIMARY KEY,
+                nama      TEXT,
+                rekening  INTEGER,
+                rincian   TEXT,
+                tanggal   TEXT,
+                file      TEXT,
+                waktu     TEXT)"
+        };
+
+        private static readonly string[] SkemaV13 =
+        {
+            // Jenis penggunaan rekening yang sama di KC0600–KC1100 (kolom S) untuk rekening hapus buku KC2900
+            "ALTER TABLE ref_kc_hapusbuku ADD COLUMN guna_rekening TEXT",
+            // Isian petugas: jenis penggunaan per rekening ('rek') atau per awalan kode produk ('produk'); kode 1/2/3
+            @"CREATE TABLE IF NOT EXISTS ref_guna_manual (
+                jenis     TEXT NOT NULL CHECK (jenis IN ('rek','produk')),
+                kunci     TEXT NOT NULL,
+                kode      TEXT NOT NULL CHECK (kode IN ('1','2','3')),
+                alasan    TEXT,
+                pengguna  TEXT,
+                waktu     TEXT,
+                PRIMARY KEY (jenis, kunci))",
+            // Hasil pindai: jumlah rekening aktif per awalan kode produk per jenis penggunaan
+            @"CREATE TABLE IF NOT EXISTS ref_guna_produk (
+                panjang  INTEGER NOT NULL,
+                awalan   TEXT NOT NULL,
+                kode     TEXT NOT NULL,
+                jumlah   INTEGER NOT NULL,
+                PRIMARY KEY (panjang, awalan, kode))"
         };
 
         public static void CatatAktivitas(SQLiteConnection con, string periode, string aksi, string detail)

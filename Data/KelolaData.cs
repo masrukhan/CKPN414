@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using CKPNLibrary.Helpers;
+using CKPNLibrary.Panel;
 
 namespace CKPNLibrary.Data
 {
@@ -27,11 +28,12 @@ namespace CKPNLibrary.Data
             bool boleh = Database.BolehMenulis(out info);
             var hasil = new Dictionary<string, object>
             {
-                { "adaDatabase", Database.Ada }, { "fileDatabase", AppPaths.FileDatabase },
+                { "adaDatabase", Database.Ada }, { "fileDatabase", AppPaths.FileDatabaseMode },
+                { "mode", ModeHitung.Aktif.Id }, { "namaMode", ModeHitung.Aktif.Nama }, { "modeUtama", ModeHitung.Aktif.Utama },
                 { "bolehMenulis", boleh }, { "infoPengirim", info }, { "konfirmasiSemua", KonfirmasiSemua }
             };
             if (!Database.Ada) return hasil;
-            hasil["ukuranKB"] = new FileInfo(AppPaths.FileDatabase).Length / 1024;
+            hasil["ukuranKB"] = new FileInfo(AppPaths.FileDatabaseMode).Length / 1024;
 
             using (var con = Database.Buka(false))
             {
@@ -110,10 +112,17 @@ namespace CKPNLibrary.Data
                 Database.Exec(con, "DELETE FROM hasil_lgdcs WHERE run_id IN " + runs, pid);
                 Database.Exec(con, "DELETE FROM run_grup WHERE periode_id=@p0", pid);
                 Database.Exec(con, "DELETE FROM periode WHERE id=@p0", pid);
-                Database.Exec(con, "DELETE FROM overview_periode WHERE tanggal=@p0", tanggal);
-                Database.Exec(con, "DELETE FROM memo WHERE tanggal=@p0", tanggal);   // Tahap 6: memo & dokumen periode
-                Database.Exec(con, "DELETE FROM profil_template WHERE tanggal=@p0", tanggal);
-                Database.Exec(con, "DELETE FROM profil_template_info WHERE tanggal=@p0", tanggal);
+                // Tahap 8: overview, memo, profil, dan penyesuaian adalah data bersama semua mode →
+                // hanya dihapus dari mode utama (per akad). Mode lain cukup menghapus versinya sendiri.
+                bool utama = ModeHitung.Aktif.Utama;
+                if (utama)
+                {
+                    Database.Exec(con, "DELETE FROM overview_periode WHERE tanggal=@p0", tanggal);
+                    Database.Exec(con, "DELETE FROM memo WHERE tanggal=@p0", tanggal);   // Tahap 6: memo & dokumen periode
+                    Database.Exec(con, "DELETE FROM profil_template WHERE tanggal=@p0", tanggal);
+                    Database.Exec(con, "DELETE FROM profil_template_info WHERE tanggal=@p0", tanggal);
+                }
+                hapusPenyesuaian = hapusPenyesuaian && utama;
 
                 if (hapusPenyesuaian)
                 {
@@ -167,10 +176,18 @@ namespace CKPNLibrary.Data
                     nPeriode = Convert.ToInt32(Database.Scalar(con, "SELECT COUNT(*) FROM periode"));
                     nVersi = Convert.ToInt32(Database.Scalar(con, "SELECT COUNT(*) FROM run_grup"));
 
-                    foreach (var t in new[] { "keputusan_metode", "jurnal_ckpn", "ringkasan", "analisis_pd", "hasil_individu", "hasil_lgdcs", "run_grup", "periode", "overview_periode", "memo", "profil_template", "profil_template_info" })
+                    foreach (var t in new[] { "keputusan_metode", "jurnal_ckpn", "ringkasan", "analisis_pd", "hasil_individu", "hasil_lgdcs", "run_grup", "periode" })
                         Database.Exec(con, "DELETE FROM " + t);
-                    // Tahap 6d: jejak lingkup LGD ER ikut kosong (hasil pindai KC2900 = cache file, tetap)
-                    Database.Exec(con, "DELETE FROM ref_kc_lingkup");
+                    // Tahap 8: tabel bersama semua mode hanya dikosongkan dari mode utama (per akad)
+                    bool utama = ModeHitung.Aktif.Utama;
+                    sertakanPenyesuaian = sertakanPenyesuaian && utama;
+                    if (utama)
+                    {
+                        foreach (var t in new[] { "overview_periode", "memo", "profil_template", "profil_template_info" })
+                            Database.Exec(con, "DELETE FROM " + t);
+                        // Tahap 6d: jejak lingkup LGD ER ikut kosong (hasil pindai KC2900 = cache file, tetap)
+                        Database.Exec(con, "DELETE FROM ref_kc_lingkup");
+                    }
                     if (sertakanPenyesuaian)
                     {
                         Database.Exec(con, "DELETE FROM penyesuaian_individu");
@@ -184,8 +201,11 @@ namespace CKPNLibrary.Data
                     {
                         Database.Exec(con, "DELETE FROM susunan_grup");
                         Database.Exec(con, "DELETE FROM susunan_tahun");
-                        Database.Exec(con, "DELETE FROM parameter_aba");   // Tahap 5h: ketetapan tahunan juga
-                        Database.Exec(con, "DELETE FROM ref_kc_manual");   // Tahap 6d: isian referensi KC petugas
+                        if (utama)
+                        {
+                            Database.Exec(con, "DELETE FROM parameter_aba");   // Tahap 5h: ketetapan tahunan juga
+                            Database.Exec(con, "DELETE FROM ref_kc_manual");   // Tahap 6d: isian referensi KC petugas
+                        }
                     }
                     Database.CatatAktivitas(con, "", "kosongkan-database",
                         nPeriode + " periode, " + nVersi + " versi" +

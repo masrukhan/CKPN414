@@ -123,7 +123,7 @@ namespace CKPNLibrary.Data
                     {
                         var g = susunan.Find(x => x.KodeKC == r.KodeKC);
                         if (g != null) namaGrup = g.Nama;
-                        else r.Peringatan.Add("Kombinasi KC " + r.KodeKC + " tidak sesuai susunan grup tahun " + sumber +
+                        else r.Peringatan.Add((CKPNLibrary.Panel.ModeHitung.Aktif.Utama ? "Kombinasi KC " : "Kombinasi sandi kantor ") + r.KodeKC + " tidak sesuai susunan grup tahun " + sumber +
                                               ". Hasil tetap bisa disimpan, tetapi tidak ikut konsolidasi.");
                     }
                     object st = Database.Scalar(con, "SELECT status FROM periode WHERE tanggal=@p0", r.TanggalStr);
@@ -187,6 +187,7 @@ namespace CKPNLibrary.Data
                     ParameterCKPN p0 = ParameterMaster.Baca(wb);
                     if (!p0.Siap("summary"))
                         throw new InvalidOperationException("Refresh Summary: " + string.Join("; ", p0.Error["summary"].ToArray()));
+                    CKPNLibrary.Panel.SumberLingkup.TerapkanKeSummary(app, p0);   // Tahap 8: mode per kantor → template tersaring
                     wb.Activate();
                     Pemberitahu.MulaiModePanel();
                     try { new RefreshSummary(app).Refresh(p0.Summary.FilePath, p0.KCList); }
@@ -290,11 +291,15 @@ namespace CKPNLibrary.Data
                 {
                     string folder = Path.Combine(AppPaths.FolderStaging, r.Tanggal.ToString("yyyy-MM"));
                     Directory.CreateDirectory(folder);
-                    string suffix = new ExportToExcel(app).BuatSuffixKC(r.KodeKC);
+                    // Tahap 8: mode kantor → nama file "kantor_001-002", isi sheet seluruh KC
+                    var modeS = CKPNLibrary.Panel.ModeHitung.Aktif;
+                    string kcList = string.Join(",", r.KC.ToArray());
+                    string suffix = modeS.Utama ? new ExportToExcel(app).BuatSuffixKC(r.KodeKC)
+                                                : modeS.Id + "_" + r.KodeKC.Replace(",", "-");
                     snapshot = Path.Combine(folder, "CKPN_" + r.Tanggal.ToString("yyyyMMdd") + "_" + suffix + "_v" + versi + ".xlsx");
                     wb.Activate();
                     Pemberitahu.MulaiModePanel();
-                    try { new ExportToExcel(app).Export(snapshot, r.KodeKC); }
+                    try { new ExportToExcel(app).Export(snapshot, modeS.Utama ? r.KodeKC : kcList); }
                     finally { Pemberitahu.SelesaiModePanel(); }   // pesan "Export berhasil" tidak perlu ditampilkan
 
                     using (var con = Database.Buka(true))
@@ -405,6 +410,7 @@ namespace CKPNLibrary.Data
                 throw new InvalidOperationException(string.Join("; ", p.Error["summary"].ToArray()));
 
             CKPNPipeline.MatikanGhostingSekali();
+            CKPNLibrary.Panel.SumberLingkup.TerapkanKeSummary(app, p);   // Tahap 8: mode per kantor → template tersaring
             List<Dictionary<string, object>> pesan;
             bool su = true;
             try { su = app.ScreenUpdating; } catch { }
@@ -428,7 +434,7 @@ namespace CKPNLibrary.Data
             foreach (var kc in p.KC) if (rg.TryGetValue("ppka_" + kc, out v)) ppkaGrup += v;
             return new Dictionary<string, object>
             {
-                { "kodeKC", p.KCList },
+                { "kodeKC", p.KodeGrup },
                 { "nfTotal",  rg.TryGetValue("nf_total", out v)  ? (object)v : null },
                 { "migTotal", rg.TryGetValue("mig_total", out v) ? (object)v : null },
                 { "ppkaGrup", ppkaGrup },
@@ -455,6 +461,31 @@ namespace CKPNLibrary.Data
             if (r.KC.Count == 0) throw new InvalidOperationException("Tidak ada KC yang dicentang di Master.");
             r.KodeKC = string.Join(",", r.KC.ToArray());   // urutan tetap KC0600..KC1100
 
+            // Tahap 8: mode selain akad — kunci grup = lingkup di Master!H8 (mis. sandi kantor "001,002")
+            var mode = CKPNLibrary.Panel.ModeHitung.Aktif;
+            if (!mode.Utama)
+            {
+                if (r.KC.Count != CKPNLibrary.Panel.ModeHitung.SemuaKC.Length)
+                    throw new InvalidOperationException("Mode " + mode.NamaPendek + " menghitung seluruh KC0600–KC1100 sekaligus, " +
+                        "tetapi di Master hanya dicentang " + r.KodeKC + ". Hitung grup ini dari panel.");
+                r.KodeKC = CKPNLibrary.Panel.ModeHitung.KodeGrupWorkbook(master);
+                if (r.KodeKC.Length == 0)
+                    throw new InvalidOperationException("Lingkup " + mode.NamaUnit + " di Master!" + CKPNLibrary.Panel.ModeHitung.SelFilter +
+                        " kosong. Hitung grup dari panel (tab Hitung) agar lingkupnya tercatat.");
+            }
+            var konteks = Periode.BacaKonteks();
+            if (konteks != null && Periode.ModeKonteks(konteks) != mode.Id)
+            {
+                var asal = CKPNLibrary.Panel.ModeHitung.Cari(Periode.ModeKonteks(konteks));
+                throw new InvalidOperationException("Isi sheet adalah hasil perhitungan mode " + (asal == null ? "lain" : asal.Nama) +
+                    ", sedangkan panel sedang di mode " + mode.Nama + ". Hitung ulang grup ini di mode " + mode.NamaPendek +
+                    " sebelum menyimpan.");
+            }
+            // Tahap 8: tombol Master tidak menyaring file sumber per kantor → hasilnya bukan milik grup kantor mana pun
+            if (!mode.Utama && konteks != null && Convert.ToString(konteks.ContainsKey("sumber") ? konteks["sumber"] : "") == "manual")
+                throw new InvalidOperationException("Sheet dihitung dari tombol di sheet Master. Pada mode " + mode.NamaPendek +
+                    ", perhitungan harus dari panel (Hitung › Per grup) agar file sumber disaring sesuai grup. Hitung ulang grup ini dari panel.");
+
             Excel.Worksheet wsI = ParameterMaster.CariSheet(r.Wb, SheetIndv);
             Excel.Worksheet wsC = ParameterMaster.CariSheet(r.Wb, SheetCs);
             if (wsI != null) r.Indv = BacaIndividu(wsI);
@@ -476,10 +507,14 @@ namespace CKPNLibrary.Data
             // Penyesuaian tersimpan (read-only). Database belum ada = kosong.
             var ovInd = new Dictionary<string, PenyesuaianIndividu>(StringComparer.OrdinalIgnoreCase);
             var ovCs  = new Dictionary<string, PenyesuaianLgdCs>(StringComparer.OrdinalIgnoreCase);
-            if (Database.Ada)
+            // Tahap 8: penyesuaian ada di database utama (bersama semua mode)
+            if (Database.AdaBersama)
             {
                 ovInd = Penyesuaian.MuatIndividu();
                 ovCs  = Penyesuaian.MuatLgdCs();
+            }
+            if (Database.Ada)
+            {
                 using (var con = Database.Buka(false))
                 {
                     object v = Database.Scalar(con,
@@ -698,11 +733,11 @@ namespace CKPNLibrary.Data
         {
             var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             object w;
-            if (!Database.Ada || dasar == null || !dasar.TryGetValue("waktu", out w) || w == null) return set;
+            if (!Database.AdaBersama || dasar == null || !dasar.TryGetValue("waktu", out w) || w == null) return set;
             string waktuHitung = Convert.ToString(w);
             try
             {
-                using (var con = Database.Buka(false))
+                using (var con = Database.BukaBersama(false))   // log_penyesuaian = tabel bersama (Tahap 8)
                 using (var cmd = Database.Cmd(con,
                     "SELECT DISTINCT kunci FROM log_penyesuaian WHERE (modul=@p0 OR modul='semua') " +
                     "AND (aksi LIKE '%-dari-panel' OR aksi IN ('hapus-data-periode','kosongkan-database')) AND waktu>@p1",

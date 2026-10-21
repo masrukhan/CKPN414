@@ -42,6 +42,9 @@ namespace CKPNLibrary.Data
                 { "penyesuaian", new Dictionary<string, object> {
                     { "individu", new Dictionary<string, object>() }, { "lgdcs", new Dictionary<string, object>() } } }
             };
+            int thMode;
+            h["mode"] = CKPNLibrary.Panel.ModeHitung.Info(!string.IsNullOrEmpty(tanggal) && tanggal.Length >= 4 &&
+                                                          int.TryParse(tanggal.Substring(0, 4), out thMode) ? thMode : 0);
             if (string.IsNullOrEmpty(tanggal) || !Database.Ada) return h;
 
             using (var con = Database.Buka(false))
@@ -183,6 +186,7 @@ namespace CKPNLibrary.Data
             kunci = jenis == "ringkasan" ? "" : (kunci ?? "").Trim();
             if (jenis != "ringkasan" && kunci.Length == 0) throw new InvalidOperationException("Kunci memo (CIF / no. rekening) kosong.");
             if (status != "Final") status = "Draf";
+            CekModeRingkasan(jenis, tanggal);
             string isi = _json.Serialize(data ?? new Dictionary<string, object>());
             if (isi.Length > BatasData) throw new InvalidOperationException("Isi memo terlalu besar (maks. " + (BatasData / 1024) + " KB).");
 
@@ -220,6 +224,7 @@ namespace CKPNLibrary.Data
             string info;
             if (!Database.BolehMenulis(out info)) throw new InvalidOperationException(info);
             if (string.IsNullOrWhiteSpace(alasan)) throw new InvalidOperationException("Alasan membuka kembali wajib diisi.");
+            CekModeRingkasan(jenis, tanggal);
             kunci = jenis == "ringkasan" ? "" : (kunci ?? "").Trim();
             using (var con = Database.Buka(true))
             using (var tx = con.BeginTransaction())
@@ -240,6 +245,7 @@ namespace CKPNLibrary.Data
             CekJenis(jenis);
             string info;
             if (!Database.BolehMenulis(out info)) throw new InvalidOperationException(info);
+            CekModeRingkasan(jenis, tanggal);
             kunci = jenis == "ringkasan" ? "" : (kunci ?? "").Trim();
             using (var con = Database.Buka(true))
             {
@@ -296,9 +302,20 @@ namespace CKPNLibrary.Data
             return jenis == "individu" ? "Memo CKPN Individu" : jenis == "lgdcs" ? "Memo LGD CS" : "Ringkasan CKPN";
         }
 
+        /// <summary>
+        /// Tahap 8: memo Individu &amp; LGD CS dipakai bersama semua mode (per debitur/rekening), tetapi ringkasan
+        /// bulanan adalah dokumen resmi periode → hanya boleh disusun dari mode resmi tahun tersebut.
+        /// </summary>
+        private static void CekModeRingkasan(string jenis, string tanggal)
+        {
+            if (jenis != "ringkasan") return;
+            string tolak = CKPNLibrary.Panel.ModeHitung.TolakResmi(tanggal, "Penyusunan ringkasan CKPN");
+            if (tolak != null) throw new InvalidOperationException(tolak);
+        }
+
         private static bool TabelAda(SQLiteConnection con, string tabel)
         {
-            return Convert.ToInt32(Database.Scalar(con, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=@p0", tabel)) > 0;
+            return Database.TabelAda(con, tabel);   // Tahap 8: termasuk tabel bersama di database utama yang dilampirkan
         }
 
         private static bool KolomAda(SQLiteConnection con, string tabel, string kolom)
