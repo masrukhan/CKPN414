@@ -739,3 +739,19 @@ button.baris-atur:focus-visible { outline: 2px solid var(--aksen); outline-offse
 .tabel-banding tr.total td { border-top: 1px solid var(--garis); font-weight: 600; }
 #susunan-pindai-baris[hidden] { display: none; }
 .dok h3.dok-subjudul { font-size: 9.5pt; font-weight: 600; margin: 10px 0 3px; break-after: avoid; }
+
+/* Tahap 8d: kecualikan LGD CS massal */
+#kartu-cs-massal > summary { cursor: pointer; }
+.cs-filter { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
+.cs-filter #cs-cari { grid-column: 1 / -1; }
+.cs-daftar { max-height: 420px; overflow-y: auto; border: 1px solid var(--garis); border-radius: 6px; margin: 6px 0 10px; }
+.cs-list { list-style: none; margin: 0; padding: 0; }
+.cs-item { border-bottom: 1px solid var(--garis); }
+.cs-item:last-child { border-bottom: 0; }
+.cs-item.dikecualikan { background: var(--peringatan-bg); }
+.cs-baris { display: flex; gap: 8px; align-items: flex-start; padding: 6px 8px; cursor: pointer; }
+.cs-baris input { margin-top: 3px; width: 16px; height: 16px; accent-color: var(--aksen); flex-shrink: 0; }
+.cs-info { min-width: 0; font-size: 12px; }
+.cs-info .blok { display: block; }
+.cs-pilih-baris .opsi { margin: 0; }
+#cs-massal-wadah[hidden] { display: none; }

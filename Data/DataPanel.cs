@@ -313,6 +313,131 @@ namespace CKPNLibrary.Data
             return n + "Diubah" + (agunan.HasValue ? " · agunan " + Rp(agunan) : "") + (rec.HasValue ? " · realisasi " + Rp(rec) : "");
         }
 
+        // ================================================================
+        // Tahap 8d: pengecualian LGD CS massal
+        // ================================================================
+        /// <summary>
+        /// Semua baris LGD CS pada versi aktif setiap grup periode ini, beserta status penyesuaian tersimpannya.
+        /// Dipakai alat "Kecualikan LGD CS massal" (setelah Hitung semua grup, sheet Excel hanya berisi grup terakhir).
+        /// </summary>
+        public static Dictionary<string, object> DaftarLgdCsPeriode(string tanggal)
+        {
+            string info;
+            var hasil = new Dictionary<string, object>
+            {
+                { "tanggal", tanggal }, { "baris", new List<object>() }, { "bolehMenulis", Database.BolehMenulis(out info) },
+                { "infoPengirim", info }, { "status", "Terbuka" }
+            };
+            if (string.IsNullOrEmpty(tanggal) || !Database.Ada) return hasil;
+            var pny = Penyesuaian.MuatLgdCs();
+            var baris = (List<object>)hasil["baris"];
+            var namaGrup = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            using (var con = Database.Buka(false))
+            {
+                int sumber;
+                var susunan = Periode.Susunan(con, int.Parse(tanggal.Substring(0, 4)), out sumber);
+                if (susunan != null) foreach (var g in susunan) namaGrup[g.KodeKC] = g.Nama;
+                object st = Database.Scalar(con, "SELECT status FROM periode WHERE tanggal=@p0", tanggal);
+                if (st != null) hasil["status"] = Convert.ToString(st);
+                using (var cmd = Database.Cmd(con,
+                    "SELECT g.id, g.kode_kc, g.versi, h.no_rek, h.nama, h.pokok_awal, h.nilai_agunan, h.thn_diserahkan, h.thn_eksekusi, " +
+                    "h.recovery, h.shortfall, h.sumber FROM hasil_lgdcs h JOIN run_grup g ON g.id=h.run_id JOIN periode p ON p.id=g.periode_id " +
+                    "WHERE p.tanggal=@p0 AND g.aktif=1 AND g.dihapus=0 ORDER BY g.kode_kc, h.rowid", tanggal))
+                using (var rd = cmd.ExecuteReader())
+                    while (rd.Read())
+                    {
+                        string rek = Str(rd[3]).Trim();
+                        if (rek.Length == 0) continue;
+                        string kode = rd.GetString(1), grup;
+                        PenyesuaianLgdCs p;
+                        pny.TryGetValue(rek, out p);
+                        baris.Add(new Dictionary<string, object>
+                        {
+                            { "runId", rd.GetInt64(0) }, { "kodeKC", kode }, { "versi", rd.GetInt32(2) },
+                            { "grup", namaGrup.TryGetValue(kode, out grup) ? grup : kode },
+                            { "rek", rek }, { "nama", Str(rd[4]) }, { "pokok", Database.Dbl(rd[5]) ?? 0 }, { "agunan", Database.Dbl(rd[6]) ?? 0 },
+                            { "thnSerah", Str(rd[7]) }, { "thnEks", Str(rd[8]) }, { "recovery", Database.Dbl(rd[9]) ?? 0 },
+                            { "shortfall", Database.Dbl(rd[10]) ?? 0 }, { "sumber", Str(rd[11]) },
+                            { "penyesuaian", p == null ? "" : p.Jenis }
+                        });
+                    }
+            }
+            // Rekening yang sudah dikecualikan tetapi masih ada di versi tersimpan = penyesuaian belum diterapkan ke versi itu
+            return hasil;
+        }
+
+        /// <summary>
+        /// Simpan pengecualian (penyesuaian LGD CS jenis "hapus") untuk banyak rekening sekaligus, atau batalkan
+        /// pengecualiannya (batal = true). item: [{rek, nama, pokok}]. Satu transaksi, satu cadangan database.
+        /// Berlaku pada perhitungan berikutnya dan dapat diterapkan ke versi tersimpan lewat "Terapkan penyesuaian".
+        /// </summary>
+        public static Dictionary<string, object> KecualikanLgdCsMassal(System.Collections.IList item, string alasan, string tanggal, bool batal)
+        {
+            string info;
+            if (!Database.BolehMenulis(out info)) throw new InvalidOperationException(info);
+            if (item == null || item.Count == 0) throw new InvalidOperationException("Belum ada rekening yang dipilih.");
+            alasan = (alasan ?? "").Trim();
+            if (!batal && alasan.Length == 0) throw new InvalidOperationException("Alasan pengecualian wajib diisi.");
+            if (item.Count > 5000) throw new InvalidOperationException("Maksimal 5.000 rekening per proses.");
+
+            int n = 0, dilewati = 0;
+            Database.Cadangkan();
+            using (var con = Database.BukaBersama(true))
+            using (var tx = con.BeginTransaction())
+            {
+                string sekarang = Database.Sekarang();
+                foreach (Dictionary<string, object> x in item)
+                {
+                    string rek = Convert.ToString(Ambil(x, "rek") ?? "").Trim();
+                    if (rek.Length == 0) continue;
+                    string nama = Convert.ToString(Ambil(x, "nama") ?? "").Trim();
+                    object pokokObj = Ambil(x, "pokok");
+                    double? pokok = pokokObj == null ? (double?)null : Convert.ToDouble(pokokObj, System.Globalization.CultureInfo.InvariantCulture);
+
+                    string sebelum = "", jenisLama = null;
+                    using (var cmd = Database.Cmd(con,
+                        "SELECT jenis, nilai_agunan, recovery, pokok_awal, nama FROM penyesuaian_lgdcs WHERE no_rek=@p0", rek))
+                    using (var rd = cmd.ExecuteReader())
+                        if (rd.Read())
+                        {
+                            jenisLama = rd.GetString(0);
+                            sebelum = UraianCs(jenisLama, Database.Dbl(rd[1]), Database.Dbl(rd[2]), Database.Dbl(rd[3]), Str(rd[4]));
+                        }
+
+                    if (batal)
+                    {
+                        if (jenisLama != "hapus") { dilewati++; continue; }
+                        Database.Exec(con, "DELETE FROM penyesuaian_lgdcs WHERE no_rek=@p0", rek);
+                        Database.Exec(con,
+                            "INSERT INTO log_penyesuaian(waktu,pengguna,periode,modul,kunci,aksi,sebelum,sesudah,alasan) " +
+                            "VALUES(@p0,@p1,@p2,'lgdcs',@p3,'hapus-dari-panel',@p4,'',@p5)",
+                            sekarang, Environment.UserName, tanggal ?? "", rek, sebelum, alasan.Length > 0 ? alasan : "Batal pengecualian massal");
+                        n++;
+                        continue;
+                    }
+
+                    if (jenisLama == "hapus") { dilewati++; continue; }
+                    string sesudah = UraianCs("hapus", null, null, pokok, nama);
+                    Database.Exec(con,
+                        "INSERT OR REPLACE INTO penyesuaian_lgdcs(no_rek,jenis,nilai_agunan,recovery,nama,pokok_awal,thn_diserahkan,thn_eksekusi," +
+                        "alasan,pengguna,waktu,periode) VALUES(@p0,'hapus',NULL,NULL,@p1,@p2,'','',@p3,@p4,@p5,@p6)",
+                        rek, nama, pokok, alasan, Environment.UserName, sekarang, tanggal ?? "");
+                    Database.Exec(con,
+                        "INSERT INTO log_penyesuaian(waktu,pengguna,periode,modul,kunci,aksi,sebelum,sesudah,alasan) " +
+                        "VALUES(@p0,@p1,@p2,'lgdcs',@p3,@p4,@p5,@p6,@p7)",
+                        sekarang, Environment.UserName, tanggal ?? "", rek, jenisLama == null ? "tambah-dari-panel" : "ubah-dari-panel",
+                        sebelum, sesudah, alasan);
+                    n++;
+                }
+                tx.Commit();
+            }
+            CatatanLog.Tulis("LGD CS massal: " + (batal ? "batal pengecualian " : "kecualikan ") + n + " rekening (" + dilewati + " dilewati)");
+            LogProses.CatatPanel(tanggal ?? "", "Penyesuaian LGD CS", batal ? "Batal pengecualian massal" : "Pengecualian massal",
+                LogProses.OK, LogProses.R().Tambah("Rekening", n).Tambah("Dilewati (sudah sesuai)", dilewati)
+                    .TambahBila(alasan.Length > 0, "Alasan", alasan));
+            return new Dictionary<string, object> { { "jumlah", n }, { "dilewati", dilewati } };
+        }
+
         /// <summary>Hapus satu penyesuaian. Alasan opsional sejak Tahap 3d.</summary>
         public static void HapusPenyesuaian(string modul, string kunci, string alasan)
         {

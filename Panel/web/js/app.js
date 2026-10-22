@@ -1999,6 +1999,148 @@
 
   var LABEL_JENIS_CS = { ubah: "Ubah nilai", hapus: "Dikecualikan", tambah: "Baris manual" };
 
+  // ---------------- Tahap 8d: kecualikan LGD CS massal ----------------
+  var csMassal = null, csPilih = {};
+  function muatCsMassal() {
+    if (!statusP) return;
+    var w = $("cs-hasil");
+    w.innerHTML = "";
+    $("btn-cs-muat").disabled = true;
+    teks("cs-jumlah", "Memuat…");
+    tampil("cs-massal-wadah", true);
+    return panggil("daftarLgdCsPeriode", { tanggal: statusP.tanggal }).then(function (d) {
+      csMassal = d;
+      csPilih = {};
+      var g = $("cs-grup"), lama = g.value;
+      g.innerHTML = "";
+      var o0 = el("option", "", "Semua grup"); o0.value = ""; g.appendChild(o0);
+      var ada = {};
+      d.baris.forEach(function (b) { if (!ada[b.grup]) { ada[b.grup] = 1; var o = el("option", "", b.grup); o.value = b.grup; g.appendChild(o); } });
+      g.value = ada[lama] ? lama : "";
+      $("btn-cs-muat").textContent = "Muat ulang";
+      gambarCsMassal();
+    }).catch(function (e) { teks("cs-jumlah", ""); pesanDi("cs-hasil", e.message, false); })
+      .then(function () { $("btn-cs-muat").disabled = false; });
+  }
+
+  function csTampil() {
+    if (!csMassal) return [];
+    var cari = $("cs-cari").value.trim().toLowerCase(), grup = $("cs-grup").value, eks = $("cs-eks").value, st = $("cs-status").value;
+    return csMassal.baris.filter(function (b) {
+      if (grup && b.grup !== grup) return false;
+      var kec = b.penyesuaian === "hapus";
+      if (st === "aktif" && kec) return false;
+      if (st === "kecuali" && !kec) return false;
+      if (eks === "tanpa" && b.thnEks) return false;
+      if (eks === "ada" && !b.thnEks) return false;
+      if (eks === "nol" && b.recovery) return false;
+      if (cari && (b.rek + " " + (b.nama || "")).toLowerCase().indexOf(cari) < 0) return false;
+      return true;
+    });
+  }
+  function csKunci(b) { return b.runId + "|" + b.rek; }
+
+  function gambarCsMassal() {
+    var d = csMassal, w = $("cs-daftar");
+    w.innerHTML = "";
+    if (!d) return;
+    var daftar = csTampil();
+    if (!d.baris.length) w.appendChild(el("div", "teks-kecil", "Belum ada data LGD CS tersimpan untuk periode " + tanggalPanjang(d.tanggal) + "."));
+    else if (!daftar.length) w.appendChild(el("div", "teks-kecil", "Tidak ada baris yang sesuai saringan."));
+    var ul = el("ul", "cs-list");
+    daftar.forEach(function (b) {
+      var k = csKunci(b);
+      var li = el("li", "cs-item" + (b.penyesuaian === "hapus" ? " dikecualikan" : ""));
+      var lab = el("label", "cs-baris");
+      var cb = el("input");
+      cb.type = "checkbox"; cb.checked = !!csPilih[k]; cb.disabled = !d.bolehMenulis;
+      cb.addEventListener("change", function () { if (cb.checked) csPilih[k] = b; else delete csPilih[k]; ringkasCsMassal(); });
+      lab.appendChild(cb);
+      var info = el("span", "cs-info");
+      var atas = el("span", "cs-atas");
+      atas.appendChild(el("b", "", b.rek));
+      atas.appendChild(el("span", "", " " + (b.nama || "")));
+      if (b.penyesuaian === "hapus") atas.appendChild(el("span", "chip-mini", "dikecualikan · belum masuk v" + b.versi));
+      else if (b.penyesuaian) atas.appendChild(el("span", "chip-mini", "penyesuaian: " + b.penyesuaian));
+      info.appendChild(atas);
+      info.appendChild(el("span", "teks-kecil blok", b.grup + " · pokok " + jt(b.pokok) + " · agunan " + jt(b.agunan) +
+        " · realisasi " + jt(b.recovery) + " · serah " + (b.thnSerah || "—") + " · eksekusi " + (b.thnEks || "—")));
+      lab.appendChild(info);
+      li.appendChild(lab);
+      ul.appendChild(li);
+    });
+    w.appendChild(ul);
+    ringkasCsMassal();
+  }
+
+  function ringkasCsMassal() {
+    var d = csMassal;
+    if (!d) return;
+    var tampilList = csTampil();
+    var pilih = Object.keys(csPilih).map(function (k) { return csPilih[k]; });
+    var nTampilPilih = tampilList.filter(function (b) { return csPilih[csKunci(b)]; }).length;
+    var semua = $("cs-semua");
+    semua.checked = tampilList.length > 0 && nTampilPilih === tampilList.length;
+    semua.indeterminate = nTampilPilih > 0 && nTampilPilih < tampilList.length;
+    semua.disabled = !d.bolehMenulis || !tampilList.length;
+    teks("cs-semua-label", "Pilih semua yang tampil (" + tampilList.length + ")");
+    var pokok = pilih.reduce(function (a, b) { return a + (b.pokok || 0); }, 0);
+    var sf = pilih.reduce(function (a, b) { return a + (b.shortfall || 0); }, 0);
+    teks("cs-jumlah", d.baris.length + " baris · " + pilih.length + " dipilih" + (pilih.length ? " · pokok " + jt(pokok) + " · shortfall " + jt(sf) : "") +
+      (pilih.length > nTampilPilih ? " (" + (pilih.length - nTampilPilih) + " di luar saringan)" : ""));
+    var nBaru = pilih.filter(function (b) { return b.penyesuaian !== "hapus"; }).length;
+    var nKec = pilih.length - nBaru;
+    var bk = $("btn-cs-kecualikan"), bb = $("btn-cs-batal");
+    bk.textContent = nBaru ? "Kecualikan " + nBaru + " rekening" : "Kecualikan terpilih";
+    bk.disabled = !d.bolehMenulis || !nBaru;
+    bb.hidden = !nKec;
+    bb.textContent = "Batalkan pengecualian " + nKec + " rekening";
+    bb.disabled = !d.bolehMenulis || !nKec;
+    if (!d.bolehMenulis) teks("cs-jumlah", (d.infoPengirim || "User ini hanya bisa melihat.") + " · " + d.baris.length + " baris");
+  }
+
+  function prosesCsMassal(batal) {
+    var pilih = Object.keys(csPilih).map(function (k) { return csPilih[k]; })
+      .filter(function (b) { return batal ? b.penyesuaian === "hapus" : b.penyesuaian !== "hapus"; });
+    // satu rekening bisa muncul di lebih dari satu grup → kirim sekali
+    var unik = {}, item = [];
+    pilih.forEach(function (b) { if (!unik[b.rek]) { unik[b.rek] = 1; item.push({ rek: b.rek, nama: b.nama, pokok: b.pokok }); } });
+    if (!item.length) return;
+    var alasan = $("cs-alasan").value.trim();
+    if (!batal && !alasan) { pesanDi("cs-hasil", "Isi alasan pengecualian terlebih dahulu.", false); $("cs-alasan").focus(); return; }
+    var pokok = pilih.reduce(function (a, b) { return a + (b.pokok || 0); }, 0);
+    if (!window.confirm((batal ? "Batalkan pengecualian " : "Kecualikan ") + item.length + " rekening LGD CS (pokok " + jt(pokok) + ")?\n" +
+        (batal ? "Rekening kembali dihitung pada perhitungan berikutnya." :
+                 "Rekening tidak dipakai di LGD CS pada perhitungan berikutnya. Tercatat di riwayat penyesuaian."))) return;
+    $("btn-cs-kecualikan").disabled = true; $("btn-cs-batal").disabled = true;
+    pesanDi("cs-hasil", "Menyimpan…", true);
+    panggil("kecualikanLgdCsMassal", { item: item, alasan: alasan, tanggal: statusP ? statusP.tanggal : "", batal: batal }).then(function (r) {
+      var w = $("cs-hasil");
+      return muatCsMassal().then(function () {
+        muatPenyesuaian();
+        muatRencanaPny();
+        pesanDi("cs-hasil", r.jumlah + " rekening " + (batal ? "kembali dihitung" : "dikecualikan") +
+          (r.dilewati ? " · " + r.dilewati + " dilewati (sudah sesuai)" : "") +
+          ". Berlaku pada perhitungan berikutnya.", true);
+        var b = tombol("Terapkan ke versi tersimpan →", "tautan", function () { pindahTab("hitung", "pergrup");
+          setTimeout(function () { var k = $("kartu-pny-tertunda"); if (k && !k.hidden) k.scrollIntoView({ behavior: "smooth", block: "start" }); }, 300); });
+        w.firstChild && w.firstChild.appendChild(document.createTextNode(" "));
+        if (w.firstChild) w.firstChild.appendChild(b);
+      });
+    }).catch(function (e) { pesanDi("cs-hasil", e.message, false); ringkasCsMassal(); });
+  }
+
+  $("btn-cs-muat").addEventListener("click", muatCsMassal);
+  ["cs-cari"].forEach(function (id) { $(id).addEventListener("input", gambarCsMassal); });
+  ["cs-grup", "cs-eks", "cs-status"].forEach(function (id) { $(id).addEventListener("change", gambarCsMassal); });
+  $("cs-semua").addEventListener("change", function () {
+    var on = this.checked;
+    csTampil().forEach(function (b) { var k = csKunci(b); if (on) csPilih[k] = b; else delete csPilih[k]; });
+    gambarCsMassal();
+  });
+  $("btn-cs-kecualikan").addEventListener("click", function () { prosesCsMassal(false); });
+  $("btn-cs-batal").addEventListener("click", function () { prosesCsMassal(true); });
+
   function muatPenyesuaian() {
     teks("penyesuaian-isi", "Memuat…");
     return panggil("daftarPenyesuaian").then(function (d) {

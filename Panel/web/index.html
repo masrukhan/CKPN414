@@ -394,6 +394,46 @@
         <div id="penyesuaian-isi" class="daftar-pny teks-kecil">—</div>
       </div>
 
+      <!-- Tahap 8d: pengecualian LGD CS massal -->
+      <details class="kartu" id="kartu-cs-massal">
+        <summary class="judul-kartu">Kecualikan LGD CS massal</summary>
+        <p class="teks-kecil">Daftar seluruh rekening LGD CS di versi tersimpan semua grup periode yang ditampilkan. Centang rekening yang
+          <b>tidak</b> dipakai (mis. tidak ada eksekusi agunan), lalu kecualikan sekaligus. Pengecualian berlaku pada perhitungan berikutnya
+          dan dapat langsung diterapkan ke versi tersimpan dari Hitung › Per grup.</p>
+        <div class="baris-tombol">
+          <button id="btn-cs-muat" class="tombol-sekunder" type="button">Muat daftar LGD CS</button>
+        </div>
+        <div id="cs-massal-wadah" hidden>
+          <div class="cs-filter">
+            <input id="cs-cari" class="isian" type="search" placeholder="Cari rekening / nama" aria-label="Cari rekening LGD CS">
+            <select id="cs-grup" class="isian" aria-label="Grup"></select>
+            <select id="cs-eks" class="isian" aria-label="Status eksekusi">
+              <option value="">Semua baris</option>
+              <option value="tanpa">Tanpa tahun eksekusi</option>
+              <option value="ada">Ada tahun eksekusi</option>
+              <option value="nol">Realisasi = 0</option>
+            </select>
+            <select id="cs-status" class="isian" aria-label="Status pengecualian">
+              <option value="aktif">Belum dikecualikan</option>
+              <option value="kecuali">Sudah dikecualikan</option>
+              <option value="">Semua</option>
+            </select>
+          </div>
+          <div class="baris-antara jarak-atas cs-pilih-baris">
+            <label class="opsi"><input type="checkbox" id="cs-semua"> <span id="cs-semua-label">Pilih semua yang tampil</span></label>
+            <span id="cs-jumlah" class="teks-kecil"></span>
+          </div>
+          <div id="cs-daftar" class="cs-daftar"></div>
+          <label class="label-isian" for="cs-alasan">Alasan (wajib untuk pengecualian)</label>
+          <input id="cs-alasan" class="isian" type="text" placeholder="Mis. agunan belum dieksekusi — sesuai memo LGD CS">
+          <div class="baris-tombol jarak-atas">
+            <button id="btn-cs-kecualikan" class="tombol-utama" type="button" disabled>Kecualikan terpilih</button>
+            <button id="btn-cs-batal" class="tombol-sekunder" type="button" hidden disabled>Batalkan pengecualian terpilih</button>
+          </div>
+          <div id="cs-hasil" role="status"></div>
+        </div>
+      </details>
+
       <!-- Editor penyesuaian -->
       <div class="kartu" id="kartu-pny-editor" hidden>
         <div class="judul-kartu" id="pe-judul">Penyesuaian</div>

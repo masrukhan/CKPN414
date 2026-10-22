@@ -206,6 +206,18 @@ namespace CKPNLibrary.Panel
                                                                     Convert.ToString(Ambil(args, "alasan") ?? "")));
                         break;
 
+                    // ---- Tahap 8d: pengecualian LGD CS massal ----
+                    case "daftarLgdCsPeriode":
+                        Balas(host, id, DataPanel.DaftarLgdCsPeriode(Convert.ToString(Ambil(args, "tanggal") ?? "")));
+                        break;
+
+                    case "kecualikanLgdCsMassal":
+                        if (CKPNPipeline.SedangBerjalan || BatchGrup.Aktif) { Gagal(host, id, "Perhitungan sedang berjalan. Coba lagi setelah selesai."); break; }
+                        Balas(host, id, DataPanel.KecualikanLgdCsMassal(Ambil(args, "item") as System.Collections.IList,
+                            Convert.ToString(Ambil(args, "alasan") ?? ""), Convert.ToString(Ambil(args, "tanggal") ?? ""),
+                            Ambil(args, "batal") is bool && (bool)Ambil(args, "batal")));
+                        break;
+
                     case "riwayatPenyesuaian":
                         Balas(host, id, DataPanel.RiwayatPenyesuaian(Convert.ToString(Ambil(args, "modul") ?? ""),
                                                                      Convert.ToString(Ambil(args, "kunci") ?? "")));
