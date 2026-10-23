@@ -16,6 +16,10 @@ namespace CKPNLibrary.Panel
     /// Wajib public + ComVisible(true): Excel-DNA mendaftarkan kontrol ini
     /// sebagai ActiveX sementara agar bisa ditampung di Custom Task Pane Office.
     ///
+    /// Tahap 9a: kontrol yang sama juga ditampung jendela terpisah (<see cref="PanelPopout"/>).
+    /// Bedanya hanya <see cref="ModePopout"/> → halaman dibuka dengan "?jendela=1" sehingga
+    /// tombol di header berubah menjadi "Tempel kembali" dan tata letak memakai lebar maksimum.
+    ///
     /// Alur inisialisasi (sekali per panel):
     ///   1. Ekstrak WebView2Loader.dll native → SetLoaderDllFolderPath.
     ///   2. Buat environment dengan user-data folder di %LOCALAPPDATA%.
@@ -33,8 +37,8 @@ namespace CKPNLibrary.Panel
         private static readonly object _kunciLoader = new object();
 
         // Satu environment dipakai bersama semua panel (mis. beberapa jendela
-        // Excel) karena user-data folder yang sama tidak boleh dibuka dua
-        // environment berbeda dalam satu proses.
+        // Excel, atau panel samping + jendela terpisah) karena user-data folder yang
+        // sama tidak boleh dibuka dua environment berbeda dalam satu proses.
         private static Task<CoreWebView2Environment> _envTask;
 
         private WebView2 _web;
@@ -56,6 +60,13 @@ namespace CKPNLibrary.Panel
             Controls.Add(_pesan);
         }
 
+        /// <summary>
+        /// Tahap 9a: true bila panel ditampung jendela terpisah, bukan task pane.
+        /// Harus diset sebelum kontrol tampil (dibaca sekali saat navigasi pertama).
+        /// </summary>
+        [ComVisible(false)]
+        public bool ModePopout { get; set; }
+
         /// <summary>True bila WebView sudah siap menerima pesan.</summary>
         public bool Siap
         {
@@ -63,7 +74,7 @@ namespace CKPNLibrary.Panel
         }
 
         // Inisialisasi dimulai saat handle jendela sudah ada (kontrol sudah
-        // benar-benar ditampung task pane), bukan di constructor.
+        // benar-benar ditampung task pane / jendela), bukan di constructor.
         protected override void OnHandleCreated(EventArgs e)
         {
             base.OnHandleCreated(e);
@@ -102,6 +113,9 @@ namespace CKPNLibrary.Panel
                 // 1. Environment bersama
                 CoreWebView2Environment env = await AmbilEnvironmentAsync();
 
+                // Kontrol bisa sudah dibuang (mis. panel dipisah/ditempel cepat) selama menunggu.
+                if (IsDisposed) return;
+
                 // 2. Kontrol WebView2
                 _web = new WebView2
                 {
@@ -112,6 +126,7 @@ namespace CKPNLibrary.Panel
                 _web.BringToFront();
 
                 await _web.EnsureCoreWebView2Async(env);
+                if (_web == null) return;   // dibuang selama inisialisasi
                 CoreWebView2 core = _web.CoreWebView2;
 
                 // 3. Pengaturan: panel adalah aplikasi, bukan browser umum.
@@ -126,7 +141,7 @@ namespace CKPNLibrary.Panel
                 core.Settings.AreDevToolsEnabled = false;
 #endif
 
-                // 4. Layani aset panel dari resource DLL
+                // 4. Layani aset panel dari resource DLL (query "?jendela=1" diabaikan: LayaniAset memakai AbsolutePath)
                 core.AddWebResourceRequestedFilter(PanelAssets.BaseUrl + "*", CoreWebView2WebResourceContext.All);
                 core.WebResourceRequested += (s, e) => LayaniAset(env, e);
 
@@ -146,11 +161,12 @@ namespace CKPNLibrary.Panel
                     PanelBridge.Terima(this, e.WebMessageAsJson);
                 };
 
-                core.Navigate(PanelAssets.BaseUrl + "index.html");
+                core.Navigate(PanelAssets.BaseUrl + "index.html" + (ModePopout ? "?jendela=1" : ""));
                 _pesan.Visible = false;
             }
             catch (Exception ex)
             {
+                if (IsDisposed) return;
                 TampilkanPesan("Panel CKPN gagal dimuat:\n\n" + ex.Message);
                 CatatLog("Inisialisasi panel gagal: " + ex);
             }

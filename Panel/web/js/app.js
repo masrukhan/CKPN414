@@ -115,6 +115,25 @@
     if (!tanpaMuat) muatSub(grup, nama);
   }
 
+  // ---------------- Tahap 9a: panel di jendela sendiri ----------------
+  var diJendela = /[?&]jendela=1(&|$)/.test(location.search);
+  (function () {
+    var b = $("btn-jendela");
+    if (!b) return;
+    if (diJendela) {
+      document.body.classList.add("mode-jendela");
+      b.title = "Tempel kembali ke samping Excel";
+      b.setAttribute("aria-label", b.title);
+      b.innerHTML = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M8 8h5M8 8v5M8 8l6 6M2.5 2h9a.5.5 0 0 1 .5.5V6M6 12H2.5a.5.5 0 0 1-.5-.5v-9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    }
+    b.addEventListener("click", function () {
+      b.disabled = true;
+      panggil(diJendela ? "tempelPanel" : "pisahkanPanel").catch(function (e) { b.disabled = false; alert(e.message); });
+      // panel ini akan ditutup oleh add-in; bila tidak (mis. gagal), aktifkan lagi tombolnya
+      setTimeout(function () { b.disabled = false; }, 4000);
+    });
+  })();
+
   function pindahTab(nama, sub, tanpaMuat) {
     if (edisiLite() && (nama === "tetapkan" || nama === "analisis")) {   // Tahap 7
       tampilkanBatasLite(nama === "analisis" ? "analisis" : "tetapkan");

@@ -88,6 +88,20 @@ namespace CKPNLibrary.Panel
                         Balas(host, id, null);
                         break;
 
+                    // ---- Tahap 9a: panel di jendela sendiri ----
+                    // Dibalas dulu, lalu ditunda lewat QueueAsMacro: panel pengirim (task pane / jendela)
+                    // ikut dihapus, jadi tidak boleh dikerjakan di dalam handler pesan WebView-nya sendiri.
+                    case "pisahkanPanel":
+                    case "tempelPanel":
+                        Balas(host, id, null);
+                        bool pisah = cmd == "pisahkanPanel";
+                        ExcelAsyncUtil.QueueAsMacro(() =>
+                        {
+                            try { if (pisah) PanelManager.Pisahkan(); else PanelManager.Tempel(); }
+                            catch (Exception ex) { CatatanLog.Tulis((pisah ? "Pisahkan" : "Tempel") + " panel gagal: " + ex.Message); }
+                        });
+                        break;
+
                     case "statusRun":
                         Balas(host, id, CKPNPipeline.Status());
                         break;

@@ -755,3 +755,11 @@ button.baris-atur:focus-visible { outline: 2px solid var(--aksen); outline-offse
 .cs-info .blok { display: block; }
 .cs-pilih-baris .opsi { margin: 0; }
 #cs-massal-wadah[hidden] { display: none; }
+
+/* Tahap 9a: tombol pisahkan / tempel panel dan tata letak jendela terpisah */
+.tombol-jendela { margin-left: 6px; flex-shrink: 0; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--garis); border-radius: 6px; background: transparent; color: var(--tinta-redup); cursor: pointer; padding: 0; }
+.tombol-jendela:hover { color: var(--aksen); border-color: var(--aksen); }
+.tombol-jendela:disabled { opacity: .5; cursor: default; }
+body.mode-jendela main { max-width: 980px; margin: 0 auto; width: 100%; box-sizing: border-box; }
+body.mode-jendela .kepala > * { max-width: 948px; margin-left: auto; margin-right: auto; }

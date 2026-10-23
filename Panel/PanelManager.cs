@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using CKPNLibrary.Helpers;
 using ExcelDna.Integration;
 using ExcelDna.Integration.CustomUI;
 using Excel = Microsoft.Office.Interop.Excel;
@@ -13,6 +14,11 @@ namespace CKPNLibrary.Panel
     /// pane menempel ke SATU jendela. Maka pane disimpan per jendela (kunci:
     /// Hwnd jendela Excel). Tombol "Panel CKPN" membuka/menutup pane di
     /// jendela yang sedang aktif saja.
+    ///
+    /// Tahap 9a: panel bisa dipisah ke jendela sendiri (<see cref="PanelPopout"/>).
+    /// Selama terpisah hanya ada SATU panel: semua task pane dihapus, dan tombol
+    /// "Panel CKPN" memunculkan jendela itu. Menutup jendela → panel kembali ke
+    /// samping jendela Excel yang aktif.
     /// </summary>
     internal static class PanelManager
     {
@@ -55,25 +61,76 @@ namespace CKPNLibrary.Panel
 
         private static readonly Dictionary<int, CustomTaskPane> _pane = new Dictionary<int, CustomTaskPane>();
 
-        /// <summary>Buka/tutup panel di jendela aktif.</summary>
+        // Tahap 9a: jendela panel terpisah (null = panel menempel di task pane)
+        private static PanelPopout _popout;
+
+        /// <summary>True bila panel sedang dipisah ke jendela sendiri.</summary>
+        public static bool Terpisah
+        {
+            get { return _popout != null && !_popout.IsDisposed; }
+        }
+
+        /// <summary>Buka/tutup panel di jendela aktif. Bila panel terpisah: munculkan jendelanya.</summary>
         public static void Toggle()
         {
+            if (Terpisah) { _popout.Munculkan(); return; }
             CustomTaskPane ctp = AmbilAtauBuat();
             if (ctp == null) return;
             if (ctp.Visible) SimpanLebar(ctp);
             ctp.Visible = !ctp.Visible;
         }
 
-        /// <summary>Tampilkan panel di jendela aktif.</summary>
+        /// <summary>Tampilkan panel di jendela aktif (atau munculkan jendela terpisah).</summary>
         public static void Tampilkan()
         {
+            if (Terpisah) { _popout.Munculkan(); return; }
             CustomTaskPane ctp = AmbilAtauBuat();
             if (ctp != null) ctp.Visible = true;
+        }
+
+        /// <summary>
+        /// Tahap 9a: pindahkan panel ke jendela sendiri. Dipanggil lewat QueueAsMacro (bukan langsung
+        /// dari handler pesan WebView) karena task pane pengirim pesan ikut dihapus di sini.
+        /// </summary>
+        public static void Pisahkan()
+        {
+            if (Terpisah) { _popout.Munculkan(); return; }
+
+            var jendela = new PanelPopout();
+            jendela.FormClosed += (s, e) =>
+            {
+                bool tempel = !jendela.TutupTanpaTempel;
+                if (ReferenceEquals(_popout, jendela)) _popout = null;
+                // Tempel kembali ke jendela Excel yang aktif. Ditunda agar jendela selesai ditutup
+                // dan Excel dalam kondisi aman untuk membuat task pane.
+                if (tempel)
+                    ExcelAsyncUtil.QueueAsMacro(() =>
+                    {
+                        try { Tampilkan(); }
+                        catch (Exception ex) { CatatanLog.Tulis("Tempel panel kembali gagal: " + ex.Message); }
+                    });
+            };
+            _popout = jendela;
+            jendela.Show();
+            jendela.Activate();
+
+            // Satu panel saja: task pane di semua jendela workbook dihapus (lebar diingat dulu).
+            HapusSemuaPane();
+            CatatanLog.Tulis("Panel dipisah ke jendela sendiri.");
+        }
+
+        /// <summary>Tahap 9a: tutup jendela terpisah dan kembalikan panel ke samping jendela Excel aktif.</summary>
+        public static void Tempel()
+        {
+            if (!Terpisah) { Tampilkan(); return; }
+            _popout.Close();   // FormClosed → Tampilkan()
+            CatatanLog.Tulis("Panel ditempel kembali ke Excel.");
         }
 
         /// <summary>Semua panel yang sudah dibuat (untuk broadcast event progres).</summary>
         public static IEnumerable<PanelHost> SemuaHost()
         {
+            if (Terpisah && _popout.Host != null && !_popout.Host.IsDisposed) yield return _popout.Host;
             foreach (var ctp in _pane.Values)
             {
                 PanelHost host = null;
@@ -82,8 +139,18 @@ namespace CKPNLibrary.Panel
             }
         }
 
-        /// <summary>Hapus semua pane. Dipanggil saat add-in di-unload (AutoClose).</summary>
+        /// <summary>Hapus semua pane dan jendela terpisah. Dipanggil saat add-in di-unload (AutoClose).</summary>
         public static void TutupSemua()
+        {
+            if (Terpisah)
+            {
+                try { _popout.TutupTanpaTempel = true; _popout.Close(); } catch { }
+                _popout = null;
+            }
+            HapusSemuaPane();
+        }
+
+        private static void HapusSemuaPane()
         {
             foreach (var ctp in _pane.Values)
             {
