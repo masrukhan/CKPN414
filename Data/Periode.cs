@@ -123,6 +123,13 @@ namespace CKPNLibrary.Data
             public int Urut;
             public string Nama, KodeKC, Dasar;
             public int? TopN;                      // Top-N debitur CKPN Individu grup ini (Tahap 4c)
+            // Tahap 9b: metode signifikansi CKPN Individu — "ranking" (Top-N) | "nominal" (baki debet CIF ≥ Ambang)
+            public string Signifikan = Signifikansi.Ranking;
+            public double? Ambang;
+            public bool Nominal { get { return Signifikan == Signifikansi.Nominal; } }
+            /// <summary>Aturan sudah lengkap: ranking butuh Top-N, nominal butuh ambang.</summary>
+            public bool AturanLengkap { get { return Nominal ? Ambang.HasValue && Ambang.Value > 0 : TopN.HasValue; } }
+            public string LabelSignifikan { get { return Signifikansi.Label(Signifikan, TopN, Ambang); } }
             public List<string> KC = new List<string>();
         }
 
@@ -146,14 +153,16 @@ namespace CKPNLibrary.Data
             sumberTahun = Convert.ToInt32(t);
 
             var hasil = new List<Grup>();
-            using (var cmd = Database.Cmd(con, "SELECT urut, nama, kode_kc, dasar, top_n FROM susunan_grup WHERE tahun=@p0 ORDER BY urut", sumberTahun))
+            using (var cmd = Database.Cmd(con, "SELECT urut, nama, kode_kc, dasar, top_n, signifikan, ambang FROM susunan_grup WHERE tahun=@p0 ORDER BY urut", sumberTahun))
             using (var rd = cmd.ExecuteReader())
                 while (rd.Read())
                 {
                     var g = new Grup
                     {
                         Urut = rd.GetInt32(0), Nama = rd.GetString(1), KodeKC = rd.GetString(2), Dasar = Str(rd[3]),
-                        TopN = rd[4] is DBNull ? (int?)null : Convert.ToInt32(rd[4])
+                        TopN = rd[4] is DBNull ? (int?)null : Convert.ToInt32(rd[4]),
+                        Signifikan = Str(rd[5]) == Signifikansi.Nominal ? Signifikansi.Nominal : Signifikansi.Ranking,
+                        Ambang = rd[6] is DBNull ? (double?)null : Convert.ToDouble(rd[6])
                     };
                     g.KC.AddRange(ModeHitung.KCGrup(mode, g.KodeKC));   // mode kantor: seluruh KC0600–KC1100
                     hasil.Add(g);
@@ -201,7 +210,17 @@ namespace CKPNLibrary.Data
         /// </summary>
         public static int? TopNGrup(int tahun, string kodeKC, out string namaGrup)
         {
-            namaGrup = null;
+            Grup g = GrupSusunan(tahun, kodeKC);
+            namaGrup = g == null ? null : g.Nama;
+            return g == null || g.Nominal ? (int?)null : g.TopN;   // nominal: Top-N tidak dipakai
+        }
+
+        /// <summary>
+        /// Tahap 9b: grup susunan tahun tersebut untuk kombinasi kode (null bila tidak ada).
+        /// Dipakai untuk aturan signifikansi (metode, Top-N, ambang).
+        /// </summary>
+        public static Grup GrupSusunan(int tahun, string kodeKC)
+        {
             try
             {
                 if (!Database.Ada) return null;
@@ -209,13 +228,10 @@ namespace CKPNLibrary.Data
                 {
                     int sumber;
                     var susunan = Susunan(con, tahun, out sumber);
-                    var g = susunan == null ? null : susunan.Find(x => string.Equals(x.KodeKC, kodeKC, StringComparison.OrdinalIgnoreCase));
-                    if (g == null) return null;
-                    namaGrup = g.Nama;
-                    return g.TopN;
+                    return susunan == null ? null : susunan.Find(x => string.Equals(x.KodeKC, kodeKC, StringComparison.OrdinalIgnoreCase));
                 }
             }
-            catch (Exception ex) { CatatanLog.Tulis("Baca Top-N grup: " + ex.Message); return null; }
+            catch (Exception ex) { CatatanLog.Tulis("Baca aturan signifikansi grup: " + ex.Message); return null; }
         }
 
         public static string NamaMetode(string m)
@@ -303,7 +319,8 @@ namespace CKPNLibrary.Data
         /// kebijakanSaldo: "ckpn" | "maks" — dasar saldo CKPN yang dibukukan (lihat HitungJurnal).
         /// </summary>
         public static void SimpanSusunan(int tahun, Dictionary<string, string> peta, string dasar,
-                                         string metode, string kebijakanSaldo, Dictionary<string, int> topNGrup)
+                                         string metode, string kebijakanSaldo, Dictionary<string, int> topNGrup,
+                                         Dictionary<string, double> ambangGrup = null)
         {
             string info;
             if (!Database.BolehMenulis(out info)) throw new InvalidOperationException(info);
@@ -351,13 +368,29 @@ namespace CKPNLibrary.Data
                 g.KC.Add(kc);   // urutan kanonik KC0600..KC1100 terjaga
             }
 
-            // Top-N per grup (kunci = nama grup), wajib 1–1000 sesuai SOP
+            // Signifikansi per grup (kunci = nama grup), sesuai SOP:
+            //   ranking → Top-N wajib 1–1000;  nominal (Tahap 9b) → ambang baki debet per CIF wajib > 0.
+            // ambangGrup berisi nama grup yang memakai metode nominal.
             foreach (var g in grup)
             {
-                int n;
-                if (topNGrup == null || !topNGrup.TryGetValue(g.Nama, out n) || n < 1 || n > 1000)
-                    throw new InvalidOperationException("Top-N debitur CKPN Individu grup '" + g.Nama + "' harus diisi (1–1000) sesuai SOP.");
-                g.TopN = n;
+                double ambang;
+                if (ambangGrup != null && ambangGrup.TryGetValue(g.Nama, out ambang))
+                {
+                    if (ambang < 1000000 || ambang > 1e13)
+                        throw new InvalidOperationException("Ambang baki debet CKPN Individu grup '" + g.Nama + "' harus diisi (minimal Rp1 jt) sesuai SOP.");
+                    g.Signifikan = Signifikansi.Nominal;
+                    g.Ambang = Math.Round(ambang);
+                    g.TopN = null;
+                }
+                else
+                {
+                    int n;
+                    if (topNGrup == null || !topNGrup.TryGetValue(g.Nama, out n) || n < 1 || n > 1000)
+                        throw new InvalidOperationException("Top-N debitur CKPN Individu grup '" + g.Nama + "' harus diisi (1–1000) sesuai SOP.");
+                    g.Signifikan = Signifikansi.Ranking;
+                    g.TopN = n;
+                    g.Ambang = null;
+                }
                 g.KodeKC = ModeHitung.NormKode(mode, string.Join(",", g.KC.ToArray()));
                 g.KC = new List<string>(ModeHitung.KCGrup(mode, g.KodeKC));
             }
@@ -376,7 +409,7 @@ namespace CKPNLibrary.Data
                     while (rd.Read())
                         if (rd.GetString(1) != metode)
                             bentrok.Add(rd.GetString(0) + " (" + NamaMetode(rd.GetString(1)) + ")");
-                // Top-N per grup juga dikunci: tidak boleh berubah bila sudah ada periode Final di tahun itu
+                // Signifikansi per grup (metode, Top-N, ambang) juga dikunci bila sudah ada periode Final di tahun itu
                 bool adaFinal = Convert.ToInt32(Database.Scalar(con,
                     "SELECT COUNT(*) FROM periode WHERE status='Final' AND substr(tanggal,1,4)=@p0", tahun.ToString())) > 0;
                 if (adaFinal)
@@ -384,12 +417,23 @@ namespace CKPNLibrary.Data
                     var berubah = new List<string>();
                     foreach (var g in grup)
                     {
-                        object lama = Database.Scalar(con, "SELECT top_n FROM susunan_grup WHERE tahun=@p0 AND kode_kc=@p1", tahun, g.KodeKC);
-                        if (lama != null && !(lama is DBNull) && Convert.ToInt32(lama) != g.TopN)
-                            berubah.Add(g.Nama + " (" + Convert.ToInt32(lama) + " → " + g.TopN + ")");
+                        using (var cmd = Database.Cmd(con,
+                            "SELECT top_n, IFNULL(signifikan,'ranking'), ambang FROM susunan_grup WHERE tahun=@p0 AND kode_kc=@p1", tahun, g.KodeKC))
+                        using (var rd = cmd.ExecuteReader())
+                            if (rd.Read())
+                            {
+                                int? topLama = rd[0] is DBNull ? (int?)null : Convert.ToInt32(rd[0]);
+                                string metLama = rd.GetString(1) == Signifikansi.Nominal ? Signifikansi.Nominal : Signifikansi.Ranking;
+                                double? ambLama = rd[2] is DBNull ? (double?)null : Convert.ToDouble(rd[2]);
+                                bool sama = metLama == g.Signifikan &&
+                                            (g.Nominal ? ambLama.HasValue && Math.Abs(ambLama.Value - (g.Ambang ?? 0)) < 0.5
+                                                       : topLama == null || topLama == g.TopN);
+                                if (!sama)
+                                    berubah.Add(g.Nama + " (" + Signifikansi.Label(metLama, topLama, ambLama) + " → " + g.LabelSignifikan + ")");
+                            }
                     }
                     if (berubah.Count > 0)
-                        throw new InvalidOperationException("Top-N grup " + string.Join(", ", berubah.ToArray()) +
+                        throw new InvalidOperationException("Signifikansi CKPN Individu grup " + string.Join(", ", berubah.ToArray()) +
                             " tidak dapat diubah karena sudah ada periode Final di tahun " + tahun +
                             ". Buka kunci periode tersebut terlebih dahulu bila perubahan memang disetujui.");
                 }
@@ -407,11 +451,14 @@ namespace CKPNLibrary.Data
                 foreach (var g in grup)
                 {
                     Database.Exec(con,
-                        "INSERT INTO susunan_grup(tahun,urut,nama,kode_kc,dasar,pengguna,waktu,top_n) VALUES(@p0,@p1,@p2,@p3,@p4,@p5,@p6,@p7)",
-                        tahun, g.Urut, g.Nama, g.KodeKC, dasar.Trim(), Environment.UserName, Database.Sekarang(), g.TopN);
+                        "INSERT INTO susunan_grup(tahun,urut,nama,kode_kc,dasar,pengguna,waktu,top_n,signifikan,ambang) " +
+                        "VALUES(@p0,@p1,@p2,@p3,@p4,@p5,@p6,@p7,@p8,@p9)",
+                        tahun, g.Urut, g.Nama, g.KodeKC, dasar.Trim(), Environment.UserName, Database.Sekarang(),
+                        g.TopN.HasValue ? (object)g.TopN.Value : DBNull.Value, g.Signifikan,
+                        g.Ambang.HasValue ? (object)g.Ambang.Value : DBNull.Value);
                 }
                 var ringkas = new List<string>();
-                foreach (var g in grup) ringkas.Add(g.Nama + "=" + g.KodeKC + " (Top-N " + g.TopN + ")");
+                foreach (var g in grup) ringkas.Add(g.Nama + "=" + g.KodeKC + " (" + g.LabelSignifikan + ")");
                 Database.CatatAktivitas(con, tahun.ToString(), "susunan-grup",
                     (mode.Utama ? "" : "[" + mode.NamaPendek + "] ") + string.Join("; ", ringkas.ToArray()) + " | metode: " + NamaMetode(metode) +
                     " | saldo: " + (kebijakanSaldo == "maks" ? "maks(CKPN, PPKA)" : "CKPN") +
@@ -520,6 +567,7 @@ namespace CKPNLibrary.Data
                 grupList.Add(new Dictionary<string, object>
                 {
                     { "urut", g.Urut }, { "nama", g.Nama }, { "kodeKC", g.KodeKC }, { "kc", g.KC }, { "topN", g.TopN },
+                    { "signifikan", g.Signifikan }, { "ambang", g.Ambang }, { "labelSignifikan", g.LabelSignifikan },
                     { "unit", g.KodeKC.Split(',') }, { "labelKode", ModeHitung.LabelKode(g.KodeKC) },
                     { "status", status }, { "aktif", aktif }, { "versi", versi },
                     { "diWorkbook", diWorkbook }, { "dihitungDiPC", dihitungDiPC },

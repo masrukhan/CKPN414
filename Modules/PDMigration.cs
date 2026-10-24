@@ -970,7 +970,7 @@ namespace CKPNLibrary.Modules
                 }
 
                 hasil.JumlahCIF = dictCIF.Count;
-                if (dictCIF.Count == 0 || topN <= 0) return hasil;
+                if (dictCIF.Count == 0 || !Signifikansi.Aktif(topN)) return hasil;   // Tahap 9b
 
                 // -- Langkah 2: Sort descending lintas sheet, ambil Top-N CIF --
                 var pairs = new List<SortHelper.CifOsPair>();
@@ -978,7 +978,7 @@ namespace CKPNLibrary.Modules
                     pairs.Add(new SortHelper.CifOsPair { CIF = kv.Key, OS = kv.Value.TotalOS });
                 SortHelper.SortDescByOS(pairs, 0, pairs.Count - 1);
 
-                int ambil = Math.Min(topN, pairs.Count);
+                int ambil = Signifikansi.Batas(topN, pairs.Count, t => pairs[t].OS);   // Tahap 9b
 
                 // -- Langkah 3: Kumpulkan rekening & nominal Top-N --
                 for (int t = 0; t < ambil; t++)

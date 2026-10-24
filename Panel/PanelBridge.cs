@@ -272,7 +272,8 @@ namespace CKPNLibrary.Panel
                                 { "ditemukan", true },
                                 { "tanggal", ParameterMaster.BacaTanggalLaporan(wbM, out tM) ? tM.ToString("yyyy-MM-dd") : "" },
                                 { "kodeKC", ModeHitung.KodeGrupWorkbook(mM) },
-                                { "topN", ParameterMaster.BacaTopN(wbM) }
+                                { "topN", ParameterMaster.BacaTopN(wbM) },
+                                { "labelSignifikan", Signifikansi.Label(Signifikansi.Baca(wbM), ParameterMaster.BacaTopN(wbM)) }
                             };
                         });
                         break;
@@ -406,7 +407,7 @@ namespace CKPNLibrary.Panel
                                               Convert.ToString(Ambil(args, "dasar") ?? ""),
                                               Convert.ToString(Ambil(args, "metode") ?? ""),
                                               Convert.ToString(Ambil(args, "kebijakanSaldo") ?? ""),
-                                              PetaBulat(Ambil(args, "topN")));
+                                              PetaBulat(Ambil(args, "topN")), PetaAngka(Ambil(args, "ambang")));
                         Balas(host, id, null);
                         break;
 
@@ -501,6 +502,23 @@ namespace CKPNLibrary.Panel
                         break;
 
                     // PDF dari isi #cetak-root (CSS @media print) → library\dokumen\<yyyy-mm>\, lalu dibuka di penampil PDF
+                    // ---- Tahap 9c: kertas kerja perhitungan per grup dari database ----
+                    case "perhitunganGrup":
+                        Balas(host, id, PerhitunganGrup.Data(Convert.ToInt64(Ambil(args, "runId"))));
+                        break;
+
+                    case "eksporExcelDokumen":
+                        string namaEks = Convert.ToString(Ambil(args, "nama") ?? "Dokumen CKPN");
+                        string periodeEks = Convert.ToString(Ambil(args, "periode") ?? "");
+                        var lembarEks = Ambil(args, "lembar") as System.Collections.IList;
+                        JalankanDiExcel(host, id, app =>
+                        {
+                            if (CKPNPipeline.SedangBerjalan || BatchGrup.Aktif)
+                                throw new InvalidOperationException("Perhitungan sedang berjalan. Ekspor setelah selesai.");
+                            return PerhitunganGrup.EksporExcel(app, namaEks, periodeEks, lembarEks);
+                        });
+                        break;
+
                     case "simpanPdf":
                         SimpanPdf(host, id, Convert.ToString(Ambil(args, "nama") ?? "Dokumen CKPN"),
                                   Convert.ToString(Ambil(args, "periode") ?? ""), !(Ambil(args, "buka") is bool) || (bool)Ambil(args, "buka"));
@@ -823,11 +841,21 @@ namespace CKPNLibrary.Panel
             string namaGrupMaster = null;
             int? topNTahun = ParameterMaster.BacaTanggalLaporan(wb, out tglLap)
                 ? Periode.TopNGrup(tglLap.Year, p.KodeGrup, out namaGrupMaster) : null;
+            // Tahap 9b: metode signifikansi Master (H10) vs ketetapan grup
+            Periode.Grup gSig = tglLap == DateTime.MinValue ? null : Periode.GrupSusunan(tglLap.Year, p.KodeGrup);
+            Signifikansi.Aturan sigMaster = Signifikansi.Baca(wb);
+            int topNM = ParameterMaster.BacaTopN(wb);
+            bool sigSama = gSig == null || !gSig.AturanLengkap ||
+                           (gSig.Nominal ? sigMaster.IsNominal && Math.Abs(sigMaster.Ambang - (gSig.Ambang ?? 0)) < 0.5
+                                         : !sigMaster.IsNominal && topNM == gSig.TopN);
+            if (gSig != null) namaGrupMaster = gSig.Nama;
 
             return new Dictionary<string, object>
             {
                 { "namaFile", wb.Name },
                 { "topNMaster", ParameterMaster.BacaTopN(wb) }, { "topNTahun", topNTahun }, { "namaGrup", namaGrupMaster },
+                { "sigMaster", Signifikansi.Label(sigMaster, topNM) }, { "sigMasterNominal", sigMaster.IsNominal },
+                { "sigGrup", gSig == null || !gSig.AturanLengkap ? null : gSig.LabelSignifikan }, { "sigSama", sigSama },
                 { "tahun", tglLap == DateTime.MinValue ? 0 : tglLap.Year },
                 { "periode",  p.BulanLaporan },
                 { "kc",       p.KC },
@@ -1020,6 +1048,20 @@ namespace CKPNLibrary.Panel
         }
 
         // Objek JSON { namaGrup: angka } → Dictionary<string,int>; nilai tidak valid dilewati (divalidasi di Periode)
+        /// <summary>Tahap 9b: nama grup → ambang (Rp) untuk grup bermetode nominal.</summary>
+        private static Dictionary<string, double> PetaAngka(object v)
+        {
+            var hasil = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+            var d = v as Dictionary<string, object>;
+            if (d == null) return hasil;
+            foreach (var kv in d)
+            {
+                try { if (kv.Value != null) hasil[kv.Key.Trim()] = Convert.ToDouble(kv.Value, System.Globalization.CultureInfo.InvariantCulture); }
+                catch { }
+            }
+            return hasil;
+        }
+
         private static Dictionary<string, int> PetaBulat(object v)
         {
             var hasil = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);

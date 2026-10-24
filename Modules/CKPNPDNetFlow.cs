@@ -304,7 +304,7 @@ namespace CKPNLibrary.Modules
             List<SheetSpec> specs, int topN)
         {
             var setSkip = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            if (topN <= 0) return setSkip;
+            if (!Signifikansi.Aktif(topN)) return setSkip;   // Tahap 9b: nominal tetap dijalankan
 
             // ── Langkah 1: Agregasi OS per CIF LINTAS SEMUA SHEET ──
             // Sama persis dengan CIFData.TambahKontrak di CKPNIndividu:
@@ -333,7 +333,7 @@ namespace CKPNLibrary.Modules
                 pairs.Add(new SortHelper.CifOsPair { CIF = kv.Key, OS = kv.Value });
             SortHelper.SortDescByOS(pairs, 0, pairs.Count - 1);
 
-            int batas = Math.Min(topN, pairs.Count);
+            int batas = Signifikansi.Batas(topN, pairs.Count, j => pairs[j].OS);   // Tahap 9b
             var topCIF = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             for (int j = 0; j < batas; j++)
                 topCIF.Add(pairs[j].CIF);

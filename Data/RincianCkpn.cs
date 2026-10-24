@@ -135,14 +135,19 @@ namespace CKPNLibrary.Data
             {
                 var runs = new List<Dictionary<string, object>>();
                 using (var cmd = Database.Cmd(con,
-                    "SELECT g.id, g.kode_kc, g.versi, g.top_n FROM run_grup g JOIN periode p ON p.id=g.periode_id " +
+                    "SELECT g.id, g.kode_kc, g.versi, g.top_n, g.signifikan, g.ambang FROM run_grup g JOIN periode p ON p.id=g.periode_id " +
                     "WHERE p.tanggal=@p0 AND g.aktif=1 AND g.dihapus=0 ORDER BY g.kode_kc", tanggal))
                 using (var rd = cmd.ExecuteReader())
                     while (rd.Read())
                         runs.Add(new Dictionary<string, object>
                         {
                             { "runId", rd.GetInt64(0) }, { "kodeKC", rd.GetString(1) }, { "versi", rd.GetInt32(2) },
-                            { "topN", rd[3] is DBNull ? null : (object)Convert.ToInt32(rd[3]) }
+                            { "topN", rd[3] is DBNull ? null : (object)Convert.ToInt32(rd[3]) },
+                            // Tahap 9b: "nominal" → ambang baki debet; null/"ranking" → Top-N
+                            { "signifikan", rd[4] is DBNull ? Signifikansi.Ranking : rd.GetString(4) },
+                            { "ambang", rd[5] is DBNull ? null : (object)Convert.ToDouble(rd[5]) },
+                            { "labelSignifikan", Signifikansi.Label(rd[4] is DBNull ? Signifikansi.Ranking : rd.GetString(4),
+                                rd[3] is DBNull ? (int?)null : Convert.ToInt32(rd[3]), rd[5] is DBNull ? (double?)null : Convert.ToDouble(rd[5])) }
                         });
 
                 foreach (var r in runs)

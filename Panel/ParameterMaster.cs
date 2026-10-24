@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Reflection;
+using CKPNLibrary.Helpers;
 using Excel = Microsoft.Office.Interop.Excel;
 
 namespace CKPNLibrary.Panel
@@ -164,7 +165,8 @@ namespace CKPNLibrary.Panel
             x.Restru = Teks(m, "F12").ToUpperInvariant() == "YA";
 
             p.Individu = x;
-            p.Ringkas[id] = "Top-N " + x.TopN + " · NPF " + YaTidak(x.NPF) + " · Kol-2 " + YaTidak(x.Kol2) +
+            // Tahap 9b: metode nominal (Master!H10) → Top-N tidak dipakai
+            p.Ringkas[id] = Signifikansi.Label(Signifikansi.Urai(Signifikansi.BacaMentah(m)), x.TopN) + " · NPF " + YaTidak(x.NPF) + " · Kol-2 " + YaTidak(x.Kol2) +
                             " · Restru " + YaTidak(x.Restru) + " · " + Path.GetFileName(x.FilePath);
         }
 

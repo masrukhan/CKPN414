@@ -150,6 +150,7 @@ namespace CKPNLibrary.Data
                 { "perubahan", daftar }, { "peringatan", r.Peringatan },
                 { "bolehMenulis", boleh && statusPeriode != "Final" && tolakTopN == null }, { "infoPengirim", alasanTulis },
                 { "topN", ParameterMaster.BacaTopN(r.Wb) },
+                { "labelSignifikan", Signifikansi.Label(Signifikansi.Baca(r.Wb), ParameterMaster.BacaTopN(r.Wb)) },
                 { "acuan", r.Acuan == null ? null : "PD & LGD memakai acuan " + r.Acuan.Label + " (LGD CS tidak dihitung bulan ini)" },
                 { "berjalan", CKPNPipeline.SedangBerjalan }
             };
@@ -253,7 +254,11 @@ namespace CKPNLibrary.Data
                         _json.Serialize(new Dictionary<string, object> { { "periode", param.BulanLaporan }, { "ringkas", param.Ringkas } }),
                         catatan ?? "");
                     runId = con.LastInsertRowId;
-                    Database.Exec(con, "UPDATE run_grup SET top_n=@p0 WHERE id=@p1", ParameterMaster.BacaTopN(wb), runId);
+                    // Tahap 9b: jejak aturan signifikansi (nominal → top_n dikosongkan karena tidak dipakai)
+                    Signifikansi.Aturan sig = Signifikansi.Baca(wb);
+                    Database.Exec(con, "UPDATE run_grup SET top_n=@p0, signifikan=@p1, ambang=@p2 WHERE id=@p3",
+                        sig.IsNominal ? (object)DBNull.Value : ParameterMaster.BacaTopN(wb), sig.Metode,
+                        sig.IsNominal ? (object)sig.Ambang : DBNull.Value, runId);
 
                     foreach (var kv in ringkasan)
                         Database.Exec(con, "INSERT INTO ringkasan(run_id,kunci,nilai) VALUES(@p0,@p1,@p2)", runId, kv.Key, kv.Value);
@@ -714,13 +719,24 @@ namespace CKPNLibrary.Data
         /// </summary>
         private static string CekTopN(Rencana r)
         {
-            string nama;
-            int? ketetapan = Periode.TopNGrup(r.Tanggal.Year, r.KodeKC, out nama);
-            if (!ketetapan.HasValue) return null;
-            int master = ParameterMaster.BacaTopN(r.Wb);
-            if (master == ketetapan.Value) return null;
-            return "Top-N di Master!C10 (" + master + ") berbeda dengan ketetapan grup " + nama + " tahun " + r.Tanggal.Year +
-                   " (" + ketetapan.Value + "). Hasil tidak dapat disimpan ke staging. Hitung ulang dari tab Per grup " +
+            // Tahap 9b: juga metode signifikansi (Master!H10): ranking ↔ nominal dan ambangnya harus sama
+            Periode.Grup g = Periode.GrupSusunan(r.Tanggal.Year, r.KodeKC);
+            if (g == null || !g.AturanLengkap) return null;
+            Signifikansi.Aturan master = Signifikansi.Baca(r.Wb);
+            int topNMaster = ParameterMaster.BacaTopN(r.Wb);
+            string saran = ". Hasil tidak dapat disimpan ke staging. Hitung ulang dari tab Per grup (aturan grup otomatis ditulis ke Master).";
+            if (g.Nominal)
+            {
+                if (master.IsNominal && Math.Abs(master.Ambang - (g.Ambang ?? 0)) < 0.5) return null;
+                return "Signifikansi di Master (" + Signifikansi.Label(master, topNMaster) + ") berbeda dengan ketetapan grup " + g.Nama +
+                       " tahun " + r.Tanggal.Year + " (" + g.LabelSignifikan + ")" + saran;
+            }
+            if (master.IsNominal)
+                return "Signifikansi di Master (" + Signifikansi.Label(master, topNMaster) + ") berbeda dengan ketetapan grup " + g.Nama +
+                       " tahun " + r.Tanggal.Year + " (" + g.LabelSignifikan + ")" + saran;
+            if (topNMaster == g.TopN.Value) return null;
+            return "Top-N di Master!C10 (" + topNMaster + ") berbeda dengan ketetapan grup " + g.Nama + " tahun " + r.Tanggal.Year +
+                   " (" + g.TopN.Value + "). Hasil tidak dapat disimpan ke staging. Hitung ulang dari tab Per grup " +
                    "(Top-N otomatis disesuaikan) atau ubah Master!C10 lalu hitung ulang.";
         }
 

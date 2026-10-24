@@ -25,7 +25,7 @@ namespace CKPNLibrary.Data
     /// </summary>
     internal static class Database
     {
-        public const int VersiSkema = 13;
+        public const int VersiSkema = 14;
         private static readonly HashSet<string> _skemaSiap = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly object _kunci = new object();
 
@@ -432,7 +432,19 @@ namespace CKPNLibrary.Data
                     }
                     CatatanLog.Tulis("Database: migrasi ke skema v13 selesai (" + Path.GetFileName(path) + ")");
                 }
-                // Migrasi versi berikutnya ditambahkan di sini: if (versi < 14) { ... }
+                // ---- v14 (Tahap 9b): metode signifikansi CKPN Individu per grup (ranking / nominal) ----
+                if (versi < 14)
+                {
+                    using (var tx = con.BeginTransaction())
+                    {
+                        // susunan_grup & run_grup ada di setiap database mode (bukan tabel bersama)
+                        foreach (var sql in SkemaV14) Exec(con, sql);
+                        Exec(con, "INSERT OR REPLACE INTO meta(kunci,nilai) VALUES('versi_skema','14')");
+                        tx.Commit();
+                    }
+                    CatatanLog.Tulis("Database: migrasi ke skema v14 selesai (" + Path.GetFileName(path) + ")");
+                }
+                // Migrasi versi berikutnya ditambahkan di sini: if (versi < 15) { ... }
                 // (perubahan pada TabelBersama: jalankan hanya bila utama == true)
 
                 if (!utama)
@@ -804,6 +816,16 @@ namespace CKPNLibrary.Data
                 tanggal   TEXT,
                 file      TEXT,
                 waktu     TEXT)"
+        };
+
+        // Tahap 9b: signifikansi = "ranking" (Top-N, NULL = data lama) | "nominal" (baki debet CIF ≥ ambang)
+        private static readonly string[] SkemaV14 =
+        {
+            "ALTER TABLE susunan_grup ADD COLUMN signifikan TEXT",
+            "ALTER TABLE susunan_grup ADD COLUMN ambang REAL",
+            // Jejak audit: aturan yang dipakai saat kiriman grup disimpan
+            "ALTER TABLE run_grup ADD COLUMN signifikan TEXT",
+            "ALTER TABLE run_grup ADD COLUMN ambang REAL"
         };
 
         private static readonly string[] SkemaV13 =

@@ -62,6 +62,9 @@ namespace CKPNLibrary.Modules
 
                 if (topN < 1) topN = 10;
                 if (topN > listCIF.Count) topN = listCIF.Count;
+                // Tahap 9b: metode nominal (Master!H10) → semua CIF dengan baki debet ≥ ambang.
+                // listCIF sudah terurut menurun; ranking tetap min(Top-N, jumlah CIF).
+                topN = Signifikansi.Batas(topN, listCIF.Count, i => listCIF[i].TotalOS);
 
                 BersihkanOutput(wsOut);
 
@@ -461,7 +464,7 @@ namespace CKPNLibrary.Modules
             List<SheetSpec> specs, int topN)
         {
             var setSkip = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            if (topN <= 0) return setSkip;
+            if (!Signifikansi.Aktif(topN)) return setSkip;   // Tahap 9b: nominal tetap dijalankan
 
             var dictOSGlobal = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
 
@@ -486,7 +489,7 @@ namespace CKPNLibrary.Modules
                 pairs.Add(new SortHelper.CifOsPair { CIF = kv.Key, OS = kv.Value });
             SortHelper.SortDescByOS(pairs, 0, pairs.Count - 1);
 
-            int batas = Math.Min(topN, pairs.Count);
+            int batas = Signifikansi.Batas(topN, pairs.Count, j => pairs[j].OS);   // Tahap 9b
             var topCIF = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             for (int j = 0; j < batas; j++)
                 topCIF.Add(pairs[j].CIF);

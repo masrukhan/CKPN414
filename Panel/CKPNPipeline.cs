@@ -272,7 +272,7 @@ namespace CKPNLibrary.Panel
                 .Tambah("Bulan laporan", p.BulanLaporan)
                 .Tambah("Langkah", string.Join(", ", namaLangkah.ToArray()))
                 .Tambah("Penyesuaian tersimpan", terapkanPenyesuaian ? "diterapkan" : "tidak diterapkan (hasil sistem murni)")
-                .Tambah("Top-N Master!C10", ParameterMaster.BacaTopN(wb))
+                .Tambah("Signifikansi individu", Signifikansi.Label(Signifikansi.Baca(wb), ParameterMaster.BacaTopN(wb)))
                 .TambahBila(acuan != null, "PD & LGD", acuan == null ? null : "acuan " + acuan.Label + " (Net Flow, Migration, LGD ER, LGD CS dilewati)"));
             PanelBridge.Siarkan("runMulai", new Dictionary<string, object>
             {
@@ -428,12 +428,17 @@ namespace CKPNLibrary.Panel
             DateTime tgl;
             if (ParameterMaster.BacaTanggalLaporan(wb, out tgl))
             {
-                string namaGrup;
-                int? topN = Data.Periode.TopNGrup(tgl.Year, kodeKC, out namaGrup);
-                if (topN.HasValue)
+                // Tahap 9b: aturan signifikansi grup (ranking → Top-N ke C10; nominal → ambang ke H10)
+                Data.Periode.Grup gs = Data.Periode.GrupSusunan(tgl.Year, kodeKC);
+                if (gs != null && !gs.Nominal && gs.TopN.HasValue)
                 {
-                    try { ParameterMaster.SetTopN(wb, topN.Value); }
+                    try { ParameterMaster.SetTopN(wb, gs.TopN.Value); }
                     catch (Exception ex) { return "Tidak dapat menulis Top-N ke Master!C10: " + PesanError(ex); }
+                }
+                // Grup di luar susunan → H10 dikosongkan (Top-N Master!C10), supaya aturan grup sebelumnya tidak terbawa
+                {
+                    try { Signifikansi.Tulis(wb, gs == null ? Signifikansi.Ranking : gs.Signifikan, gs == null ? null : gs.Ambang); }
+                    catch (Exception ex) { return "Tidak dapat menulis aturan signifikansi ke Master!" + Signifikansi.Sel + ": " + PesanError(ex); }
                 }
             }
 

@@ -763,3 +763,18 @@ button.baris-atur:focus-visible { outline: 2px solid var(--aksen); outline-offse
 .tombol-jendela:disabled { opacity: .5; cursor: default; }
 body.mode-jendela main { max-width: 980px; margin: 0 auto; width: 100%; box-sizing: border-box; }
 body.mode-jendela .kepala > * { max-width: 948px; margin-left: auto; margin-right: auto; }
+
+/* Tahap 9b: signifikansi CKPN Individu per grup (metode + nilai) */
+.sig-baris { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.sig-baris .sig-metode { width: auto; flex: 1 1 160px; min-width: 0; }
+.sig-baris input { width: 90px; flex: 0 0 auto; }
+.sig-baris .sig-satuan { flex: 1 1 100%; margin-top: -2px; }
+/* Tahap 9b: tautan dari Tetapkan ke Analisis */
+.kartu-tautan .tautan { display: block; text-align: left; margin-top: 6px; }
+.kartu-tautan .tautan[hidden] { display: none; }
+
+/* Tahap 9c: kertas kerja perhitungan per grup */
+.pg-pilih { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 10px; align-items: center; margin: 8px 0; }
+.pg-pilih .label-isian { margin: 0; }
+.dok .dok-tabel.mini { font-size: 7.5pt; }
+.dok .dok-tabel.mini td, .dok .dok-tabel.mini th { padding: 2px 3px; }

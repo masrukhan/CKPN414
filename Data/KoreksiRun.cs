@@ -407,6 +407,9 @@ namespace CKPNLibrary.Data
                     typeof(KoreksiRun).Assembly.GetName().Version.ToString(), r.ParamJson,
                     "Koreksi panel dari v" + r.Versi + ": " + alasan.Trim(), r.TopN.HasValue ? (object)r.TopN.Value : DBNull.Value);
                 runBaru = con.LastInsertRowId;
+                // Tahap 9b: aturan signifikansi ikut versi asal (baki debet tidak berubah oleh koreksi agunan/biaya)
+                Database.Exec(con, "UPDATE run_grup SET signifikan=(SELECT signifikan FROM run_grup WHERE id=@p1), " +
+                    "ambang=(SELECT ambang FROM run_grup WHERE id=@p1) WHERE id=@p0", runBaru, r.Id);
 
                 foreach (var kv in rgBaru)
                     Database.Exec(con, "INSERT INTO ringkasan(run_id,kunci,nilai) VALUES(@p0,@p1,@p2)", runBaru, kv.Key, kv.Value);

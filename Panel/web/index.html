@@ -250,9 +250,9 @@
         <!-- Tahap 7i: alasan tombol Hitung semua belum bisa dipakai -->
         <div id="batch-alasan" class="alasan-nonaktif" hidden></div>
         <div id="kartu-batch-opsi" class="kotak-opsi" hidden>
-          <p class="teks-kecil">Grup dihitung berurutan dengan cara yang sama seperti <b>Hitung grup ini</b> (centang KC, Top-N grup,
+          <p class="teks-kecil">Grup dihitung berurutan dengan cara yang sama seperti <b>Hitung grup ini</b> (centang KC, signifikansi individu grup,
             penyesuaian tersimpan). Grup <b>tanpa temuan</b> selalu langsung disimpan. Temuan = kontrak Individu baru, agunan sistem berubah pada
-            kontrak berpenyesuaian, debitur LGD CS baru, atau peringatan simpan (mis. Top-N berbeda).</p>
+            kontrak berpenyesuaian, debitur LGD CS baru, atau peringatan simpan (mis. signifikansi berbeda).</p>
           <label class="opsi"><input type="checkbox" id="batch-lewati" checked>
             <span>Lewati grup yang sudah tersimpan di periode ini</span></label>
           <fieldset class="pilih-metode">
@@ -273,7 +273,7 @@
         </div>
         <div id="grup-isi" class="daftar-grup"></div>
         <p class="teks-kecil catatan">Klik baris untuk membuka grup. Riwayat versi ada di <b>Analisis › Versi</b>;
-          susunan grup, metode, dan Top-N di <b>⚙ Pengaturan</b>.</p>
+          susunan grup, metode, dan signifikansi individu di <b>⚙ Pengaturan</b>.</p>
       </div>
 
       <!-- Lihat & koreksi data tersimpan satu versi grup (Tahap 5b) -->
@@ -510,15 +510,11 @@
       <div id="konsolidasi-isi" class="teks-kecil">—</div>
     </div>
 
-    <!-- Tahap 8: pembanding total CKPN antar mode perhitungan -->
-    <div class="kartu" id="kartu-banding-mode" hidden>
-      <div class="baris-antara">
-        <div class="judul-kartu">Pembanding antarmode</div>
-        <button id="btn-banding-mode" class="tautan" type="button">Muat ulang</button>
-      </div>
-      <p class="teks-kecil">Total CKPN periode ini menurut setiap mode perhitungan.
-        Hanya informasi — angka resmi dan jurnal dari mode resmi.</p>
-      <div id="banding-mode-isi" class="teks-kecil">—</div>
+    <!-- Tahap 9b: rincian & pembanding antarmode dipindah ke Analisis › Rincian; di sini cukup tautan -->
+    <div class="kartu kartu-tautan" id="kartu-ttp-tautan">
+      <div class="judul-kartu">Rincian lebih lanjut</div>
+      <button id="btn-ttp-rincian" class="tautan" type="button">Rincian CKPN Individu &amp; Kolektif per segmen (grup) → Analisis</button>
+      <button id="btn-ttp-banding" class="tautan" type="button" hidden>Pembanding total CKPN antarmode perhitungan → Analisis</button>
     </div>
   </section>
 
@@ -528,6 +524,7 @@
       <button type="button" data-sub="dokringkas" aria-pressed="true">Ringkasan</button>
       <button type="button" data-sub="dokind" aria-pressed="false">Memo Individu</button>
       <button type="button" data-sub="doklgd" aria-pressed="false">Memo LGD CS</button>
+      <button type="button" data-sub="dokgrup" aria-pressed="false">Perhitungan grup</button>
     </div>
     <div id="dok-info" class="teks-kecil"></div>
     <div class="baris-antara dok-profil">
@@ -579,7 +576,7 @@
         <div class="baris-filter jarak-atas">
           <select id="di-filter" class="pilih" aria-label="Saring debitur">
             <option value="pn">Ada penurunan nilai</option>
-            <option value="semua">Semua debitur Top-N</option>
+            <option value="semua">Semua debitur signifikan</option>
             <option value="belum">Belum ada memo Final</option>
           </select>
           <input id="di-cari" class="isian" type="search" placeholder="Cari nama / CIF / kontrak" aria-label="Cari debitur">
@@ -607,6 +604,37 @@
           Hasil bersih memo Final dapat diterapkan ke penyesuaian LGD CS untuk perhitungan berikutnya.</p>
       </div>
       <div class="kartu" id="kartu-memo-lgd" hidden></div>
+    </div>
+
+    <!-- ---------- Tahap 9c: Dokumen › Perhitungan per grup (dari database) ---------- -->
+    <div id="sub-dokgrup" class="isi-sub" hidden>
+      <div class="kartu">
+        <div class="judul-kartu">Kertas kerja perhitungan per grup</div>
+        <p class="teks-kecil">Rincian perhitungan satu grup (segmen) <b>dari versi tersimpan di database</b>: CKPN Individu per kontrak,
+          PD Net Flow, PD Migration, LGD CS / ER / weighted, dan CKPN kolektif per bucket &amp; kualitas. Angkanya sama dengan yang dipakai
+          konsolidasi, termasuk penyesuaian yang sudah diterapkan ke versi tersebut — tidak bergantung pada isi sheet Excel maupun snapshot.</p>
+        <div id="pg-info"></div>
+        <div class="pg-pilih">
+          <label class="label-isian" for="pg-grup">Grup</label>
+          <select id="pg-grup" class="isian"></select>
+          <label class="label-isian" for="pg-versi">Versi</label>
+          <select id="pg-versi" class="isian"></select>
+        </div>
+        <fieldset class="pilih-metode">
+          <legend class="label-isian">Bagian yang dicetak</legend>
+          <label class="opsi"><input type="checkbox" id="pg-b-ind" checked> <span>CKPN Individu per kontrak</span></label>
+          <label class="opsi"><input type="checkbox" id="pg-b-nf" checked> <span>PD Net Flow — saldo bucket 12 bulan</span></label>
+          <label class="opsi"><input type="checkbox" id="pg-b-mig" checked> <span>PD Migration — matriks per triwulan</span></label>
+          <label class="opsi"><input type="checkbox" id="pg-b-cs" checked> <span>LGD Collateral Shortfall per rekening</span></label>
+          <label class="opsi"><input type="checkbox" id="pg-b-ttd"> <span>Lembar tanda tangan (penandatangan dari isian Ringkasan)</span></label>
+        </fieldset>
+        <p class="teks-kecil">Selalu dicetak: identitas versi, ringkasan CKPN grup, CKPN kolektif per bucket (Net Flow) &amp; per kualitas (Migration), dan ringkasan LGD.</p>
+        <div class="baris-tombol jarak-atas">
+          <button id="pg-pratinjau" class="tombol-utama" type="button">Preview</button>
+          <button id="pg-excel" class="tombol-sekunder" type="button" title="Workbook baru (.xlsx) di library\dokumen, angka tetap angka">Ekspor Excel</button>
+        </div>
+        <div id="pg-hasil" role="status"></div>
+      </div>
     </div>
 
     <!-- ---------- Preview dokumen (A4) ---------- -->
@@ -706,6 +734,17 @@
         <div id="rc-kol-nf"></div>
         <div id="rc-kol-mig"></div>
       </div>
+
+      <!-- Tahap 8 → 9b: pembanding total CKPN antar mode perhitungan (dimuat saat dibuka; tidak selalu dibutuhkan) -->
+      <details class="kartu" id="kartu-banding-mode" hidden>
+        <summary class="judul-kartu">Pembanding antarmode perhitungan</summary>
+        <div class="baris-antara">
+          <p class="teks-kecil">Total CKPN periode ini menurut setiap mode perhitungan.
+            Hanya informasi — angka resmi dan jurnal dari mode resmi.</p>
+          <button id="btn-banding-mode" class="tautan" type="button">Muat ulang</button>
+        </div>
+        <div id="banding-mode-isi" class="teks-kecil">—</div>
+      </details>
     </div>
 
     <div id="sub-komposisi" class="isi-sub" hidden>
@@ -852,7 +891,7 @@
         <span class="atur-teks"><span class="atur-nama">Metode konsolidasi</span><span class="atur-nilai" id="pt-metode">—</span></span>
         <span class="atur-ubah">Ubah ›</span></button>
       <button type="button" class="baris-atur" data-atur="susunan" data-fokus="susunan-topn-grup">
-        <span class="atur-teks"><span class="atur-nama">Top-N CKPN Individu</span><span class="atur-nilai" id="pt-topn">—</span></span>
+        <span class="atur-teks"><span class="atur-nama">Signifikansi CKPN Individu</span><span class="atur-nilai" id="pt-topn">—</span></span>
         <span class="atur-ubah">Ubah ›</span></button>
       <button type="button" class="baris-atur" data-atur="susunan" data-fokus="susunan-dasar">
         <span class="atur-teks"><span class="atur-nama">Dasar kebijakan / SOP</span><span class="atur-nilai" id="pt-dasar">—</span></span>
@@ -867,7 +906,7 @@
         <span class="atur-teks"><span class="atur-nama">Metode PD &amp; LGD (Master!D17)</span><span class="atur-nilai" id="pt-pdlgd">—</span></span>
         <span class="atur-ubah teks-kecil">di sheet Master</span></div>
     </div>
-    <p id="pt-kunci" class="teks-kecil">Metode konsolidasi dan Top-N terkunci setelah ada periode Final di tahun ini.</p>
+    <p id="pt-kunci" class="teks-kecil">Metode konsolidasi dan signifikansi individu terkunci setelah ada periode Final di tahun ini.</p>
 
     <!-- Tahap 8: mode perhitungan (aktif di komputer ini + mode resmi per tahun) -->
     <div class="kartu" id="kartu-mode" hidden>
@@ -922,10 +961,13 @@
         <label class="opsi"><input type="radio" name="susunan-metode" value="mig"> <span>PD Migration + LGD weighted</span></label>
         <p class="teks-kecil">Tidak dapat diganti setelah ada periode tahun ini yang dikunci (Final), kecuali kunci periode tersebut dibuka.</p>
       </fieldset>
-      <div class="label-isian">Top-N debitur CKPN Individu per grup (sesuai SOP)</div>
+      <div class="label-isian">Signifikansi debitur CKPN Individu per grup (sesuai SOP)</div>
       <div id="susunan-topn-grup" class="susunan-isi"></div>
-      <p class="teks-kecil">Daftar grup mengikuti nama grup di atas. Hitung grup dari panel menulis Top-N grup tersebut ke Master!C10,
-        dan Simpan grup ditolak bila Top-N di Master berbeda. Tidak dapat diganti setelah ada periode Final di tahun ini.</p>
+      <p class="teks-kecil">Dasar keduanya sama: <b>baki debet per CIF</b> (semua kontrak debitur dijumlah, termasuk kontrak hasil restrukturisasi).
+        <b>Ranking</b> = Top-N debitur dengan baki debet terbesar. <b>Nominal</b> = semua debitur dengan baki debet ≥ ambang (mis. 1.000 jt = Rp1 M,
+        opsi PAPSI BPRS 2026); jumlah debitur individu bisa berubah setiap bulan.
+        Daftar grup mengikuti nama grup di atas. Hitung grup dari panel menulis aturan grup ke Master (Top-N di C10, nominal di sel tersembunyi),
+        dan Simpan grup ditolak bila aturan di Master berbeda. Tidak dapat diganti setelah ada periode Final di tahun ini.</p>
       <label class="label-isian" for="susunan-dasar">Dasar kebijakan / SOP (wajib)</label>
       <input id="susunan-dasar" class="isian" type="text" placeholder="Mis. POL-CKPN-001 rev. 2026">
       <div class="baris-tombol jarak-atas">
