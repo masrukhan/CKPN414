@@ -214,6 +214,7 @@ namespace CKPNLibrary.Data
                 var ringkasan = BacaRingkasan(wb);
                 string analisisJson = AnalisisPD.BacaWorkbookJson(wb);   // Tahap 4: bahan sankey
                 string kolektifJson = RincianCkpn.BacaWorkbookJson(wb);  // Tahap 6c: EAD/PD/LGD/CKPN per bucket & kualitas
+                string lgdErJson = LgdEr.BacaWorkbookJson(wb);            // Tahap 9d: rincian LGD ER per kohort
                 ParameterCKPN param = ParameterMaster.Baca(wb);
                 if (param.LgdCs != null) ringkasan["lgd_cs_haircut"] = param.LgdCs.Haircut;   // Tahap 5b: prefill realisasi saat koreksi
 
@@ -264,6 +265,9 @@ namespace CKPNLibrary.Data
                         Database.Exec(con, "INSERT INTO ringkasan(run_id,kunci,nilai) VALUES(@p0,@p1,@p2)", runId, kv.Key, kv.Value);
                     AnalisisPD.SimpanRun(con, runId, analisisJson);
                     RincianCkpn.SimpanRun(con, runId, kolektifJson);
+                    // Tahap 9d: rincian LGD ER per kohort (mode acuan → salinan milik versi acuan)
+                    if (r.Acuan != null) LgdEr.SalinDariRun(con, runId, r.Acuan.RunId);
+                    else LgdEr.SimpanRun(con, runId, lgdErJson);
 
                     var disesuaikan = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     foreach (var p in r.Perubahan) if (p.Modul == "individu" && !p.Hapus) disesuaikan.Add(p.Kunci);

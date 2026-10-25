@@ -22,6 +22,7 @@ namespace CKPNLibrary.Data
     ///   • hasil_lgdcs      rincian LGD Collateral Shortfall per rekening
     ///   • analisis_pd 'pd'        saldo bucket Net Flow 12 bulan, matriks migrasi per triwulan, PD resmi
     ///   • analisis_pd 'kolektif'  EAD/PD/LGD/CKPN per bucket & per kualitas
+    ///   • analisis_pd 'lgder'     rincian LGD ER per kohort tahun hapus buku (Tahap 9d)
     /// Panel menyusunnya menjadi dokumen A4 (Preview → PDF/cetak) dan bisa mengekspornya ke Excel
     /// (<see cref="EksporExcel"/>).
     /// </summary>
@@ -120,6 +121,7 @@ namespace CKPNLibrary.Data
                 // Analisis PD & rincian kolektif (JSON tersimpan saat Simpan grup / koreksi)
                 h["pd"] = UraiObj(Database.Scalar(con, "SELECT data FROM analisis_pd WHERE run_id=@p0 AND jenis='pd'", runId));
                 h["kolektif"] = UraiObj(Database.Scalar(con, "SELECT data FROM analisis_pd WHERE run_id=@p0 AND jenis=@p1", runId, RincianCkpn.Jenis));
+                h["lgder"] = UraiObj(Database.Scalar(con, "SELECT data FROM analisis_pd WHERE run_id=@p0 AND jenis=@p1", runId, LgdEr.Jenis));   // Tahap 9d
 
                 // Versi acuan PD & LGD (mode setahun): ambil label periode acuannya
                 object acuanId;
@@ -131,6 +133,86 @@ namespace CKPNLibrary.Data
                 }
             }
             return h;
+        }
+
+        // ================================================================
+        // Tahap 9e: lengkapi rincian versi tersimpan dari sheet Excel
+        // ================================================================
+        /// <summary>
+        /// Versi yang disimpan sebelum Tahap 9d punya deret Net Flow 12 bulan dan belum punya rincian LGD ER.
+        /// Bila kertas kerja Excel saat ini berisi grup &amp; periode yang sama dan angka Summary-nya SAMA dengan
+        /// versi aktif (tidak ada angka CKPN yang berubah), rincian PD (saldo 13 bulan, roll rate, flow to loss)
+        /// dan LGD ER versi itu diperbarui dari sheet — tanpa membuat versi baru.
+        /// Mode acuan PD &amp; LGD: rincian disalin dari versi acuan (Desember), bukan dari sheet.
+        /// Angka CKPN, Individu, LGD CS, dan rincian kolektif per bucket tidak disentuh.
+        /// </summary>
+        public static Dictionary<string, object> LengkapiDariSheet(Excel.Application app, long runId)
+        {
+            string info;
+            if (!Database.BolehMenulis(out info)) throw new InvalidOperationException(info);
+            Excel.Workbook wb = PanelBridge.CariWorkbookAplikasi(app);
+            if (wb == null) throw new InvalidOperationException("Workbook aplikasi CKPN tidak sedang terbuka.");
+
+            string tanggal, kode; int versi; bool aktif; long? acuanId = null; bool koreksi = false;
+            using (var con = Database.Buka(false))
+            {
+                using (var cmd = Database.Cmd(con,
+                    "SELECT p.tanggal, g.kode_kc, g.versi, g.aktif, g.dihapus FROM run_grup g JOIN periode p ON p.id=g.periode_id WHERE g.id=@p0", runId))
+                using (var rd = cmd.ExecuteReader())
+                {
+                    if (!rd.Read()) throw new InvalidOperationException("Versi grup tidak ditemukan.");
+                    tanggal = rd.GetString(0); kode = rd.GetString(1); versi = rd.GetInt32(2);
+                    aktif = rd.GetInt32(3) == 1 && rd.GetInt32(4) == 0;
+                }
+                object a = Database.Scalar(con, "SELECT nilai FROM ringkasan WHERE run_id=@p0 AND kunci='acuan_run_id'", runId);
+                if (a != null && !(a is DBNull)) acuanId = Convert.ToInt64(Convert.ToDouble(a));
+                koreksi = Database.Scalar(con, "SELECT nilai FROM ringkasan WHERE run_id=@p0 AND kunci='koreksi_dari_versi'", runId) != null;
+            }
+            if (!aktif) throw new InvalidOperationException("Hanya versi aktif yang dapat dilengkapi dari sheet.");
+
+            // Kertas kerja harus berisi grup & periode yang sama, dengan angka Summary yang sama
+            var cocok = LabelLingkup.Cocokkan(wb);
+            var iw = (Dictionary<string, object>)cocok["info"];
+            if (Convert.ToString(iw["tanggal"]) != tanggal || !string.Equals(Convert.ToString(iw["kodeKC"]), kode, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Kertas kerja Excel saat ini berisi grup/periode lain. Hitung grup ini dulu dari Hitung › Per grup, " +
+                    "atau simpan sebagai versi baru setelah dihitung.");
+            int beda = Convert.ToInt32(cocok["jumlahBeda"]);
+            if (beda > 0)
+                throw new InvalidOperationException((koreksi
+                    ? "Versi v" + versi + " adalah hasil koreksi/penyesuaian panel sehingga angkanya berbeda dengan sheet. "
+                    : beda + " angka Summary di sheet berbeda dengan v" + versi + ". ") +
+                    "Rincian tidak dilengkapi dari sheet agar tidak mencampur hasil perhitungan berbeda. Hitung ulang grup lalu Simpan grup (versi baru).");
+
+            string pdJson = null, erJson = null;
+            if (acuanId == null)
+            {
+                pdJson = AnalisisPD.BacaWorkbookJson(wb);
+                erJson = LgdEr.BacaWorkbookJson(wb);
+            }
+            int n = 0;
+            Database.Cadangkan();
+            using (var con = Database.Buka(true))
+            using (var tx = con.BeginTransaction())
+            {
+                if (acuanId != null)
+                {
+                    Database.Exec(con, "INSERT OR REPLACE INTO analisis_pd(run_id, jenis, data) " +
+                        "SELECT @p0, jenis, data FROM analisis_pd WHERE run_id=@p1 AND jenis IN ('pd', @p2)", runId, acuanId.Value, LgdEr.Jenis);
+                    n = Convert.ToInt32(Database.Scalar(con, "SELECT COUNT(*) FROM analisis_pd WHERE run_id=@p0 AND jenis IN ('pd', @p1)", acuanId.Value, LgdEr.Jenis));
+                }
+                else
+                {
+                    if (!string.IsNullOrEmpty(pdJson)) { AnalisisPD.SimpanRun(con, runId, pdJson); n++; }
+                    if (!string.IsNullOrEmpty(erJson)) { LgdEr.SimpanRun(con, runId, erJson); n++; }
+                }
+                Database.CatatAktivitas(con, tanggal, "lengkapi-rincian",
+                    "v" + versi + " " + kode + ": rincian PD Net Flow & LGD ER diperbarui dari " + (acuanId != null ? "versi acuan" : "sheet Excel") +
+                    " (angka CKPN tidak berubah)");
+                tx.Commit();
+            }
+            LogProses.CatatPanel(tanggal, "Dokumen", "Lengkapi rincian v" + versi, LogProses.OK,
+                LogProses.R().Tambah("Grup", kode).Tambah("Sumber", acuanId != null ? "versi acuan" : "sheet Excel").Tambah("Bagian", n));
+            return new Dictionary<string, object> { { "versi", versi }, { "bagian", n }, { "acuan", acuanId != null } };
         }
 
         // ================================================================

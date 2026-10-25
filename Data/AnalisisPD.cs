@@ -14,9 +14,11 @@ namespace CKPNLibrary.Data
     /// Data analisis PD (Tahap 4) — bahan sankey PD Migration & PD Net Flow di tab Analisis.
     ///
     /// Sumber sel (dibaca apa adanya, tidak dihitung ulang):
-    ///   B1.PD-Net Flow      D3:O3   label bulan (12 kolom)
-    ///                       D4:O16  saldo bucket 0, 1-30, ..., 331-360 hari
-    ///                       D18:O18 saldo > 360 hari, D19:O19 hapus buku (KC2900)
+    ///   B1.PD-Net Flow      D3:P3   label bulan (13 kolom = 13 posisi bulan, mis. Des 2024 s.d. Des 2025)
+    ///                       D4:P16  saldo bucket 0, 1-30, ..., 331-360 hari
+    ///                       D18:P18 saldo > 360 hari, D19:P19 hapus buku (KC2900)
+    ///                       D23:O36 roll rate antar bucket (12 perpindahan), D40:O52 flow to loss, P40:P52 PD
+    ///                       (Tahap 9d: sebelumnya hanya D:O → bulan terakhir tidak ikut tersimpan)
     ///   B2.PD-Migration     4 blok triwulan (baris awal 4 / 23 / 42 / 61), 5 baris kualitas:
     ///                       B = saldo awal, C..G = ke Kol 1..5, H = hapus buku, I = lainnya/keluar
     ///   B. CKPN - KOL INDV  E6:E19  PD Net Flow per bucket (14 bucket, sama dengan Dashboard lama)
@@ -43,28 +45,55 @@ namespace CKPNLibrary.Data
         // =================================================================
         public static Dictionary<string, object> BacaWorkbook(Excel.Workbook wb)
         {
-            var hasil = new Dictionary<string, object> { { "versiData", 1 } };
+            var hasil = new Dictionary<string, object> { { "versiData", 2 } };
 
             // ---- PD Net Flow: saldo bucket per bulan ----
             Excel.Worksheet nf = ParameterMaster.CariSheet(wb, "B1.PD-Net Flow");
             if (nf != null)
             {
-                object[,] v = (object[,])((Excel.Range)nf.Range["D3", "O19"]).Value2;   // 17 baris x 12 kolom
+                // Tahap 9d: 13 posisi bulan (D..P), sama dengan Master!F20:F32
+                const int NB = 13;
+                object[,] v = (object[,])((Excel.Range)nf.Range["D3", "P19"]).Value2;   // 17 baris x 13 kolom
                 var bulan = new List<string>();
                 var saldo = new List<double[]>();
-                for (int b = 0; b < 14; b++) saldo.Add(new double[12]);
-                var wo = new double[12];
-                for (int m = 0; m < 12; m++)
+                for (int b = 0; b < 14; b++) saldo.Add(new double[NB]);
+                var wo = new double[NB];
+                for (int m = 0; m < NB; m++)
                 {
                     bulan.Add(LabelBulan(v[1, m + 1], m));
                     for (int b = 0; b < 13; b++) saldo[b][m] = Angka(v[2 + b, m + 1]);   // baris 4..16
                     saldo[13][m] = Angka(v[16, m + 1]);                                  // baris 18
                     wo[m] = Angka(v[17, m + 1]);                                         // baris 19
                 }
-                hasil["netflow"] = new Dictionary<string, object>
+                var nfData = new Dictionary<string, object>
                 {
                     { "bucket", LabelBucket }, { "bulan", bulan }, { "saldo", saldo }, { "wo", wo }
                 };
+                // Tahap 9d: roll rate (D24:O36) & flow to loss (D40:O52) per perpindahan bulan, PD per bucket (P40:P52)
+                try
+                {
+                    object[,] lr = (object[,])((Excel.Range)nf.Range["D23", "O23"]).Value2;
+                    object[,] rr = (object[,])((Excel.Range)nf.Range["D24", "O36"]).Value2;
+                    object[,] fl = (object[,])((Excel.Range)nf.Range["D40", "P52"]).Value2;
+                    var labelRoll = new List<string>();
+                    for (int m = 0; m < 12; m++) labelRoll.Add(LabelBulan(lr[1, m + 1], m));
+                    var roll = new List<double?[]>();
+                    var flow = new List<double?[]>();
+                    var pdFlow = new double?[13];
+                    for (int b = 0; b < 13; b++)
+                    {
+                        var a1 = new double?[12]; var a2 = new double?[12];
+                        for (int m = 0; m < 12; m++) { a1[m] = AngkaNull(rr[b + 1, m + 1]); a2[m] = AngkaNull(fl[b + 1, m + 1]); }
+                        roll.Add(a1); flow.Add(a2);
+                        pdFlow[b] = AngkaNull(fl[b + 1, 13]);
+                    }
+                    nfData["labelRoll"] = labelRoll;
+                    nfData["rollRate"] = roll;
+                    nfData["flowToLoss"] = flow;
+                    nfData["pdFlow"] = pdFlow;
+                }
+                catch (Exception ex) { CatatanLog.Tulis("Roll rate Net Flow tidak terbaca: " + ex.Message); }
+                hasil["netflow"] = nfData;
             }
 
             // ---- PD Migration: matriks per triwulan ----

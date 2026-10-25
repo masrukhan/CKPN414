@@ -531,7 +531,6 @@
       <span id="dok-profil-info" class="teks-kecil">—</span>
       <span class="baris-tombol">
         <button id="dok-profil-ambil" class="tautan" type="button" hidden>Ambil dari template</button>
-        <button id="dok-kode" class="tautan" type="button" hidden title="Keterangan kode APOLLO (config\kode_apollo.txt)">Kode</button>
       </span>
     </div>
 
@@ -620,11 +619,13 @@
           <label class="label-isian" for="pg-versi">Versi</label>
           <select id="pg-versi" class="isian"></select>
         </div>
+        <div id="pg-lengkap"></div>
         <fieldset class="pilih-metode">
           <legend class="label-isian">Bagian yang dicetak</legend>
           <label class="opsi"><input type="checkbox" id="pg-b-ind" checked> <span>CKPN Individu per kontrak</span></label>
-          <label class="opsi"><input type="checkbox" id="pg-b-nf" checked> <span>PD Net Flow — saldo bucket 12 bulan</span></label>
+          <label class="opsi"><input type="checkbox" id="pg-b-nf" checked> <span>PD Net Flow — saldo bucket 13 bulan, roll rate &amp; flow to loss</span></label>
           <label class="opsi"><input type="checkbox" id="pg-b-mig" checked> <span>PD Migration — matriks per triwulan</span></label>
+          <label class="opsi"><input type="checkbox" id="pg-b-er" checked> <span>LGD Expected Recoveries per kohort tahun hapus buku</span></label>
           <label class="opsi"><input type="checkbox" id="pg-b-cs" checked> <span>LGD Collateral Shortfall per rekening</span></label>
           <label class="opsi"><input type="checkbox" id="pg-b-ttd"> <span>Lembar tanda tangan (penandatangan dari isian Ringkasan)</span></label>
         </fieldset>

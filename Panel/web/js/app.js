@@ -4451,7 +4451,6 @@
     var sama = statusP && statusP.periodeMaster;
     $("dok-profil-ambil").textContent = sama ? (nProfil ? "Ambil ulang dari template" : "Ambil dari template") : "Ambil dari file template…";
     tampil("dok-profil-ambil", d.bolehMenulis);
-    tampil("dok-kode", d.bolehMenulis);
     gambarDokRingkas();
     gambarDaftarInd();
     gambarDaftarLgd();
@@ -4470,7 +4469,6 @@
       });
     }).catch(function (e) { teks("dok-profil-info", e.message); }).then(function () { b.disabled = false; });
   });
-  $("dok-kode").addEventListener("click", function () { panggil("bukaFileKode").catch(function (e) { alert(e.message); }); });
 
   function debiturInd() {
     var peta = {}, urut = [];
@@ -5222,6 +5220,50 @@
     gambarPilihVersiDok();
     $("pg-pratinjau").disabled = $("pg-excel").disabled = !daftar.length;
   }
+
+  // ---- Tahap 9e: kelengkapan rincian versi (deret Net Flow 13 bulan, LGD ER per kohort) ----
+  function rincianKurang(d) {
+    var k = [];
+    var nf = d.pd && d.pd.netflow;
+    if (!nf || !nf.bulan || nf.bulan.length < 13) k.push("deret PD Net Flow 13 bulan & roll rate");
+    if (!d.lgder) k.push("rincian LGD ER per kohort");
+    return k;
+  }
+  function cekKelengkapanDok() {
+    var w = $("pg-lengkap"); w.innerHTML = "";
+    if ($("sub-dokgrup").hidden) return;   // hanya saat sub-tab dibuka
+    var ids = runDokDipilih();
+    if (ids.length !== 1) return;
+    var id = ids[0];
+    muatDataPerhitungan([id]).then(function (list) {
+      if (runDokDipilih()[0] !== id) return;   // pilihan sudah berganti
+      var d = list[0], kurang = rincianKurang(d);
+      w.innerHTML = "";
+      if (!kurang.length) return;
+      var wb = statusP && statusP.workbook;
+      var bisa = d.run.aktif && wb && wb.tanggal === d.run.tanggal && wb.kodeKC === d.run.kodeKC &&
+                 (!dok.d || dok.d.bolehMenulis);
+      var box = el("div", "peringatan-box");
+      box.appendChild(el("div", "", "Versi v" + d.run.versi + " belum menyimpan " + kurang.join(" dan ") +
+        " (disimpan sebelum Tahap 9d)." + (bisa
+          ? " Kertas kerja Excel saat ini berisi grup ini — rincian dapat dilengkapi dari sheet tanpa membuat versi baru, selama angka Summary sama dengan v" + d.run.versi + "."
+          : " Hitung grup ini lalu Simpan grup, atau buka grup ini di Excel lalu lengkapi dari sini.")));
+      if (bisa) {
+        var b = tombol("Lengkapi rincian v" + d.run.versi + " dari sheet Excel", "tombol-sekunder jarak-atas", function () {
+          b.disabled = true;
+          panggil("lengkapiRincianVersi", { runId: id }, 120000).then(function (r) {
+            delete pgCache[id];
+            w.innerHTML = "";
+            w.appendChild(el("div", "info-box", "Rincian v" + r.versi + " dilengkapi dari " + (r.acuan ? "versi acuan Desember" : "sheet Excel") +
+              ". Angka CKPN tidak berubah. Klik Preview untuk melihat."));
+          }).catch(function (e) { b.disabled = false; pesanDi("pg-hasil", e.message, false); });
+        });
+        box.appendChild(b);
+      }
+      w.appendChild(box);
+    }).catch(function () { /* diabaikan; Preview akan menampilkan galatnya */ });
+  }
+  $("pg-versi").addEventListener("change", cekKelengkapanDok);
   function gambarPilihVersiDok() {
     var sv = $("pg-versi"), kode = $("pg-grup").value;
     sv.innerHTML = "";
@@ -5233,6 +5275,7 @@
       o.value = v.id; sv.appendChild(o);
       if (v.aktif) sv.value = v.id;
     });
+    cekKelengkapanDok();
   }
   $("pg-grup").addEventListener("change", gambarPilihVersiDok);
 
@@ -5250,7 +5293,7 @@
     }));
   }
   function opsiDokGrup() {
-    return { ind: $("pg-b-ind").checked, nf: $("pg-b-nf").checked, mig: $("pg-b-mig").checked, cs: $("pg-b-cs").checked, ttd: $("pg-b-ttd").checked };
+    return { ind: $("pg-b-ind").checked, nf: $("pg-b-nf").checked, mig: $("pg-b-mig").checked, er: $("pg-b-er").checked, cs: $("pg-b-cs").checked, ttd: $("pg-b-ttd").checked };
   }
 
   // ---- Susunan isi: dipakai bersama oleh dokumen A4 dan ekspor Excel ----
@@ -5316,13 +5359,40 @@
         rows.push(["Hapus buku"].concat((nf.wo || []).slice(a, b)));
         return rows;
       };
-      // A4 tegak: 12 bulan dipecah dua tabel; ekspor Excel memakai tabel penuh (excelSaja)
-      isiNf.push({ tabel: { judul: "Saldo per bucket — " + (bulan[0] || "") + " s.d. " + (bulan[5] || ""), kolom: ["Bucket"].concat(bulan.slice(0, 6)),
-        format: ["teks", "rp", "rp", "rp", "rp", "rp", "rp"], baris: bar(0, 6), mini: true, dokSaja: true } });
-      isiNf.push({ tabel: { judul: "Saldo per bucket — " + (bulan[6] || "") + " s.d. " + (bulan[11] || ""), kolom: ["Bucket"].concat(bulan.slice(6, 12)),
-        format: ["teks", "rp", "rp", "rp", "rp", "rp", "rp"], baris: bar(6, 12), mini: true, dokSaja: true } });
-      isiNf.push({ tabel: { judul: "Saldo per bucket (12 bulan)", kolom: ["Bucket"].concat(bulan),
-        format: ["teks"].concat(bulan.map(function () { return "rp"; })), baris: bar(0, 12), excelSaja: true } });
+      // A4 tegak: deret bulan (13 posisi sejak Tahap 9d) dipecah dua tabel; ekspor Excel memakai tabel penuh (excelSaja)
+      var n = bulan.length, h1 = Math.ceil(n / 2);
+      var fmtRp = function (k) { var f = ["teks"]; for (var i = 0; i < k; i++) f.push("rp"); return f; };
+      [[0, h1], [h1, n]].forEach(function (p) {
+        if (p[1] <= p[0]) return;
+        isiNf.push({ tabel: { judul: "Saldo per bucket — " + bulan[p[0]] + " s.d. " + bulan[p[1] - 1], kolom: ["Bucket"].concat(bulan.slice(p[0], p[1])),
+          format: fmtRp(p[1] - p[0]), baris: bar(p[0], p[1]), mini: true, dokSaja: true } });
+      });
+      isiNf.push({ tabel: { judul: "Saldo per bucket (" + n + " bulan: " + (bulan[0] || "") + " s.d. " + (bulan[n - 1] || "") + ")", kolom: ["Bucket"].concat(bulan),
+        format: fmtRp(n), baris: bar(0, n), excelSaja: true } });
+      if (n < 13) isiNf.push({ teks: "Versi ini disimpan sebelum Tahap 9d: posisi bulan terakhir deret Net Flow tidak ikut tersimpan. " +
+        "Lengkapi dari Dokumen › Perhitungan grup (tombol \u201cLengkapi rincian\u201d) atau simpan ulang grup." });
+
+      // Tahap 9d: roll rate & flow to loss per perpindahan bulan, PD per bucket
+      if (nf.rollRate && nf.labelRoll) {
+        var lr = nf.labelRoll, nr = lr.length, hr = Math.ceil(nr / 2);
+        var labelPindah = bucket.slice(0, 13).map(function (lb, i) { return (i + 1) + "→" + (i + 2) + " (" + lb + ")"; });
+        var fmtPs = function (k) { var f = ["teks"]; for (var i = 0; i < k; i++) f.push("persen"); return f; };
+        var tabelRasio = function (judul, data, tambahPd) {
+          [[0, hr], [hr, nr]].forEach(function (p) {
+            if (p[1] <= p[0]) return;
+            var akhir = tambahPd && p[1] === nr;
+            isiNf.push({ tabel: { judul: judul + " — " + lr[p[0]] + " s.d. " + lr[p[1] - 1],
+              kolom: ["Perpindahan"].concat(lr.slice(p[0], p[1])).concat(akhir ? ["PD"] : []),
+              format: fmtPs(p[1] - p[0] + (akhir ? 1 : 0)),
+              baris: labelPindah.map(function (lb, i) { return [lb].concat((data[i] || []).slice(p[0], p[1])).concat(akhir ? [(nf.pdFlow || [])[i]] : []); }),
+              mini: true, dokSaja: true } });
+          });
+          isiNf.push({ tabel: { judul: judul, kolom: ["Perpindahan"].concat(lr).concat(tambahPd ? ["PD"] : []), format: fmtPs(nr + (tambahPd ? 1 : 0)),
+            baris: labelPindah.map(function (lb, i) { return [lb].concat(data[i] || []).concat(tambahPd ? [(nf.pdFlow || [])[i]] : []); }), excelSaja: true } });
+        };
+        tabelRasio("Roll rate antar bucket", nf.rollRate, false);
+        if (nf.flowToLoss) tabelRasio("Compound flow to loss & PD", nf.flowToLoss, true);
+      }
     }
     if (kol.netflow) {
       var tEad = 0, tCk = 0;
@@ -5374,6 +5444,34 @@
               ["LGD weighted (dipakai)", null, null, nilaiNum(rg.lgd_gabungan !== undefined ? rg.lgd_gabungan : pd.lgdWeighted)]] } }];
     if (rg.lgd_cs_haircut !== undefined && rg.lgd_cs_haircut !== null)
       isiLgd.push({ kv: [["Haircut agunan LGD CS", persenDok(rg.lgd_cs_haircut)]] });
+    // Tahap 9d: rincian LGD ER per kohort tahun hapus buku
+    var er = d.lgder;
+    if (opsi.er) {
+      if (!er || !er.kohort) isiLgd.push({ teks: "Rincian LGD ER per kohort belum tersimpan untuk versi ini (disimpan sebelum Tahap 9d). Simpan ulang / hitung ulang grup untuk melengkapinya." });
+      else {
+        var rkKohort = [];
+        er.kohort.forEach(function (k) {
+          var th = (k.tahunKolom || []).map(function (t) { return t ? String(t) : "—"; });
+          var rows = [];
+          (k.rekening || []).forEach(function (r) {
+            rows.push([r.rek, r.tahunHB, r.balance].concat(r.saldo || []).concat([null, null]));
+            if (r.recovery) rows.push(["  recovery", "", null].concat(r.recovery).concat([r.jumlahRecovery, r.rate]));
+          });
+          var t = k.total || {};
+          rows.push(["Total kohort " + (k.tahun || ""), "", t.balance].concat(t.saldo || []).concat([t.recovery, t.rate]));
+          isiLgd.push({ tabel: { judul: "LGD ER — kohort hapus buku " + (k.tahun || "") + " (" + (k.rekening || []).length + " rekening)",
+            kolom: ["Rekening", "Thn HB", "Balance HB"].concat(th).concat(["Jumlah recovery", "Recovery rate"]),
+            format: ["teks", "angka", "rp", "rp", "rp", "rp", "rp", "rp", "rp", "rp", "persen"], baris: rows, mini: true } });
+          rkKohort.push(["Kohort " + (k.tahun || ""), (k.rekening || []).length, t.balance, t.recovery, t.rate]);
+        });
+        var tt = er.total || {};
+        rkKohort.push(["Total", null, er.totalWo !== undefined ? er.totalWo : tt.wo, er.totalRecovery !== undefined ? er.totalRecovery : tt.recovery,
+          tt.rate]);
+        isiLgd.push({ tabel: { judul: "Rekap LGD ER per kohort", kolom: ["Kohort", "Rekening", "Total hapus buku", "Total recovery", "Recovery rate"],
+          format: ["teks", "angka", "rp", "rp", "persen"], baris: rkKohort } });
+        isiLgd.push({ kv: [["LGD ER = 1 − total recovery ÷ total hapus buku", persenDok(er.lgd !== undefined ? er.lgd : rg.lgd_er)]] });
+      }
+    }
     if (opsi.cs) {
       var lc = d.lgdcs || [], a1 = 0, a2 = 0, a3 = 0, a4 = 0;
       var bc = lc.map(function (c) {

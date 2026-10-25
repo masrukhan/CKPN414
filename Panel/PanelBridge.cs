@@ -507,6 +507,16 @@ namespace CKPNLibrary.Panel
                         Balas(host, id, PerhitunganGrup.Data(Convert.ToInt64(Ambil(args, "runId"))));
                         break;
 
+                    case "lengkapiRincianVersi":
+                        long runLengkap = Convert.ToInt64(Ambil(args, "runId"));
+                        JalankanDiExcel(host, id, app =>
+                        {
+                            if (CKPNPipeline.SedangBerjalan || BatchGrup.Aktif)
+                                throw new InvalidOperationException("Perhitungan sedang berjalan. Coba lagi setelah selesai.");
+                            return PerhitunganGrup.LengkapiDariSheet(app, runLengkap);
+                        });
+                        break;
+
                     case "eksporExcelDokumen":
                         string namaEks = Convert.ToString(Ambil(args, "nama") ?? "Dokumen CKPN");
                         string periodeEks = Convert.ToString(Ambil(args, "periode") ?? "");
