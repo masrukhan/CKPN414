@@ -79,7 +79,7 @@ namespace CKPNLibrary.Data
                     throw new FileNotFoundException("Snapshot tidak ditemukan.", path);
                 // Hanya file di folder staging yang boleh dibuka dari panel
                 if (!Path.GetFullPath(path).StartsWith(Path.GetFullPath(AppPaths.FolderStaging), StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidOperationException("Lokasi snapshot di luar folder staging.");
+                    throw new InvalidOperationException("Lokasi snapshot di luar folder arsip aplikasi.");
                 Process.Start(path);
             }
         }

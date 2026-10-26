@@ -426,6 +426,8 @@ namespace CKPNLibrary.Modules
                     n1Arr = ExcelHelper.BacaKolomDouble(ws, spec.ColNomPokok,  dataStart, lastRow);
                     h2Arr = ExcelHelper.BacaKolomDouble(ws, spec.ColHariBasil, dataStart, lastRow);
                     n2Arr = ExcelHelper.BacaKolomDouble(ws, spec.ColNomBasil,  dataStart, lastRow);
+                    // Ruang lingkup KC1000: pokok hanya kualitas Macet; bagi hasil sesuai ⚙ Pengaturan
+                    RuangLingkup.TerapkanKC1000(spec, ws, dataStart, lastRow, n1Arr, n2Arr);
                     break;
             }
 

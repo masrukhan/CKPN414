@@ -209,7 +209,7 @@ namespace CKPNLibrary.Data
             {
                 object data = Database.Scalar(con, "SELECT data FROM analisis_pd WHERE run_id=@p0 AND jenis='pd'", runId);
                 if (data == null || data is DBNull)
-                    throw new InvalidOperationException("Kiriman ini disimpan sebelum Tahap 4 sehingga belum punya data analisis PD. " +
+                    throw new InvalidOperationException("Versi ini disimpan dengan aplikasi versi sebelumnya sehingga belum punya data analisis PD. " +
                         "Buka grupnya (Buka untuk diedit) lalu simpan ulang, atau pilih sumber Workbook saat ini.");
                 var hasil = _json.Deserialize<Dictionary<string, object>>(Convert.ToString(data));
                 using (var cmd = Database.Cmd(con,

@@ -190,13 +190,13 @@
       // Tahap 9b: bandingkan aturan signifikansi Master (Top-N C10 / nominal H10) dengan ketetapan grup
       if (d.sigGrup && d.sigSama === false)
         ti.appendChild(el("div", "peringatan-box", "Signifikansi di Master: " + d.sigMaster + ", sedangkan ketetapan grup " + d.namaGrup + " tahun " + d.tahun +
-          ": " + d.sigGrup + ". Hitung manual tetap bisa dijalankan, tetapi hasilnya tidak dapat disimpan ke staging. " +
+          ": " + d.sigGrup + ". Hitung manual tetap bisa dijalankan, tetapi hasilnya tidak dapat disimpan sebagai versi grup. " +
           "Hitung dari Hitung › Per grup untuk memakai aturan grup secara otomatis."));
       else if (d.sigGrup)
         ti.appendChild(el("div", "teks-kecil", "Signifikansi " + d.sigMaster + " sesuai ketetapan grup " + d.namaGrup + " tahun " + d.tahun + "."));
       else if (d.topNTahun && d.topNMaster !== d.topNTahun)
         ti.appendChild(el("div", "peringatan-box", "Top-N di Master!C10 = " + d.topNMaster + ", sedangkan ketetapan grup " + d.namaGrup + " tahun " + d.tahun +
-          " = " + d.topNTahun + ". Hitung manual tetap bisa dijalankan, tetapi hasilnya tidak dapat disimpan ke staging. " +
+          " = " + d.topNTahun + ". Hitung manual tetap bisa dijalankan, tetapi hasilnya tidak dapat disimpan sebagai versi grup. " +
           "Hitung dari Hitung › Per grup untuk memakai Top-N tahunan secara otomatis."));
       teks("wb-nama", d.namaFile);
       var chip = $("kc-chip");
@@ -804,6 +804,7 @@
       sinkronBatch(d);
       muatOverviewPeriode(d);
       if (!infoAba || infoAba.tahun !== d.tahun || tabAktif === "pengaturan") muatAba(d.tahun);
+      if (!infoLingkup || infoLingkup.tahun !== d.tahun || tabAktif === "pengaturan") muatLingkup(d.tahun);
       if (!refKC || tabAktif === "pengaturan" || tabAktif === "tetapkan") muatRefKC();
       if (tabAktif === "hitung" || tabAktif === "tetapkan") muatRencanaPny();
       if (tabAktif === "dokumen" && dok.tanggal !== d.tanggal) muatDokumen();
@@ -1476,6 +1477,65 @@
       .catch(function (e) { $("aba-hasil").innerHTML = ""; $("aba-hasil").appendChild(el("div", "peringatan-box", e.message)); });
   });
 
+  // ---------------- ⚙ Pengaturan › Ruang lingkup tunggakan KC1000 ----------------
+  var infoLingkup = null;
+  function muatLingkup(tahun) {
+    if (!tahun) return;
+    return panggil("ruangLingkup", { tahun: tahun }).then(function (d) {
+      infoLingkup = d;
+      teks("pt-lingkup", d.label + (d.tersimpan ? "" : " (bawaan)"));
+    }).catch(function (e) { infoLingkup = null; teks("pt-lingkup", e.message); });
+  }
+
+  function bukaEditorLingkup() {
+    if (!infoLingkup) return;
+    var d = infoLingkup, s = d.tersimpan;
+    teks("lingkup-judul", "Ruang lingkup tunggakan KC1000 tahun " + d.tahun);
+    $("lingkup-basil").checked = !!d.basil;
+    $("lingkup-dasar").value = s ? s.dasar || "" : "";
+    var info = [];
+    info.push(s ? "Tersimpan: " + d.label + " · " + s.pengguna + " · " + s.waktu
+                : "Belum diatur: memakai ketentuan bawaan (bagi hasil tidak dihitung).");
+    if (d.tahunMaster === d.tahun && d.basilMaster !== undefined && d.basilMaster !== d.basil)
+      info.push("Workbook saat ini masih dihitung dengan ketentuan lain; hitung ulang grup agar hasilnya sesuai.");
+    if (d.terkunci) info.push("Ada periode Final di tahun " + d.tahun + ": ketentuan tidak dapat diubah sampai kuncinya dibuka.");
+    $("lingkup-info").textContent = info.join(" · ");
+    var boleh = d.bolehMenulis && !d.terkunci;
+    $("lingkup-basil").disabled = !boleh;
+    $("btn-lingkup-simpan").disabled = !boleh;
+    $("lingkup-hasil").innerHTML = "";
+    tampil("kartu-lingkup", true);
+    $("kartu-lingkup").scrollIntoView({ block: "start" });
+  }
+
+  $("btn-atur-lingkup").addEventListener("click", function () {
+    if (tabAktif !== "pengaturan") pindahTab("pengaturan");
+    var tahun = statusP ? statusP.tahun : null;
+    if (!infoLingkup || infoLingkup.tahun !== tahun) { var pr = muatLingkup(tahun); if (pr) pr.then(bukaEditorLingkup); }
+    else bukaEditorLingkup();
+  });
+  $("btn-lingkup-batal").addEventListener("click", function () { tampil("kartu-lingkup", false); });
+  $("btn-lingkup-simpan").addEventListener("click", function () {
+    var w = $("lingkup-hasil"), basil = $("lingkup-basil").checked;
+    w.innerHTML = "";
+    if (!$("lingkup-dasar").value.trim()) { w.appendChild(el("div", "peringatan-box", "Dasar penetapan wajib diisi.")); return; }
+    if (!window.confirm("Tetapkan ruang lingkup tunggakan KC1000 tahun " + infoLingkup.tahun + ":\n" +
+        "• Tunggakan pokok hanya kualitas Macet (5)\n" +
+        "• Tunggakan bagi hasil " + (basil ? "IKUT dihitung (hanya kualitas Macet)" : "TIDAK dihitung") +
+        "\n\nBerlaku untuk perhitungan dan Simpan grup berikutnya di tahun " + infoLingkup.tahun +
+        ". Versi grup yang sudah tersimpan tidak berubah sampai dihitung dan disimpan ulang. Lanjutkan?")) return;
+    var b = this;
+    b.disabled = true;
+    panggil("simpanRuangLingkup", { tahun: infoLingkup.tahun, basil: basil, dasar: $("lingkup-dasar").value })
+      .then(function (d) {
+        infoLingkup = d;
+        teks("pt-lingkup", d.label + (d.tersimpan ? "" : " (bawaan)"));
+        tampil("kartu-lingkup", false);
+      })
+      .catch(function (e) { w.appendChild(el("div", "peringatan-box", e.message)); })
+      .then(function () { b.disabled = false; });
+  });
+
   $("btn-atur-pengirim").addEventListener("click", function () {
     var buka = $("pt-pengirim-info").hidden;
     tampil("pt-pengirim-info", buka);
@@ -1691,7 +1751,7 @@
     var b = el("div", "metode-baris");
     if (k.metodeCampuran) {
       w.appendChild(el("div", "peringatan-box",
-        "Periode ini dikunci sebelum Tahap 3c dengan metode per grup. Angka ditampilkan sesuai keputusan saat itu."));
+        "Periode ini dikunci dengan metode per grup (aturan versi aplikasi sebelumnya). Angka ditampilkan sesuai keputusan saat itu."));
       return;
     }
     if (!k.metode) {
@@ -2696,6 +2756,7 @@
       ? " · tersimpan di database " + d.waktuSnapshot + (d.penggunaSnapshot ? " oleh " + d.penggunaSnapshot : "") +
         (d.sumberSnapshot ? " (" + d.sumberSnapshot + ")" : "")
       : " · dimuat " + d.waktu + (d.tersimpan === false ? " · tidak disimpan (user ini hanya lihat)" : "");
+    if (d.lingkupKC1000) info += " · EAD KC1000: " + d.lingkupKC1000.charAt(0).toLowerCase() + d.lingkupKC1000.slice(1);
     teks("ov-info", info);
     var lama = $("ov-info").parentNode.querySelector(".ov-berubah");
     if (lama) lama.parentNode.removeChild(lama);
@@ -4268,7 +4329,7 @@
       tampil("lp-lama", !!d.ada);
       if (d.ada) {
         teks("lp-lama-info", "Sheet Audit Log masih ada di workbook: " + fmt.format(d.baris) + " baris × " + d.kolom +
-          " kolom. Modul yang sudah dipatch tidak menulis ke sheet ini lagi, jadi isinya bisa diarsipkan lalu sheet-nya dihapus.");
+          " kolom. Aplikasi versi sekarang tidak menulis ke sheet ini lagi, jadi isinya bisa diarsipkan lalu sheet-nya dihapus.");
         tampil("lp-lama-arsip", true);
       }
     }).catch(function () { tampil("lp-lama", false); });
@@ -4444,7 +4505,7 @@
       (d.bolehMenulis ? "" : " · hanya lihat (bukan pengirim)");
     teks("dok-info", info);
     if (d.skemaLengkap === false)
-      $("dok-info").appendChild(el("div", "peringatan-box", "Database belum diperbarui ke skema v9. Buka panel sekali sebagai user pengirim."));
+      $("dok-info").appendChild(el("div", "peringatan-box", "Data aplikasi perlu diperbarui. Buka panel sekali sebagai user pengirim."));
     var nProfil = Object.keys(d.profil || {}).length, pi = d.profilInfo;
     teks("dok-profil-info", nProfil ? "Data template APOLLO: " + nProfil + " rekening · " + (pi ? pi.file + " · " + pi.waktu : "") :
       "Data template APOLLO belum tersimpan untuk periode ini (otomatis saat Simpan grup).");
@@ -4760,7 +4821,7 @@
     });
     s2.appendChild(el("div", "teks-kecil", "Data perhitungan: " + dataSistem.join(" | ")));
     if (g.kontrak.some(function (k) { return (k.kualitas === undefined || k.kualitas === null) && !profilRek(k.kontrak); }))
-      s2.appendChild(el("div", "teks-kecil", "Kualitas/hari tunggakan belum tercatat untuk versi ini (simpan ulang grup setelah patch modul Tahap 6) — centang manual."));
+      s2.appendChild(el("div", "teks-kecil", "Kualitas/hari tunggakan belum tercatat untuk versi ini (disimpan dengan aplikasi versi sebelumnya; simpan ulang grup untuk melengkapinya) — centang manual."));
     BUKTI.forEach(function (b) {
       var lab = el("label", "opsi");
       var c = el("input"); c.type = "checkbox"; c.checked = !!isi.bukti[b[0]]; c.disabled = kunci;
@@ -5245,7 +5306,7 @@
                  (!dok.d || dok.d.bolehMenulis);
       var box = el("div", "peringatan-box");
       box.appendChild(el("div", "", "Versi v" + d.run.versi + " belum menyimpan " + kurang.join(" dan ") +
-        " (disimpan sebelum Tahap 9d)." + (bisa
+        " karena disimpan dengan aplikasi versi sebelumnya." + (bisa
           ? " Kertas kerja Excel saat ini berisi grup ini — rincian dapat dilengkapi dari sheet tanpa membuat versi baru, selama angka Summary sama dengan v" + d.run.versi + "."
           : " Hitung grup ini lalu Simpan grup, atau buka grup ini di Excel lalu lengkapi dari sini.")));
       if (bisa) {
@@ -5369,7 +5430,7 @@
       });
       isiNf.push({ tabel: { judul: "Saldo per bucket (" + n + " bulan: " + (bulan[0] || "") + " s.d. " + (bulan[n - 1] || "") + ")", kolom: ["Bucket"].concat(bulan),
         format: fmtRp(n), baris: bar(0, n), excelSaja: true } });
-      if (n < 13) isiNf.push({ teks: "Versi ini disimpan sebelum Tahap 9d: posisi bulan terakhir deret Net Flow tidak ikut tersimpan. " +
+      if (n < 13) isiNf.push({ teks: "Versi ini disimpan dengan aplikasi versi sebelumnya: posisi bulan terakhir deret Net Flow tidak ikut tersimpan. " +
         "Lengkapi dari Dokumen › Perhitungan grup (tombol \u201cLengkapi rincian\u201d) atau simpan ulang grup." });
 
       // Tahap 9d: roll rate & flow to loss per perpindahan bulan, PD per bucket
@@ -5447,7 +5508,7 @@
     // Tahap 9d: rincian LGD ER per kohort tahun hapus buku
     var er = d.lgder;
     if (opsi.er) {
-      if (!er || !er.kohort) isiLgd.push({ teks: "Rincian LGD ER per kohort belum tersimpan untuk versi ini (disimpan sebelum Tahap 9d). Simpan ulang / hitung ulang grup untuk melengkapinya." });
+      if (!er || !er.kohort) isiLgd.push({ teks: "Rincian LGD ER per kohort belum tersimpan untuk versi ini (disimpan dengan aplikasi versi sebelumnya). Lengkapi dari Dokumen › Perhitungan grup atau hitung lalu simpan ulang grup." });
       else {
         var rkKohort = [];
         er.kohort.forEach(function (k) {
@@ -5489,8 +5550,8 @@
     var cat = "Disusun dari database: versi v" + run.versi + " grup " + d.grup.nama + " (" + run.waktu + "). Nilai sama dengan yang dipakai konsolidasi, " +
       "termasuk penyesuaian Individu & LGD CS yang sudah diterapkan ke versi ini; tidak dibaca dari sheet Excel maupun snapshot.";
     if (kol.koreksi) cat += " Versi ini hasil koreksi panel: CKPN kolektif per bucket/kualitas disesuaikan proporsional terhadap total koreksi.";
-    if (!d.pd) cat += " Data saldo PD belum tersimpan untuk versi ini (disimpan sebelum Tahap 4).";
-    if (!d.kolektif) cat += " Rincian kolektif per bucket belum tersimpan untuk versi ini (disimpan sebelum Tahap 6c).";
+    if (!d.pd) cat += " Data saldo PD belum tersimpan untuk versi ini (disimpan dengan aplikasi versi sebelumnya).";
+    if (!d.kolektif) cat += " Rincian kolektif per bucket belum tersimpan untuk versi ini (disimpan dengan aplikasi versi sebelumnya).";
     hasil.push({ judul: nBag + ". Catatan", lembar: "Ringkasan", isi: [{ teks: cat }] });
     return hasil;
   }
@@ -6157,7 +6218,7 @@
     // ---- kontrol rasio PD & LGD vs periode sebelumnya ----
     var w = $("rc-kontrol");
     w.innerHTML = "";
-    if (!k) w.appendChild(el("div", "peringatan-box", "EAD & CKPN per bucket belum tercatat untuk versi ini (disimpan sebelum Tahap 6c). " +
+    if (!k) w.appendChild(el("div", "peringatan-box", "EAD & CKPN per bucket belum tercatat untuk versi ini (disimpan dengan aplikasi versi sebelumnya). " +
       "PD & LGD diambil dari bahan analisis PD. Simpan ulang grup untuk melengkapinya."));
     if (k && k.acuan) w.appendChild(el("div", "teks-kecil", "PD & LGD memakai acuan " + k.acuan + "."));
     if (k && k.koreksi) w.appendChild(el("div", "teks-kecil", "Versi koreksi panel: CKPN kolektif disesuaikan proporsional dengan LGD baru."));

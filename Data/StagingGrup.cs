@@ -136,6 +136,9 @@ namespace CKPNLibrary.Data
             // Top-N debitur Individu harus sama dengan ketetapan tahunan (SOP) — Tahap 4b
             string tolakTopN = CekTopN(r);
             if (tolakTopN != null) r.Peringatan.Add(tolakTopN);
+            // Ruang lingkup tunggakan KC1000 di workbook harus sama dengan ketetapan tahun ini
+            string tolakLingkup = RuangLingkup.CekBeda(r.Wb, r.Tanggal.Year);
+            if (tolakLingkup != null) { r.Peringatan.Add(tolakLingkup); if (tolakTopN == null) tolakTopN = tolakLingkup; }
 
             // Tahap 5h: PD/LGD ABA di Summary vs parameter tahunan (diterapkan otomatis saat Simpan)
             string bedaAba = ParameterAba.CekBeda(r.Wb);
@@ -211,7 +214,11 @@ namespace CKPNLibrary.Data
                 }
                 string tolakTopN = CekTopN(r);
                 if (tolakTopN != null) throw new InvalidOperationException(tolakTopN);
+                string tolakLingkup = RuangLingkup.CekBeda(wb, r.Tanggal.Year);
+                if (tolakLingkup != null) throw new InvalidOperationException(tolakLingkup);
                 var ringkasan = BacaRingkasan(wb);
+                // Jejak ruang lingkup KC1000: 1 = tunggakan bagi hasil ikut dihitung, 0 = tidak (pokok selalu hanya Macet)
+                ringkasan["kc1000_basil"] = RuangLingkup.BasilKC1000(wb) ? 1d : 0d;
                 string analisisJson = AnalisisPD.BacaWorkbookJson(wb);   // Tahap 4: bahan sankey
                 string kolektifJson = RincianCkpn.BacaWorkbookJson(wb);  // Tahap 6c: EAD/PD/LGD/CKPN per bucket & kualitas
                 string lgdErJson = LgdEr.BacaWorkbookJson(wb);            // Tahap 9d: rincian LGD ER per kohort
@@ -728,7 +735,7 @@ namespace CKPNLibrary.Data
             if (g == null || !g.AturanLengkap) return null;
             Signifikansi.Aturan master = Signifikansi.Baca(r.Wb);
             int topNMaster = ParameterMaster.BacaTopN(r.Wb);
-            string saran = ". Hasil tidak dapat disimpan ke staging. Hitung ulang dari tab Per grup (aturan grup otomatis ditulis ke Master).";
+            string saran = ". Hasil tidak dapat disimpan sebagai versi grup. Hitung ulang dari tab Per grup (aturan grup otomatis ditulis ke Master).";
             if (g.Nominal)
             {
                 if (master.IsNominal && Math.Abs(master.Ambang - (g.Ambang ?? 0)) < 0.5) return null;
@@ -740,7 +747,7 @@ namespace CKPNLibrary.Data
                        " tahun " + r.Tanggal.Year + " (" + g.LabelSignifikan + ")" + saran;
             if (topNMaster == g.TopN.Value) return null;
             return "Top-N di Master!C10 (" + topNMaster + ") berbeda dengan ketetapan grup " + g.Nama + " tahun " + r.Tanggal.Year +
-                   " (" + g.TopN.Value + "). Hasil tidak dapat disimpan ke staging. Hitung ulang dari tab Per grup " +
+                   " (" + g.TopN.Value + "). Hasil tidak dapat disimpan sebagai versi grup. Hitung ulang dari tab Per grup " +
                    "(Top-N otomatis disesuaikan) atau ubah Master!C10 lalu hitung ulang.";
         }
 

@@ -778,3 +778,9 @@ body.mode-jendela .kepala > * { max-width: 948px; margin-left: auto; margin-righ
 .pg-pilih .label-isian { margin: 0; }
 .dok .dok-tabel.mini { font-size: 7.5pt; }
 .dok .dok-tabel.mini td, .dok .dok-tabel.mini th { padding: 2px 3px; }
+
+/* Ruang lingkup tunggakan KC1000 */
+.daftar-ketentuan { margin: 4px 0 10px; padding-left: 18px; }
+.daftar-ketentuan li { margin: 2px 0; }
+.opsi-centang { margin: 8px 0 10px; }
+.opsi-centang .blok { display: block; margin-top: 2px; font-weight: normal; }

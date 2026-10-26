@@ -386,7 +386,7 @@ namespace CKPNLibrary.Panel
                 Directory.CreateDirectory(AppPaths.FolderConfig);
                 File.WriteAllLines(FileKode, new[]
                 {
-                    "# Keterangan kode template APOLLO untuk dokumen CKPN (Panel CKPN Tahap 6b).",
+                    "# Keterangan kode template APOLLO untuk dokumen CKPN (Panel CKPN).",
                     "# Format: kategori;kode;keterangan — satu kode per baris. Lengkapi sesuai pedoman pelaporan APOLLO/SLIK yang berlaku.",
                     "# Kategori: kualitas, jenisPenggunaan, kategoriUsaha, golongan, sektor, jenisAgunan, pengikatan, periodeAngsuran,",
                     "#           sumberDana, jenisAkad, caraRestrukturisasi, penjamin, lokasi",

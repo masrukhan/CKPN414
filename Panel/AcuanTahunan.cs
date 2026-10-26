@@ -151,7 +151,7 @@ namespace CKPNLibrary.Panel
             if (kurang.Count > 0)
             {
                 masalah = "Versi " + a.Label + " tidak menyimpan " + string.Join(", ", kurang.ToArray()) +
-                          " (disimpan sebelum Tahap 4). Simpan ulang grup Desember tersebut sekali.";
+                          " (disimpan dengan aplikasi versi sebelumnya). Simpan ulang grup Desember tersebut sekali.";
                 return null;
             }
             if (!a.PdNf[13].HasValue) a.PdNf[13] = 1;   // bucket > 360 hari: PD 100% (sel E19/V19 sheet)

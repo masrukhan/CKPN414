@@ -550,6 +550,27 @@ namespace CKPNLibrary.Panel
                         Balas(host, id, ParameterAba.Hapus(Convert.ToInt32(Ambil(args, "tahun")), Convert.ToString(Ambil(args, "alasan") ?? "")));
                         break;
 
+                    // ---- Ruang lingkup tunggakan KC1000 per tahun (⚙ Pengaturan) ----
+                    case "ruangLingkup":
+                        int tahunRL = Convert.ToInt32(Ambil(args, "tahun"));
+                        JalankanDiExcel(host, id, app => RuangLingkup.Info(tahunRL, app));
+                        break;
+
+                    case "simpanRuangLingkup":
+                        int tahunRLs = Convert.ToInt32(Ambil(args, "tahun"));
+                        bool basilRL = Ambil(args, "basil") is bool && (bool)Ambil(args, "basil");
+                        string dasarRL = Convert.ToString(Ambil(args, "dasar") ?? "");
+                        JalankanDiExcel(host, id, app =>
+                        {
+                            RuangLingkup.Simpan(tahunRLs, basilRL, dasarRL);
+                            // Workbook pada tahun yang sama → Master!H11 langsung disesuaikan
+                            if (!CKPNPipeline.SedangBerjalan)
+                                try { RuangLingkup.Terapkan(CariWorkbookAplikasi(app)); }
+                                catch (Exception ex) { CatatanLog.Tulis("Terapkan ruang lingkup KC1000: " + ex.Message); }
+                            return RuangLingkup.Info(tahunRLs, app);
+                        });
+                        break;
+
                     // ---- Tahap 6d: referensi Kode KC rekening hapus buku KC2900 (LGD ER) ----
                     case "referensiKC":
                         Balas(host, id, ReferensiKC.Data(GrupDariArgs(Ambil(args, "grup")), UnitDariArgs(Ambil(args, "grup"))));

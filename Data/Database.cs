@@ -25,7 +25,7 @@ namespace CKPNLibrary.Data
     /// </summary>
     internal static class Database
     {
-        public const int VersiSkema = 14;
+        public const int VersiSkema = 15;
         private static readonly HashSet<string> _skemaSiap = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly object _kunci = new object();
 
@@ -40,7 +40,7 @@ namespace CKPNLibrary.Data
             "penyesuaian_individu", "penyesuaian_lgdcs", "log_penyesuaian", "memo", "parameter_aba",
             "profil_template", "profil_template_info", "overview_periode",
             "ref_kc_manual", "ref_kc_produk", "ref_kc_hapusbuku", "ref_kc_lingkup", "ref_kc_info",
-            "mode_tahun", "sandi_kantor", "ref_guna_manual", "ref_guna_produk"
+            "mode_tahun", "sandi_kantor", "ref_guna_manual", "ref_guna_produk", "ruang_lingkup_tahun"
         };
 
         // ================================================================
@@ -444,7 +444,18 @@ namespace CKPNLibrary.Data
                     }
                     CatatanLog.Tulis("Database: migrasi ke skema v14 selesai (" + Path.GetFileName(path) + ")");
                 }
-                // Migrasi versi berikutnya ditambahkan di sini: if (versi < 15) { ... }
+                // ---- v15: ruang lingkup tunggakan KC1000 per tahun (tabel bersama) ----
+                if (versi < 15)
+                {
+                    using (var tx = con.BeginTransaction())
+                    {
+                        if (utama) foreach (var sql in SkemaV15) Exec(con, sql);
+                        Exec(con, "INSERT OR REPLACE INTO meta(kunci,nilai) VALUES('versi_skema','15')");
+                        tx.Commit();
+                    }
+                    CatatanLog.Tulis("Database: migrasi ke skema v15 selesai (" + Path.GetFileName(path) + ")");
+                }
+                // Migrasi versi berikutnya ditambahkan di sini: if (versi < 16) { ... }
                 // (perubahan pada TabelBersama: jalankan hanya bila utama == true)
 
                 if (!utama)
@@ -816,6 +827,18 @@ namespace CKPNLibrary.Data
                 tanggal   TEXT,
                 file      TEXT,
                 waktu     TEXT)"
+        };
+
+        // Ruang lingkup KC1000: tunggakan bagi hasil (AN) masuk perhitungan CKPN? Belum diisi = tidak.
+        // Tunggakan pokok (AL) selalu hanya kualitas Macet (5).
+        private static readonly string[] SkemaV15 =
+        {
+            @"CREATE TABLE IF NOT EXISTS ruang_lingkup_tahun (
+                tahun         INTEGER PRIMARY KEY,
+                kc1000_basil  INTEGER NOT NULL DEFAULT 0,
+                dasar         TEXT,
+                pengguna      TEXT,
+                waktu         TEXT)"
         };
 
         // Tahap 9b: signifikansi = "ranking" (Top-N, NULL = data lama) | "nominal" (baki debet CIF ≥ ambang)

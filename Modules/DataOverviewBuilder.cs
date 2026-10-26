@@ -28,7 +28,8 @@ namespace CKPNLibrary.Modules
     ///       KC1000      : AG (saldo modal)
     ///       KC1100      : AB - AI (nilai kontrak - akumulasi penyusutan)
     ///   EAD KC0600-0900 : sama dengan OS (kolom SheetSpec)
-    ///       KC1000      : AL + AN (tunggakan pokok + basil)
+    ///       KC1000      : AL bila kualitas = 5 (Macet), selain itu 0; + AN (juga hanya kualitas 5) bila
+    ///                     bagi hasil dimasukkan ke ruang lingkup (⚙ Pengaturan, bawaan: tidak)
     ///       KC1100      : AL + AM (tunggakan pokok + ujroh)
     ///   Kualitas        : kolom SheetSpec.ColKualitas (1..5); baris tanpa nama (agunan) dilewati
     ///   PPKA            : MapCKPN per sheet
@@ -59,6 +60,13 @@ namespace CKPNLibrary.Modules
         private const string KC1100_Susut     = "AI";
         private const string KC1000_TungPokok = "AL";
         private const string KC1000_TungBasil = "AN";
+
+        // Tunggakan bagi hasil KC1000 masuk ruang lingkup? null = ikut Master!H11 workbook aplikasi
+        private bool? _basilKC1000;
+        private bool BasilKC1000
+        {
+            get { if (!_basilKC1000.HasValue) _basilKC1000 = RuangLingkup.BasilKC1000(); return _basilKC1000.Value; }
+        }
         private const string KC1100_TungPokok = "AL";
         private const string KC1100_Ujroh     = "AM";
 
@@ -122,6 +130,12 @@ namespace CKPNLibrary.Modules
             if (!File.Exists(pathTemplate))
                 throw new InvalidOperationException("File template tidak ditemukan: " + pathTemplate);
 
+            // Ruang lingkup KC1000 mengikuti ketetapan tahun periode file (bukan isi Master saat ini)
+            DateTime tglPer;
+            if (DateTime.TryParseExact(periode ?? "", "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture,
+                                       System.Globalization.DateTimeStyles.None, out tglPer))
+                _basilKC1000 = RuangLingkup.BasilTahun(tglPer.Year);
+
             HasilOverview h = BacaDariFile(pathTemplate);
 
             // ---- susun untuk panel ----
@@ -174,6 +188,7 @@ namespace CKPNLibrary.Modules
             return new Dictionary<string, object>
             {
                 { "periode", periode },
+                { "lingkupKC1000", RuangLingkup.LabelPanjang(BasilKC1000) },
                 { "penggunaan", guna }, { "penggunaanCadangan", h.GunaCadangan },
                 { "fileTemplate", Path.GetFileName(pathTemplate) },
                 { "pathTemplate", pathTemplate },
@@ -361,9 +376,16 @@ namespace CKPNLibrary.Modules
                                          bool ead, int dataStart, int lastRow)
         {
             if (shName == "KC1000")
-                return ead
-                    ? Jumlah2(ws, KC1000_TungPokok, KC1000_TungBasil, dataStart, lastRow)
-                    : ExcelHelper.BacaKolomDouble(ws, KC1000_OS, dataStart, lastRow);
+            {
+                if (!ead) return ExcelHelper.BacaKolomDouble(ws, KC1000_OS, dataStart, lastRow);
+                // Ruang lingkup: pokok hanya kualitas Macet; bagi hasil sesuai ⚙ Pengaturan (bawaan tidak)
+                double[] pokok = ExcelHelper.BacaKolomDouble(ws, KC1000_TungPokok, dataStart, lastRow);
+                double[] basil = ExcelHelper.BacaKolomDouble(ws, KC1000_TungBasil, dataStart, lastRow);
+                RuangLingkup.TerapkanKC1000(spec, ws, dataStart, lastRow, pokok, basil, BasilKC1000);
+                double[] r = new double[pokok.Length];
+                for (int i = 0; i < r.Length; i++) r[i] = pokok[i] + (i < basil.Length ? basil[i] : 0);
+                return r;
+            }
             if (shName == "KC1100")
                 return ead
                     ? Jumlah2(ws, KC1100_TungPokok, KC1100_Ujroh, dataStart, lastRow)

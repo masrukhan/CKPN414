@@ -90,14 +90,14 @@
       <div id="hasil-status" class="status-hasil"></div>
       <div id="hasil-review"></div>
       <div id="hasil-pesan" class="daftar-pesan"></div>
-      <button id="btn-ke-simpan" class="tombol-utama" type="button">Review selesai — simpan grup ke staging</button>
+      <button id="btn-ke-simpan" class="tombol-utama" type="button">Review selesai — simpan grup</button>
       <button id="btn-tutup-hasil" class="tombol-sekunder lebar" type="button">Tutup</button>
     </div>
 
     <!-- Simpan grup ke staging -->
     <div class="kartu" id="kartu-simpan" hidden>
       <div class="baris-antara">
-        <div class="judul-kartu">Simpan grup ke staging</div>
+        <div class="judul-kartu">Simpan grup</div>
         <button id="btn-simpan-periksa" class="tautan" type="button">Periksa ulang</button>
       </div>
       <div id="simpan-info" class="teks-kecil">Memeriksa sheet…</div>
@@ -860,7 +860,7 @@
           <div id="lp-lama-konfirmasi" class="form-bahaya" hidden>
             <p class="teks-kecil">Seluruh isi sheet disalin ke <span class="path">library\logs\proses\arsip_sheet_audit_log_….txt</span>,
               lalu sheet <b>Audit Log</b> dihapus dari workbook. Simpan workbook (Ctrl+S) setelahnya agar ukuran file mengecil.
-              Pastikan patch Tahap 5 pada modul sudah diterapkan, karena modul versi lama masih mencari sheet ini.</p>
+              Pastikan aplikasi sudah versi terbaru, karena versi lama masih mencari sheet ini.</p>
             <div class="baris-tombol">
               <button id="lp-lama-ya" class="tombol-sekunder bahaya" type="button">Ya, arsipkan &amp; hapus</button>
               <button id="lp-lama-batal" class="tautan" type="button">Batal</button>
@@ -899,6 +899,9 @@
         <span class="atur-ubah">Ubah ›</span></button>
       <button type="button" class="baris-atur" id="btn-atur-aba">
         <span class="atur-teks"><span class="atur-nama">PD &amp; LGD ABA (Summary C21:C23)</span><span class="atur-nilai" id="pt-aba">—</span></span>
+        <span class="atur-ubah">Ubah ›</span></button>
+      <button type="button" class="baris-atur" id="btn-atur-lingkup">
+        <span class="atur-teks"><span class="atur-nama">Ruang lingkup tunggakan KC1000</span><span class="atur-nilai" id="pt-lingkup">—</span></span>
         <span class="atur-ubah">Ubah ›</span></button>
       <button type="button" class="baris-atur" id="btn-atur-refkc">
         <span class="atur-teks"><span class="atur-nama">Referensi KC hapus buku (LGD ER)</span><span class="atur-nilai" id="pt-refkc">—</span></span>
@@ -1001,6 +1004,30 @@
       </div>
       <button id="btn-aba-hapus" class="tautan hapus jarak-atas" type="button" hidden>Hapus parameter tahun ini (Summary C21:C23 kembali diisi manual)</button>
       <div id="aba-hasil" role="status"></div>
+    </div>
+
+    <!-- Ruang lingkup tunggakan KC1000 (Musyarakah/Mudharabah) per tahun -->
+    <div class="kartu" id="kartu-lingkup" hidden>
+      <div class="judul-kartu" id="lingkup-judul">Ruang lingkup tunggakan KC1000</div>
+      <p class="teks-kecil">Berlaku untuk seluruh perhitungan CKPN tahun ini, individu maupun kolektif
+        (CKPN Individu, PD Net Flow, PD Migration, bucket kolektif, dan EAD di Overview Data).</p>
+      <ul class="teks-kecil daftar-ketentuan">
+        <li><b>Tunggakan pokok</b> (kolom AL) hanya dihitung untuk kualitas pembiayaan <b>Macet (5)</b>.
+          Kualitas 1–4 dianggap tunggakan pokok = 0.</li>
+        <li><b>Tunggakan bagi hasil</b> (kolom AN) secara bawaan <b>tidak</b> masuk ruang lingkup, karena pelaporan APOLLO
+          hanya memuat piutang pokok Musyarakah (khusus kualitas Macet).</li>
+      </ul>
+      <label class="opsi opsi-centang"><input type="checkbox" id="lingkup-basil">
+        <span>Masukkan tunggakan bagi hasil KC1000 ke ruang lingkup perhitungan CKPN
+          <span class="teks-kecil blok">Bila dicentang, tunggakan bagi hasil ikut dihitung, sama seperti pokok: hanya untuk kualitas Macet (5).</span></span></label>
+      <div id="lingkup-info" class="teks-kecil"></div>
+      <label class="label-isian" for="lingkup-dasar">Dasar penetapan (wajib)</label>
+      <input id="lingkup-dasar" class="isian" type="text" placeholder="Mis. POL-CKPN-001 rev. 2026 / memo direksi">
+      <div class="baris-tombol jarak-atas">
+        <button id="btn-lingkup-simpan" class="tombol-utama" type="button">Simpan ruang lingkup</button>
+        <button id="btn-lingkup-batal" class="tombol-sekunder" type="button">Batal</button>
+      </div>
+      <div id="lingkup-hasil" role="status"></div>
     </div>
 
     <!-- Tahap 6d: referensi Kode KC rekening hapus buku KC2900 (LGD ER) -->

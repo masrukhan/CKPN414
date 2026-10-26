@@ -222,7 +222,7 @@ namespace CKPNLibrary.Panel
                 int baru = Jumlah(ind, "baru"), berubah = Jumlah(ind, "berubah");
                 if (baru > 0) t.Add(baru + " kontrak CKPN Individu baru — cek nilai agunan (I) dan biaya penjualan (J).");
                 if (berubah > 0) t.Add(berubah + " kontrak berpenyesuaian dengan nilai agunan sistem berubah.");
-                if (!Bool(ind, "dikenalTersedia")) t.Add("Riwayat staging Individu belum ada — kontrak baru tidak dapat dideteksi.");
+                if (!Bool(ind, "dikenalTersedia")) t.Add("Riwayat versi tersimpan CKPN Individu belum ada — kontrak baru tidak dapat dideteksi.");
                 if (ind.ContainsKey("masalah") && ind["masalah"] != null) t.Add("Individu: " + ind["masalah"]);
             }
             if (cs == null) t.Add("Hasil review LGD CS tidak tersedia.");
@@ -230,7 +230,7 @@ namespace CKPNLibrary.Panel
             {
                 int baru = Jumlah(cs, "baru");
                 if (baru > 0) t.Add(baru + " debitur LGD CS baru — cek ke remedial.");
-                if (!Bool(cs, "dikenalTersedia")) t.Add("Riwayat staging LGD CS belum ada — debitur baru tidak dapat dideteksi.");
+                if (!Bool(cs, "dikenalTersedia")) t.Add("Riwayat versi tersimpan LGD CS belum ada — debitur baru tidak dapat dideteksi.");
                 if (cs.ContainsKey("masalah") && cs["masalah"] != null) t.Add("LGD CS: " + cs["masalah"]);
             }
 

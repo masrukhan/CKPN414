@@ -273,6 +273,7 @@ namespace CKPNLibrary.Panel
                 .Tambah("Langkah", string.Join(", ", namaLangkah.ToArray()))
                 .Tambah("Penyesuaian tersimpan", terapkanPenyesuaian ? "diterapkan" : "tidak diterapkan (hasil sistem murni)")
                 .Tambah("Signifikansi individu", Signifikansi.Label(Signifikansi.Baca(wb), ParameterMaster.BacaTopN(wb)))
+                .Tambah("Ruang lingkup KC1000", RuangLingkup.LabelTahunMaster(wb))
                 .TambahBila(acuan != null, "PD & LGD", acuan == null ? null : "acuan " + acuan.Label + " (Net Flow, Migration, LGD ER, LGD CS dilewati)"));
             PanelBridge.Siarkan("runMulai", new Dictionary<string, object>
             {
@@ -323,6 +324,13 @@ namespace CKPNLibrary.Panel
                 {
                     CatatanLog.Tulis("Parameter ABA gagal diterapkan: " + PesanError(ex));
                     LogProses.Catat("Parameter ABA", "Summary C21:C23", LogProses.Peringatan, LogProses.R().Tambah("Error", PesanError(ex)));
+                }
+                // Ruang lingkup tunggakan KC1000 (⚙ Pengaturan) → Master!H11, dibaca modul saat membaca KC1000
+                try { AktifkanWorkbookAplikasi(); RuangLingkup.Terapkan(_wbApp); }
+                catch (Exception ex)
+                {
+                    Akhiri(app, "gagal", "Tidak dapat menulis ruang lingkup KC1000 ke Master!" + RuangLingkup.Sel + ": " + PesanError(ex));
+                    return;
                 }
                 _indeks = 0;
                 JadwalkanBerikut();

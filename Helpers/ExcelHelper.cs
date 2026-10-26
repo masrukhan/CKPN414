@@ -217,6 +217,8 @@ namespace CKPNLibrary.Helpers
                     nomPokok  = BacaKolomDouble(ws, spec.ColNomPokok,  dataStart, lastRow);
                     hariBasil = BacaKolomDouble(ws, spec.ColHariBasil, dataStart, lastRow);
                     nomBasil  = BacaKolomDouble(ws, spec.ColNomBasil,  dataStart, lastRow);
+                    // Ruang lingkup KC1000: pokok hanya kualitas Macet; bagi hasil sesuai ⚙ Pengaturan
+                    RuangLingkup.TerapkanKC1000(spec, ws, dataStart, lastRow, nomPokok, nomBasil);
                     break;
             }
 
