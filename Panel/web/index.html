@@ -178,6 +178,17 @@
       </div>
       <div id="ov-guna" class="teks-kecil">Tekan Muat data.</div>
     </div>
+    <!-- Tahap 10: portofolio per kelompok sektor ekonomi -->
+    <div class="kartu" id="kartu-ov-sektor">
+      <div class="baris-antara">
+        <div class="judul-kartu">Per kelompok sektor ekonomi: outstanding, EAD &amp; NPF</div>
+        <select id="ov-sektor-tampil" class="pilih" aria-label="Tampilan per kelompok sektor" hidden>
+          <option value="jenis">Per kelompok</option>
+          <option value="grup">Per grup</option>
+        </select>
+      </div>
+      <div id="ov-sektor" class="teks-kecil">Tekan Muat data.</div>
+    </div>
   </section>
 
   <!-- ================= Hitung: Per grup · Manual · Penyesuaian ================= -->
@@ -1104,6 +1115,27 @@
           <button id="btn-refkc-guna-simpan" class="tombol-utama" type="button" disabled>Simpan isian jenis penggunaan</button>
         </div>
         <div id="refkc-guna-hasil" role="status"></div>
+      </details>
+
+      <!-- Tahap 10: kelompok sektor ekonomi rekening hapus buku (mode per kelompok sektor) -->
+      <details class="lipat-ref jarak-atas" id="refkc-sektor-blok">
+        <summary id="refkc-sektor-judul">Kelompok sektor ekonomi rekening hapus buku</summary>
+        <p class="teks-kecil">KC2900 tidak memiliki kolom sandi sektor ekonomi. Untuk mode per kelompok sektor, kelompoknya diambil dari
+          sandi sektor (kolom T) rekening yang sama di KC0600–KC1100 file tahunan, lalu dari isian manual per kode produk, lalu dari
+          kelompok terbanyak kode produk tersebut. Rekening yang tetap tanpa kelompok <b>tidak masuk LGD ER grup mana pun</b> — lengkapi
+          di bawah (memakai dasar / alasan pengisian di atas). Pada sebaran kode produk, kelompok ditulis dengan kodenya (01–10).</p>
+        <div id="refkc-sektor-ringkas"></div>
+        <div class="label-kecil jarak-atas" id="refkc-sektor-tanpa-judul">Belum ada kelompok sektor</div>
+        <div id="refkc-sektor-tanpa"></div>
+        <details class="lipat-ref">
+          <summary id="refkc-sektor-produk-judul">Per kode produk</summary>
+          <div id="refkc-sektor-produk"></div>
+        </details>
+        <div id="refkc-sektor-manual"></div>
+        <div class="baris-tombol jarak-atas">
+          <button id="btn-refkc-sektor-simpan" class="tombol-utama" type="button" disabled>Simpan isian kelompok sektor</button>
+        </div>
+        <div id="refkc-sektor-hasil" role="status"></div>
       </details>
     </div>
 

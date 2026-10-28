@@ -197,8 +197,8 @@ textarea, .isian { width: 100%; font: inherit; font-size: 13px; padding: 7px 9px
 .saran { font-size: 10px; color: var(--sukses); font-family: inherit; }
 .kurang { color: var(--galat); }
 
-.susunan-isi { display: grid; grid-template-columns: max-content 1fr; gap: 6px 10px; align-items: center; margin: 8px 0; }
-.susunan-isi .kode { font-family: var(--mono); font-size: 12px; }
+.susunan-isi { display: grid; grid-template-columns: fit-content(48%) minmax(120px, 1fr); gap: 6px 10px; align-items: center; margin: 8px 0; }
+.susunan-isi .kode { font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
 
 /* ================= Tahap 3c: satu metode, jurnal, overview ================= */
 .pilih-metode { border: none; margin: 0; padding: 0; }

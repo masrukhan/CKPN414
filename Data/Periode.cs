@@ -259,6 +259,11 @@ namespace CKPNLibrary.Data
         /// Unit penyusun grup menurut mode aktif: akad = KC0600–KC1100; kantor = sandi kantor tersimpan
         /// (hasil pindai template) ditambah sandi yang sudah dipakai di susunan tahun-tahun sebelumnya.
         /// </summary>
+        private static string Kapital(string s)
+        {
+            return string.IsNullOrEmpty(s) ? s : char.ToUpper(s[0], CultureInfo.InvariantCulture) + s.Substring(1);
+        }
+
         public static List<Dictionary<string, object>> UnitSusunan()
         {
             var m = ModeHitung.Aktif;
@@ -269,15 +274,20 @@ namespace CKPNLibrary.Data
                     hasil.Add(new Dictionary<string, object> { { "kode", kc }, { "label", kc }, { "nama", "" }, { "rekening", null } });
                 return hasil;
             }
-            if (m.Id == ModeHitung.Penggunaan)
+            string[,] tetap = ModeHitung.UnitTetap(m);
+            if (tetap != null)
             {
-                // Tahap 8c: unit tetap 1–3 (isian kosong / tidak dikenal masuk Konsumsi)
-                for (int i = 0; i < ModeHitung.JenisPenggunaan.GetLength(0); i++)
-                    hasil.Add(new Dictionary<string, object>
+                // Tahap 8c / 10: unit tetap (jenis penggunaan 1–3, kelompok sektor 01–10); isian kosong masuk unit cadangan
+                for (int i = 0; i < tetap.GetLength(0); i++)
+                {
+                    var u = new Dictionary<string, object>
                     {
-                        { "kode", ModeHitung.JenisPenggunaan[i, 0] }, { "label", ModeHitung.JenisPenggunaan[i, 0] + " · " + ModeHitung.JenisPenggunaan[i, 1] },
-                        { "nama", ModeHitung.JenisPenggunaan[i, 1] }, { "rekening", null }, { "wajib", true }
-                    });
+                        { "kode", tetap[i, 0] }, { "label", tetap[i, 0] + " · " + tetap[i, 1] },
+                        { "nama", tetap[i, 1] }, { "rekening", null }, { "wajib", true }
+                    };
+                    if (m.Id == ModeHitung.Sektor) u["rentang"] = SektorEkonomi.Rentang[i, 1];
+                    hasil.Add(u);
+                }
                 return hasil;
             }
             var ada = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -354,9 +364,9 @@ namespace CKPNLibrary.Data
             {
                 string nama;
                 if (!peta.TryGetValue(kc, out nama) || string.IsNullOrWhiteSpace(nama))
-                    throw new InvalidOperationException((mode.Utama ? "Kode " : mode.Id == ModeHitung.Penggunaan
-                        ? "Jenis penggunaan " + ModeHitung.NamaPenggunaan(kc) + " (" : "Sandi kantor ") + kc +
-                        (mode.Id == ModeHitung.Penggunaan ? ")" : "") + " belum masuk grup mana pun.");
+                    throw new InvalidOperationException((mode.Utama ? "Kode " + kc : ModeHitung.UnitTetap(mode) != null
+                        ? Kapital(mode.NamaUnit) + " " + ModeHitung.NamaUnitKode(mode, kc) + " (" + kc + ")" : "Sandi kantor " + kc) +
+                        " belum masuk grup mana pun.");
                 nama = nama.Trim();
                 Grup g;
                 if (!index.TryGetValue(nama, out g))

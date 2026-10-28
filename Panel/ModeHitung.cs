@@ -30,6 +30,8 @@ namespace CKPNLibrary.Panel
     /// Lingkup grup untuk modul ditulis panel ke Master!H8 (kolom H tersembunyi), format
     /// "kantor:001,002". Kosong = tanpa saringan. Modul membacanya lewat <see cref="FilterLingkup"/>.
     ///
+    /// Tahap 10: mode per kelompok sektor ekonomi (kolom T, lihat <see cref="SektorEkonomi"/>).
+    ///
     /// Mode berikutnya (mis. jenis penggunaan, kolom S) cukup ditambahkan ke <see cref="Semua"/> dengan
     /// KolomFilter-nya sendiri; database, susunan grup, saringan modul, dan panel mengikuti.
     /// </summary>
@@ -41,7 +43,7 @@ namespace CKPNLibrary.Panel
             public bool Utama;
         }
 
-        public const string Akad = "akad", Kantor = "kantor", Penggunaan = "penggunaan";
+        public const string Akad = "akad", Kantor = "kantor", Penggunaan = "penggunaan", Sektor = "sektor";
 
         public static readonly Mode[] Semua =
         {
@@ -62,6 +64,14 @@ namespace CKPNLibrary.Panel
                 Id = Penggunaan, Nama = "Per jenis penggunaan", NamaPendek = "Per penggunaan", FileDb = "ckpn_penggunaan.db",
                 KolomFilter = "S", NamaUnit = "jenis penggunaan",
                 Keterangan = "Grup disusun dari jenis penggunaan pembiayaan: modal kerja, investasi, dan konsumsi. Semua jenis akad dihitung bersama."
+            },
+            new Mode
+            {
+                Id = Sektor, Nama = "Per kelompok sektor ekonomi", NamaPendek = "Per sektor", FileDb = "ckpn_sektor.db",
+                KolomFilter = "T", NamaUnit = "kelompok sektor",
+                Keterangan = "Grup disusun dari sandi sektor ekonomi (kolom T) yang diringkas menjadi 10 kelompok: pertanian, industri, " +
+                             "konstruksi & developer, perdagangan, akomodasi, transportasi, jasa, dan tiga kelompok konsumtif penghasilan tetap. " +
+                             "Semua jenis akad dihitung bersama."
             },
         };
 
@@ -105,12 +115,46 @@ namespace CKPNLibrary.Panel
             return "";
         }
 
-        /// <summary>Kode unit kanonik sesuai mode (sandi kantor / jenis penggunaan).</summary>
+        /// <summary>Kode unit kanonik sesuai mode (sandi kantor / jenis penggunaan / kelompok sektor).</summary>
         public static string NormUnit(Mode m, object v)
         {
             if (m != null && m.Id == Penggunaan) return NormPenggunaan(v);
+            if (m != null && m.Id == Sektor) return SektorEkonomi.NormKelompok(v);
             return NormSandi(v);
         }
+
+        // ---- Mode dengan daftar unit tetap (jenis penggunaan, kelompok sektor) ----
+
+        /// <summary>Daftar unit tetap {kode, nama} untuk mode ini; null bila unitnya bebas (akad, kantor).</summary>
+        public static string[,] UnitTetap(Mode m)
+        {
+            if (m == null) return null;
+            if (m.Id == Penggunaan) return JenisPenggunaan;
+            if (m.Id == Sektor) return SektorEkonomi.Kelompok;
+            return null;
+        }
+
+        /// <summary>Nama unit tetap ("Modal Kerja", "Perdagangan"); kode apa adanya untuk mode lain.</summary>
+        public static string NamaUnitKode(Mode m, string kode)
+        {
+            if (m != null && m.Id == Penggunaan) return NamaPenggunaan(kode);
+            if (m != null && m.Id == Sektor) return SektorEkonomi.Nama(kode);
+            return kode;
+        }
+
+        /// <summary>Unit cadangan bila isian kolom saringan kosong / tidak dikenal (mode unit tetap).</summary>
+        public static string UnitCadangan(Mode m)
+        {
+            if (m != null && m.Id == Penggunaan) return PenggunaanCadangan;
+            if (m != null && m.Id == Sektor) return SektorEkonomi.Cadangan;
+            return "";
+        }
+
+        /// <summary>
+        /// True bila kolom saringan hanya terisi di baris pembiayaan (jenis penggunaan kolom S, sektor kolom T):
+        /// baris agunan mengikuti kontraknya dan isian kosong masuk unit cadangan.
+        /// </summary>
+        public static bool UnitPerKontrak(Mode m) { return UnitTetap(m) != null; }
 
         public static readonly string[] SemuaKC = { "KC0600", "KC0700", "KC0800", "KC0900", "KC1000", "KC1100" };
 
@@ -386,10 +430,10 @@ namespace CKPNLibrary.Panel
             string k = (kodeGrup ?? "").Replace(",", ", ");
             if (m == null || m.Utama) return k;
             if (k.Length == 0) return "semua " + m.NamaUnit;
-            if (m.Id == Penggunaan)
+            if (UnitTetap(m) != null)
             {
                 var nama = new List<string>();
-                foreach (var x in (kodeGrup ?? "").Split(',')) if (x.Length > 0) nama.Add(NamaPenggunaan(x));
+                foreach (var x in (kodeGrup ?? "").Split(',')) if (x.Length > 0) nama.Add(NamaUnitKode(m, x));
                 return string.Join(", ", nama.ToArray());
             }
             return m.NamaUnit + " " + k;

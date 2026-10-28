@@ -499,13 +499,17 @@ namespace CKPNLibrary.Panel
 
             var tercakup = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var g in susunan) foreach (var k in g.KodeKC.Split(',')) tercakup.Add(k);
-            if (ModeHitung.Aktif.Id != ModeHitung.Kantor)
+            string[,] tetap = ModeHitung.UnitTetap(ModeHitung.Aktif);
+            if (tetap != null)
             {
+                // Mode unit tetap (jenis penggunaan / kelompok sektor): semua unit wajib masuk grup
                 var kurang = new List<string>();
-                for (int i = 0; i < ModeHitung.JenisPenggunaan.GetLength(0); i++)
-                    if (!tercakup.Contains(ModeHitung.JenisPenggunaan[i, 0])) kurang.Add(ModeHitung.JenisPenggunaan[i, 1]);
+                for (int i = 0; i < tetap.GetLength(0); i++)
+                    if (!tercakup.Contains(tetap[i, 0])) kurang.Add(tetap[i, 1]);
+                string unit = ModeHitung.Aktif.NamaUnit;
                 return kurang.Count == 0 ? null
-                    : "Jenis penggunaan " + string.Join(", ", kurang.ToArray()) + " belum masuk grup mana pun di susunan " + sumber + ".";
+                    : char.ToUpper(unit[0]) + unit.Substring(1) + " " + string.Join(", ", kurang.ToArray()) +
+                      " belum masuk grup mana pun di susunan " + sumber + ".";
             }
             int kosong;
             string path = ParameterMaster.BacaPathTemplate(wb);
@@ -681,8 +685,9 @@ namespace CKPNLibrary.Panel
                 .Tambah("File", ringkas.Count == 0 ? "-" : string.Join("; ", ringkas.ToArray()))
                 .Tambah("Folder salinan", SumberLingkup.Folder)
                 .Tambah("Durasi", (sw.ElapsedMilliseconds / 1000.0).ToString("0.0", LogProses.Id) + " dtk")
-                .Tambah("Catatan", "Sheet KC0600–KC1100 disaring kolom " + f.Kolom + (f.ModeId == ModeHitung.Penggunaan
-                    ? " (baris agunan mengikuti kontraknya; kosong → Konsumsi)" : "") +
+                .Tambah("Catatan", "Sheet KC0600–KC1100 disaring kolom " + f.Kolom + (ModeHitung.UnitPerKontrak(ModeHitung.Cari(f.ModeId))
+                    ? " (baris agunan mengikuti kontraknya; kosong → " +
+                      ModeHitung.NamaUnitKode(ModeHitung.Cari(f.ModeId), ModeHitung.UnitCadangan(ModeHitung.Cari(f.ModeId))) + ")" : "") +
                     "; KC0500 (ABA), KC2900, dan GB tidak diubah. LGD ER disaring lewat referensi hapus buku."));
         }
 

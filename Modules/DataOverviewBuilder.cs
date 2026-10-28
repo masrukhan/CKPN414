@@ -102,6 +102,12 @@ namespace CKPNLibrary.Modules
             /// <summary>Tahap 8c: agregat per jenis penggunaan (kolom S; agunan ikut kontraknya; kosong → Konsumsi).</summary>
             public Dictionary<string, Segmen> Guna = new Dictionary<string, Segmen>(StringComparer.OrdinalIgnoreCase);
             public Dictionary<string, Dictionary<string, double>> GunaKC = new Dictionary<string, Dictionary<string, double>>(StringComparer.OrdinalIgnoreCase);
+            /// <summary>Tahap 10: agregat per kelompok sektor ekonomi (kolom T; agunan ikut kontraknya; kosong → kelompok cadangan).</summary>
+            public Dictionary<string, Segmen> Sektor = new Dictionary<string, Segmen>(StringComparer.OrdinalIgnoreCase);
+            public Dictionary<string, Dictionary<string, double>> SektorKC = new Dictionary<string, Dictionary<string, double>>(StringComparer.OrdinalIgnoreCase);
+            /// <summary>Tahap 10: sandi sektor 6 digit → [jumlah baris pembiayaan, OS] (sebaran sandi di template).</summary>
+            public Dictionary<string, double[]> SandiSektor = new Dictionary<string, double[]>(StringComparer.OrdinalIgnoreCase);
+            public int SektorCadangan;
             public List<string> Log = new List<string>();
             public int GunaCadangan;   // baris pembiayaan tanpa jenis penggunaan → Konsumsi
         }
@@ -185,9 +191,30 @@ namespace CKPNLibrary.Modules
                 guna.Add(d);
             }
 
+            // Tahap 10: per kelompok sektor ekonomi (urut kode 01–10)
+            var sektor = new List<object>();
+            for (int i = 0; i < CKPNLibrary.Panel.SektorEkonomi.Kelompok.GetLength(0); i++)
+            {
+                string kode = CKPNLibrary.Panel.SektorEkonomi.Kelompok[i, 0];
+                Segmen s;
+                if (!h.Sektor.TryGetValue(kode, out s)) continue;
+                var d = KeData(kode, true, "", s.Debitur, s.OS, s.EAD, s.PPKA);
+                d["nama"] = CKPNLibrary.Panel.SektorEkonomi.Kelompok[i, 1];
+                Dictionary<string, double> perKC;
+                d["perKC"] = h.SektorKC.TryGetValue(kode, out perKC) ? perKC : new Dictionary<string, double>();
+                var sandiKel = new List<object>();
+                foreach (var kv in h.SandiSektor)
+                    if (CKPNLibrary.Panel.SektorEkonomi.DariSandi(kv.Key) == kode)
+                        sandiKel.Add(new Dictionary<string, object> { { "sandi", kv.Key }, { "n", kv.Value[0] }, { "os", kv.Value[1] } });
+                sandiKel.Sort((a, b) => ((double)((Dictionary<string, object>)b)["os"]).CompareTo((double)((Dictionary<string, object>)a)["os"]));
+                d["sandiSektor"] = sandiKel;
+                sektor.Add(d);
+            }
+
             return new Dictionary<string, object>
             {
                 { "periode", periode },
+                { "sektor", sektor }, { "sektorCadangan", h.SektorCadangan },
                 { "lingkupKC1000", RuangLingkup.LabelPanjang(BasilKC1000) },
                 { "penggunaan", guna }, { "penggunaanCadangan", h.GunaCadangan },
                 { "fileTemplate", Path.GetFileName(pathTemplate) },
@@ -315,7 +342,10 @@ namespace CKPNLibrary.Modules
             // Tahap 8c: jenis penggunaan (kolom S) per kontrak = isian baris pembiayaan pertama; kosong → Konsumsi
             string[] gunaArr = ExcelHelper.BacaKolomString(ws, "S", dataStart, lastRow);
             string[] rekArr  = ExcelHelper.BacaKolomString(ws, spec.ColNoRek, dataStart, lastRow);
+            // Tahap 10: sandi sektor ekonomi (kolom T) per kontrak = isian baris pembiayaan pertama; kosong → kelompok cadangan
+            string[] sektorArr = ExcelHelper.BacaKolomString(ws, "T", dataStart, lastRow);
             var gunaKontrak = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var sektorKontrak = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             for (int i = 0; i < namaArr.Length; i++)
             {
                 if (string.IsNullOrEmpty(namaArr[i])) continue;
@@ -323,6 +353,9 @@ namespace CKPNLibrary.Modules
                 if (g.Length == 0) { g = CKPNLibrary.Panel.ModeHitung.PenggunaanCadangan; h.GunaCadangan++; }
                 string r = i < rekArr.Length ? (rekArr[i] ?? "").Trim() : "";
                 if (r.Length > 0 && !gunaKontrak.ContainsKey(r)) gunaKontrak[r] = g;
+                string se = CKPNLibrary.Panel.SektorEkonomi.NormKelompok(i < sektorArr.Length ? sektorArr[i] : null);
+                if (se.Length == 0) { se = CKPNLibrary.Panel.SektorEkonomi.Cadangan; h.SektorCadangan++; }
+                if (r.Length > 0 && !sektorKontrak.ContainsKey(r)) sektorKontrak[r] = se;
             }
             string[] kualArr = ExcelHelper.BacaKolomString(ws, spec.ColKualitas, dataStart, lastRow);
             double[] osArr   = BacaNilaiSegmen(ws, spec, kode, false, dataStart, lastRow);
@@ -348,10 +381,19 @@ namespace CKPNLibrary.Modules
                 }
                 Segmen gu;
                 if (!h.Guna.TryGetValue(kodeGuna, out gu)) { gu = new Segmen { Kode = kodeGuna, Ada = true }; h.Guna[kodeGuna] = gu; }
+                string kodeSektor;
+                if (!sektorKontrak.TryGetValue(rk, out kodeSektor))
+                {
+                    kodeSektor = CKPNLibrary.Panel.SektorEkonomi.NormKelompok(i < sektorArr.Length ? sektorArr[i] : null);
+                    if (kodeSektor.Length == 0) kodeSektor = CKPNLibrary.Panel.SektorEkonomi.Cadangan;
+                }
+                Segmen se2;
+                if (!h.Sektor.TryGetValue(kodeSektor, out se2)) { se2 = new Segmen { Kode = kodeSektor, Ada = true }; h.Sektor[kodeSektor] = se2; }
                 // PPKA dijumlah untuk semua baris berkualitas (sama seperti CONTROL PPKA di Dashboard)
                 s.PPKA[kual] += ppkaArr[i];
                 kt.PPKA[kual] += ppkaArr[i];
                 gu.PPKA[kual] += ppkaArr[i];
+                se2.PPKA[kual] += ppkaArr[i];
                 if (string.IsNullOrEmpty(namaArr[i])) continue;   // baris agunan
                 s.OS[kual]  += osArr[i];
                 s.EAD[kual] += eadArr[i];
@@ -362,6 +404,19 @@ namespace CKPNLibrary.Modules
                 gu.OS[kual]  += osArr[i];
                 gu.EAD[kual] += eadArr[i];
                 gu.Debitur++;
+                se2.OS[kual]  += osArr[i];
+                se2.EAD[kual] += eadArr[i];
+                se2.Debitur++;
+                Dictionary<string, double> perKCs;
+                if (!h.SektorKC.TryGetValue(kodeSektor, out perKCs)) { perKCs = new Dictionary<string, double>(); h.SektorKC[kodeSektor] = perKCs; }
+                perKCs[kode] = (perKCs.ContainsKey(kode) ? perKCs[kode] : 0) + osArr[i];
+                string sandiSe = CKPNLibrary.Panel.SektorEkonomi.NormSandi(i < sektorArr.Length ? sektorArr[i] : null);
+                if (sandiSe.Length > 0)
+                {
+                    double[] ss;
+                    if (!h.SandiSektor.TryGetValue(sandiSe, out ss)) h.SandiSektor[sandiSe] = ss = new double[2];
+                    ss[0]++; ss[1] += osArr[i];
+                }
                 Dictionary<string, double> perKCg;
                 if (!h.GunaKC.TryGetValue(kodeGuna, out perKCg)) { perKCg = new Dictionary<string, double>(); h.GunaKC[kodeGuna] = perKCg; }
                 perKCg[kode] = (perKCg.ContainsKey(kode) ? perKCg[kode] : 0) + osArr[i];

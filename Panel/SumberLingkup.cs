@@ -158,15 +158,18 @@ namespace CKPNLibrary.Panel
             // Tahap 8c: jenis penggunaan hanya terisi di baris pembiayaan (nama terisi). Setiap kontrak memakai isian
             // baris pembiayaan PERTAMA-nya; baris agunan mengikuti kontraknya; kosong / tidak dikenal → Konsumsi.
             object[] unitBaris = sandi;
-            if (f.ModeId == ModeHitung.Penggunaan)
+            ModeHitung.Mode mf = ModeHitung.Cari(f.ModeId);
+            if (ModeHitung.UnitPerKontrak(mf))
             {
+                // Tahap 10: berlaku juga untuk kelompok sektor ekonomi (kolom T); kosong → kelompok cadangan
+                string cad = ModeHitung.UnitCadangan(mf);
                 object[] nama = Kolom(ws, FilterLingkup.NomorDariHuruf(KolomNama), n);
                 var perKontrak = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 for (int i = 0; i < n; i++)
                 {
                     if (Kosong(nama[i])) continue;
-                    string kode = ModeHitung.NormPenggunaan(sandi[i]);
-                    if (kode.Length == 0) { kode = ModeHitung.PenggunaanCadangan; if (!Kosong(rek[i]) || !Kosong(sandi[i])) h.Cadangan++; }
+                    string kode = ModeHitung.NormUnit(mf, sandi[i]);
+                    if (kode.Length == 0) { kode = cad; if (!Kosong(rek[i]) || !Kosong(sandi[i])) h.Cadangan++; }
                     string r = NormRek(rek[i]);
                     if (r.Length == 0) continue;
                     string ada;
@@ -179,8 +182,8 @@ namespace CKPNLibrary.Panel
                     string r = NormRek(rek[i]), kode;
                     if (r.Length == 0 || !perKontrak.TryGetValue(r, out kode))
                     {
-                        kode = ModeHitung.NormPenggunaan(sandi[i]);
-                        if (kode.Length == 0) kode = ModeHitung.PenggunaanCadangan;
+                        kode = ModeHitung.NormUnit(mf, sandi[i]);
+                        if (kode.Length == 0) kode = cad;
                     }
                     unitBaris[i] = kode;
                 }
@@ -332,6 +335,9 @@ namespace CKPNLibrary.Panel
             foreach (var d in daftar) if (!string.IsNullOrEmpty(d) && unik.Add(d)) total++;
             int ke = 0;
 
+            ModeHitung.Mode f_mode = ModeHitung.Cari(f.ModeId);
+            string f_unit = f_mode == null ? "unit" : f_mode.NamaUnit;
+            string f_cad = ModeHitung.NamaUnitKode(f_mode, ModeHitung.UnitCadangan(f_mode));
             Func<string, ICollection<string>, Hasil> salin = (path, tambahan) =>
             {
                 if (string.IsNullOrEmpty(path)) return null;
@@ -342,8 +348,8 @@ namespace CKPNLibrary.Panel
                 hs = Salin(app, path, f, tambahan);
                 if (tambahan == null) cache[kunci] = hs;
                 ringkas.Add(System.IO.Path.GetFileName(path) + ": " + hs.BarisTersisa + "/" + hs.BarisAsal + " baris" +
-                            (hs.Cadangan > 0 ? ", " + hs.Cadangan + " baris tanpa jenis penggunaan → Konsumsi" : "") +
-                            (hs.Berbeda > 0 ? ", " + hs.Berbeda + " baris jenis penggunaan berbeda dalam satu kontrak (dipakai isian pertama)" : "") +
+                            (hs.Cadangan > 0 ? ", " + hs.Cadangan + " baris tanpa " + f_unit + " → " + f_cad : "") +
+                            (hs.Berbeda > 0 ? ", " + hs.Berbeda + " baris " + f_unit + " berbeda dalam satu kontrak (dipakai isian pertama)" : "") +
                             (hs.DariCache ? " (salinan tersimpan)" : ""));
                 return hs;
             };

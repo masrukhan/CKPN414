@@ -44,7 +44,7 @@ namespace CKPNLibrary.Data
         /// <summary>Tahap 8: kode untuk rekening kantor lain (bukan KC0600–KC1100 → tidak masuk lingkup mana pun, tanpa peringatan).</summary>
         public const string LuarLingkup = "LUAR-KANTOR";
         /// <summary>Versi isi hasil pindai (2 = dengan sandi kantor).</summary>
-        private const int VersiPindai = 3;   // 3 = + jenis penggunaan (Tahap 8c)
+        private const int VersiPindai = 4;   // 3 = + jenis penggunaan (Tahap 8c); 4 = + sandi sektor ekonomi (Tahap 10)
         private static readonly int[] PanjangDipindai = { 2, 3, 4, 5 };
         private const int BarisAwalKC = 5, BarisAwalHB = 3, JendelaCohort = 6;
 
@@ -61,6 +61,8 @@ namespace CKPNLibrary.Data
             public string SandiHB, SandiRekening;
             /// <summary>Tahap 8c: jenis penggunaan (1/2/3) rekening yang sama di KC0600–KC1100 file tahunan terbaru.</summary>
             public string GunaRekening;
+            /// <summary>Tahap 10: sandi sektor ekonomi 6 digit (kolom T) rekening yang sama di KC0600–KC1100 file tahunan terbaru.</summary>
+            public string SektorRekening;
             /// <summary>Sandi kantor yang dipakai mode per kantor: KC2900 kolom B, bila kosong/0 dari rekening aktif.</summary>
             public string SandiEfektif { get { return !string.IsNullOrEmpty(SandiHB) ? SandiHB : (SandiRekening ?? ""); } }
             public int TahunHB, KcRekeningTahun;
@@ -74,12 +76,75 @@ namespace CKPNLibrary.Data
             public Dictionary<string, int> Agg = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             /// <summary>Tahap 8c: kunci "panjang|awalan|jenis penggunaan" → jumlah rekening aktif</summary>
             public Dictionary<string, int> AggGuna = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            /// <summary>Tahap 10: kunci "panjang|awalan|kelompok sektor" → jumlah rekening aktif</summary>
+            public Dictionary<string, int> AggSektor = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             public List<Dictionary<string, object>> File = new List<Dictionary<string, object>>();
+        }
+
+        /// <summary>
+        /// Tahap 10: atribut rekening hapus buku yang tidak ada di KC2900 (kelompok sektor ekonomi), ditentukan dengan
+        /// urutan yang sama seperti jenis penggunaan: manual rekening › rekening aktif › manual kode produk › mayoritas kode produk.
+        /// </summary>
+        internal class AtributHB
+        {
+            public Dictionary<string, string> ManualRek = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            public Dictionary<string, string> ManualProduk = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            public Dictionary<string, string> ScanRek = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            public Dictionary<string, Dictionary<string, int>> Distribusi = new Dictionary<string, Dictionary<string, int>>(StringComparer.OrdinalIgnoreCase);
+            public Dictionary<string, string> Pemenang = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            private List<string> _awalanManual;
+            private int _panjang = PanjangDefault;
+
+            public void Bangun(Dictionary<string, int> agg, int panjang)
+            {
+                _panjang = panjang;
+                Distribusi.Clear(); Pemenang.Clear();
+                foreach (var kv in agg ?? new Dictionary<string, int>())
+                {
+                    string[] p = kv.Key.Split('|');
+                    if (p.Length != 3 || p[0] != panjang.ToString()) continue;
+                    Dictionary<string, int> d;
+                    if (!Distribusi.TryGetValue(p[1], out d)) Distribusi[p[1]] = d = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                    d[p[2]] = (d.ContainsKey(p[2]) ? d[p[2]] : 0) + kv.Value;
+                }
+                foreach (var kv in Distribusi)
+                {
+                    string best = ""; int n = -1;
+                    foreach (var k in kv.Value)
+                        if (k.Value > n || (k.Value == n && string.CompareOrdinal(k.Key, best) < 0)) { best = k.Key; n = k.Value; }
+                    if (best.Length > 0) Pemenang[kv.Key] = best;
+                }
+                _awalanManual = new List<string>(ManualProduk.Keys);
+                _awalanManual.Sort((a, b) => b.Length.CompareTo(a.Length));
+            }
+
+            public string AwalanManual(string norm)
+            {
+                if (_awalanManual == null) Bangun(null, _panjang);
+                foreach (var a in _awalanManual) if (norm.StartsWith(a, StringComparison.OrdinalIgnoreCase)) return a;
+                return null;
+            }
+
+            public string Tentukan(string norm, out string sumber)
+            {
+                string g;
+                if (norm.Length == 0) { sumber = STanpa; return ""; }
+                if (ManualRek.TryGetValue(norm, out g)) { sumber = SManualRek; return g; }
+                if (ScanRek.TryGetValue(norm, out g)) { sumber = SRekening; return g; }
+                string a = AwalanManual(norm);
+                if (a != null) { sumber = SManualProduk; return ManualProduk[a]; }
+                if (norm.Length >= _panjang && Pemenang.TryGetValue(norm.Substring(0, _panjang), out g)) { sumber = SProduk; return g; }
+                sumber = STanpa;
+                return "";
+            }
         }
 
         /// <summary>Semua bahan penentuan Kode KC (manual + hasil pindai).</summary>
         internal class Peta
         {
+            /// <summary>Tahap 10: kelompok sektor ekonomi rekening hapus buku (mode per kelompok sektor).</summary>
+            public AtributHB Sektor = new AtributHB();
+
             public int Panjang = PanjangDefault;
             public Dictionary<string, string> ManualRek = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             public Dictionary<string, string> ManualProduk = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -267,10 +332,10 @@ namespace CKPNLibrary.Data
                     if (Filter != null)
                         LogProses.Catat("LGD ER - Referensi KC", "Saringan " + Filter.Label, _tanpaSandi.Count == 0 ? LogProses.OK : LogProses.Peringatan, LogProses.R()
                             .Tambah("Rekening KC2900 di luar grup (tidak dihitung)", _luarKantor.Count - _tanpaSandi.Count)
-                            .Tambah(Filter.ModeId == ModeHitung.Penggunaan
-                                ? "Rekening tanpa jenis penggunaan (tidak ditemukan di KC0600–KC1100 dan belum diisi di Pengaturan)"
-                                : "Rekening tanpa sandi kantor (KC2900 kolom B kosong/0 dan rekening tidak ditemukan di KC0600–KC1100)", _tanpaSandi.Count)
-                            .TambahBila(_tanpaSandi.Count > 0, "Baki tanpa " + (Filter.ModeId == ModeHitung.Penggunaan ? "jenis penggunaan" : "sandi kantor"), _bakiTanpaSandi)
+                            .Tambah(Filter.ModeId == ModeHitung.Kantor
+                                ? "Rekening tanpa sandi kantor (KC2900 kolom B kosong/0 dan rekening tidak ditemukan di KC0600–KC1100)"
+                                : "Rekening tanpa " + NamaUnitMode(Filter.ModeId) + " (tidak ditemukan di KC0600–KC1100 dan belum diisi di Pengaturan)", _tanpaSandi.Count)
+                            .TambahBila(_tanpaSandi.Count > 0, "Baki tanpa " + NamaUnitMode(Filter.ModeId), _bakiTanpaSandi)
                             .TambahBila(_tanpaSandi.Count > 0, "Keterangan", "Rekening ini tidak masuk LGD ER grup mana pun. Lengkapi di ⚙ Pengaturan › Referensi hapus buku."));
 
                     string alasan;
@@ -323,7 +388,7 @@ namespace CKPNLibrary.Data
             var r = new Resolver { CurrYear = currYear, P = new Peta() };
             string alasan;
             bool boleh = Database.BolehMenulis(out alasan);
-            Dictionary<string, int> agg = null, aggGuna = null;
+            Dictionary<string, int> agg = null, aggGuna = null, aggSektor = null;
             List<RekHB> rek = null;
 
             if (Database.AdaBersama || boleh)
@@ -338,6 +403,7 @@ namespace CKPNLibrary.Data
                             rek = BacaRek(con);
                             agg = BacaAgg(con);
                             aggGuna = BacaAggGuna(con);
+                            aggSektor = BacaAggSektor(con);
                             r.DariCache = true;
                             r.Tersimpan = true;
                         }
@@ -353,7 +419,7 @@ namespace CKPNLibrary.Data
             if (rek == null)
             {
                 var h = Pindai(app, filePaths);
-                rek = h.Rek; agg = h.Agg; aggGuna = h.AggGuna;
+                rek = h.Rek; agg = h.Agg; aggGuna = h.AggGuna; aggSektor = h.AggSektor;
                 if (boleh)
                 {
                     try { SimpanPindai(h, filePaths, currYear); r.Tersimpan = true; }
@@ -371,6 +437,7 @@ namespace CKPNLibrary.Data
             r.P.Bangun(agg);
             foreach (var x in rek) if (!string.IsNullOrEmpty(x.GunaRekening)) r.P.GunaScanRek[x.NoRek] = x.GunaRekening;
             r.P.BangunGuna(aggGuna);
+            IsiSektor(r.P, rek, aggSektor);
             r.Filter = FilterLingkup.Dari(app);   // Tahap 8: mode per kantor (null = semua kantor)
             return r;
         }
@@ -426,9 +493,18 @@ namespace CKPNLibrary.Data
                                 // Tahap 8c: jenis penggunaan kolom S; dalam satu file, baris pembiayaan pertama kontrak yang menentukan
                                 string guna = ModeHitung.NormPenggunaan(Sel(d, i, 19));
                                 if (guna.Length == 0) guna = ModeHitung.PenggunaanCadangan;
+                                // Tahap 10: sandi sektor ekonomi kolom T (6 digit); kosong → kelompok cadangan
+                                string sektor = SektorEkonomi.NormSandi(Sel(d, i, 20));
                                 string[] lama;
-                                if (aktif.TryGetValue(norm, out lama) && lama[1] == y.ToString()) guna = lama[4];
-                                aktif[norm] = new[] { kc, y.ToString(), nama, SandiSah(Sel(d, i, 2)), guna };   // Tahap 8: + sandi kantor kolom B
+                                if (aktif.TryGetValue(norm, out lama) && lama[1] == y.ToString()) { guna = lama[4]; sektor = lama[5]; }
+                                aktif[norm] = new[] { kc, y.ToString(), nama, SandiSah(Sel(d, i, 2)), guna, sektor };   // Tahap 8: + sandi kantor kolom B
+                                string kelSektor = sektor.Length == 0 ? SektorEkonomi.Cadangan : SektorEkonomi.DariSandi(sektor);
+                                foreach (int ps in PanjangDipindai)
+                                {
+                                    if (norm.Length < ps) continue;
+                                    string ks = ps + "|" + norm.Substring(0, ps) + "|" + kelSektor;
+                                    h.AggSektor[ks] = (h.AggSektor.ContainsKey(ks) ? h.AggSektor[ks] : 0) + 1;
+                                }
                                 foreach (int pg in PanjangDipindai)
                                 {
                                     if (norm.Length < pg) continue;
@@ -501,7 +577,7 @@ namespace CKPNLibrary.Data
                 // Baki saat hapus buku = file tahun hapus buku; bila tidak ada, file tertua yang memuatnya
                 r.Baki = bt.ContainsKey(r.TahunHB) ? bt[r.TahunHB] : bt[th[0]];
                 string[] a;
-                if (aktif.TryGetValue(kv.Key, out a)) { r.KcRekening = a[0]; r.KcRekeningTahun = int.Parse(a[1]); r.Nama = a[2]; r.SandiRekening = a[3]; r.GunaRekening = a[4]; }
+                if (aktif.TryGetValue(kv.Key, out a)) { r.KcRekening = a[0]; r.KcRekeningTahun = int.Parse(a[1]); r.Nama = a[2]; r.SandiRekening = a[3]; r.GunaRekening = a[4]; r.SektorRekening = a[5]; }
                 h.Rek.Add(r);
             }
             return h;
@@ -515,17 +591,19 @@ namespace CKPNLibrary.Data
                 Database.Exec(con, "DELETE FROM ref_kc_hapusbuku");
                 Database.Exec(con, "DELETE FROM ref_kc_produk");
                 Database.Exec(con, "DELETE FROM ref_guna_produk");
+                Database.Exec(con, "DELETE FROM ref_sektor_produk");
                 using (var cmd = Database.Cmd(con,
-                    "INSERT OR REPLACE INTO ref_kc_hapusbuku(no_rek,rek_asli,cif,nama,jenis_instrumen,tgl_hb,tahun_hb,baki,tahun_file,kolom_m,kc_rekening,kc_rekening_tahun,sandi_hb,sandi_rekening,guna_rekening) " +
-                    "VALUES(@p0,@p1,@p2,@p3,@p4,@p5,@p6,@p7,@p8,@p9,@p10,@p11,@p12,@p13,@p14)",
-                    "", "", "", "", "", "", 0, 0.0, "", "", "", 0, "", "", ""))
+                    "INSERT OR REPLACE INTO ref_kc_hapusbuku(no_rek,rek_asli,cif,nama,jenis_instrumen,tgl_hb,tahun_hb,baki,tahun_file,kolom_m,kc_rekening,kc_rekening_tahun,sandi_hb,sandi_rekening,guna_rekening,sektor_rekening) " +
+                    "VALUES(@p0,@p1,@p2,@p3,@p4,@p5,@p6,@p7,@p8,@p9,@p10,@p11,@p12,@p13,@p14,@p15)",
+                    "", "", "", "", "", "", 0, 0.0, "", "", "", 0, "", "", "", ""))
                 {
                     foreach (var r in h.Rek)
                     {
                         object[] v = { r.NoRek, r.RekAsli, r.Cif, r.Nama, r.Produk, r.TglHB, r.TahunHB, r.Baki, r.TahunFile, r.KolomM,
                                        r.KcRekening, r.KcRekening == null ? (object)null : r.KcRekeningTahun,
                                        string.IsNullOrEmpty(r.SandiHB) ? null : r.SandiHB, string.IsNullOrEmpty(r.SandiRekening) ? null : r.SandiRekening,
-                                       string.IsNullOrEmpty(r.GunaRekening) ? null : r.GunaRekening };
+                                       string.IsNullOrEmpty(r.GunaRekening) ? null : r.GunaRekening,
+                                       string.IsNullOrEmpty(r.SektorRekening) ? null : r.SektorRekening };
                         for (int i = 0; i < v.Length; i++) cmd.Parameters["@p" + i].Value = v[i] ?? DBNull.Value;
                         cmd.ExecuteNonQuery();
                     }
@@ -550,6 +628,18 @@ namespace CKPNLibrary.Data
                         cmd.Parameters["@p0"].Value = int.Parse(pg[0]);
                         cmd.Parameters["@p1"].Value = pg[1];
                         cmd.Parameters["@p2"].Value = pg[2];
+                        cmd.Parameters["@p3"].Value = kv.Value;
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+                using (var cmd = Database.Cmd(con, "INSERT INTO ref_sektor_produk(panjang,awalan,kode,jumlah) VALUES(@p0,@p1,@p2,@p3)", 0, "", "", 0))
+                {
+                    foreach (var kv in h.AggSektor)
+                    {
+                        string[] ps = kv.Key.Split('|');
+                        cmd.Parameters["@p0"].Value = int.Parse(ps[0]);
+                        cmd.Parameters["@p1"].Value = ps[1];
+                        cmd.Parameters["@p2"].Value = ps[2];
                         cmd.Parameters["@p3"].Value = kv.Value;
                         cmd.ExecuteNonQuery();
                     }
@@ -589,9 +679,10 @@ namespace CKPNLibrary.Data
 
             var p = new Peta();
             List<RekHB> rek;
-            Dictionary<string, int> agg, aggGuna;
+            Dictionary<string, int> agg, aggGuna, aggSektor;
             var manual = new List<object>();
             var manualGuna = new List<object>();
+            var manualSektor = new List<object>();
             var lingkup = new Dictionary<string, Dictionary<string, object>>(StringComparer.OrdinalIgnoreCase);
             Dictionary<string, object> pindai = null, dipakai = null;
             using (var con = Database.BukaBersama(false))
@@ -602,6 +693,21 @@ namespace CKPNLibrary.Data
                 rek = BacaRek(con);
                 agg = BacaAgg(con);
                 aggGuna = BacaAggGuna(con);
+                aggSektor = BacaAggSektor(con);
+                try
+                {
+                    using (var cmd = Database.Cmd(con, "SELECT jenis,kunci,kode,alasan,pengguna,waktu FROM ref_sektor_manual ORDER BY jenis,kunci"))
+                    using (var rd = cmd.ExecuteReader())
+                        while (rd.Read())
+                            manualSektor.Add(new Dictionary<string, object>
+                            {
+                                { "jenis", rd.GetString(0) }, { "kunci", rd.GetString(1) }, { "kode", rd.GetString(2) },
+                                { "nama", SektorEkonomi.Nama(rd.GetString(2)) },
+                                { "alasan", rd.IsDBNull(3) ? "" : rd.GetString(3) }, { "pengguna", rd.IsDBNull(4) ? "" : rd.GetString(4) },
+                                { "waktu", rd.IsDBNull(5) ? "" : rd.GetString(5) }
+                            });
+                }
+                catch { }
                 try
                 {
                     using (var cmd = Database.Cmd(con, "SELECT jenis,kunci,kode,alasan,pengguna,waktu FROM ref_guna_manual ORDER BY jenis,kunci"))
@@ -639,6 +745,7 @@ namespace CKPNLibrary.Data
             p.Bangun(agg);
             foreach (var x in rek) if (!string.IsNullOrEmpty(x.GunaRekening)) p.GunaScanRek[x.NoRek] = x.GunaRekening;
             p.BangunGuna(aggGuna);
+            IsiSektor(p, rek, aggSektor);
 
             int currYear = pindai != null && pindai.ContainsKey("currYear") ? Convert.ToInt32(pindai["currYear"]) : DateTime.Today.Year;
             hasil["ada"] = pindai != null;
@@ -780,6 +887,7 @@ namespace CKPNLibrary.Data
                 }
             hasil["grup"] = statusGrup;
             hasil["guna"] = DataGuna(p, rek, manualGuna, currYear);
+            hasil["sektor"] = DataSektor(p, rek, manualSektor, currYear);
             return hasil;
         }
 
@@ -870,6 +978,7 @@ namespace CKPNLibrary.Data
         internal static string UnitRek(Peta p, RekHB r, string norm, string modeId)
         {
             if (modeId == ModeHitung.Penggunaan) { string s; return p.TentukanGuna(norm, out s); }
+            if (modeId == ModeHitung.Sektor) { string s; return p.Sektor.Tentukan(norm, out s); }
             return r == null ? "" : r.SandiEfektif;
         }
 
@@ -910,6 +1019,120 @@ namespace CKPNLibrary.Data
                 tx.Commit();
             }
             LogProses.CatatPanel(DateTime.Today.ToString("yyyy-MM-dd"), "Referensi hapus buku", "Jenis penggunaan manual", LogProses.OK, LogProses.R()
+                .Tambah("Perubahan", string.Join("; ", catatan.ToArray())).Tambah("Dasar", alasan.Trim()));
+            return new Dictionary<string, object> { { "jumlah", catatan.Count } };
+        }
+
+        /// <summary>
+        /// Tahap 10: kelompok sektor rekening hapus buku untuk ⚙ Pengaturan — asal penentuan, rekening cohort tanpa kelompok,
+        /// sebaran per kode produk, dan isian manual (struktur sama dengan jenis penggunaan).
+        /// </summary>
+        private static Dictionary<string, object> DataSektor(Peta p, List<RekHB> rek, List<object> manual, int currYear)
+        {
+            var a = p.Sektor;
+            var perSumber = new Dictionary<string, double[]>();
+            foreach (var s in new[] { SManualRek, SRekening, SManualProduk, SProduk, STanpa }) perSumber[s] = new double[2];
+            var perKode = new Dictionary<string, double[]>();
+            var tanpa = new List<object>();
+            var hbPerAwalan = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var r in rek)
+            {
+                if (!DalamCohort(r, currYear)) continue;
+                string sumber;
+                string g = a.Tentukan(r.NoRek, out sumber);
+                perSumber[sumber][0]++; perSumber[sumber][1] += r.Baki;
+                if (g.Length > 0)
+                {
+                    double[] k;
+                    if (!perKode.TryGetValue(g, out k)) perKode[g] = k = new double[2];
+                    k[0]++; k[1] += r.Baki;
+                }
+                else tanpa.Add(new Dictionary<string, object>
+                {
+                    { "kunci", r.NoRek }, { "rek", r.RekAsli }, { "cif", r.Cif }, { "nama", r.Nama }, { "produk", r.Produk },
+                    { "tahunHB", r.TahunHB }, { "baki", r.Baki }, { "awalan", Awalan(r.NoRek, p.Panjang) }
+                });
+                string aw = Awalan(r.NoRek, p.Panjang);
+                hbPerAwalan[aw] = (hbPerAwalan.ContainsKey(aw) ? hbPerAwalan[aw] : 0) + 1;
+            }
+            var ringkas = new Dictionary<string, object>();
+            foreach (var kv in perSumber) ringkas[kv.Key] = new Dictionary<string, object> { { "n", kv.Value[0] }, { "baki", kv.Value[1] } };
+            var kode = new List<object>();
+            for (int i = 0; i < SektorEkonomi.Kelompok.GetLength(0); i++)
+            {
+                double[] k;
+                perKode.TryGetValue(SektorEkonomi.Kelompok[i, 0], out k);
+                kode.Add(new Dictionary<string, object>
+                {
+                    { "kode", SektorEkonomi.Kelompok[i, 0] }, { "nama", SektorEkonomi.Kelompok[i, 1] },
+                    { "n", k == null ? 0 : k[0] }, { "baki", k == null ? 0 : k[1] }
+                });
+            }
+            var produk = new List<object>();
+            foreach (var aw in new SortedSet<string>(hbPerAwalan.Keys, StringComparer.OrdinalIgnoreCase))
+            {
+                var dist = new List<object>();
+                Dictionary<string, int> d;
+                if (a.Distribusi.TryGetValue(aw, out d))
+                    for (int i = 0; i < SektorEkonomi.Kelompok.GetLength(0); i++)
+                    {
+                        int n;
+                        if (d.TryGetValue(SektorEkonomi.Kelompok[i, 0], out n) && n > 0)
+                            dist.Add(new Dictionary<string, object> { { "kode", SektorEkonomi.Kelompok[i, 0] }, { "n", n } });
+                    }
+                string pem, man;
+                a.Pemenang.TryGetValue(aw, out pem);
+                a.ManualProduk.TryGetValue(aw, out man);
+                produk.Add(new Dictionary<string, object>
+                {
+                    { "awalan", aw }, { "distribusi", dist }, { "pemenang", pem }, { "manual", man }, { "hapusBuku", hbPerAwalan[aw] }
+                });
+            }
+            tanpa.Sort((x, y) => ((double)((Dictionary<string, object>)y)["baki"]).CompareTo((double)((Dictionary<string, object>)x)["baki"]));
+            return new Dictionary<string, object>
+            {
+                { "ringkas", ringkas }, { "perKode", kode }, { "tanpa", tanpa }, { "produk", produk }, { "manual", manual },
+                { "panjang", p.Panjang }
+            };
+        }
+
+        /// <summary>Tahap 10: isian manual kelompok sektor rekening hapus buku. item: jenis 'rek'|'produk', kunci, kode ("01"–"10"; "" = hapus).</summary>
+        public static Dictionary<string, object> SimpanManualSektor(System.Collections.IList item, string alasan)
+        {
+            string info;
+            if (!Database.BolehMenulis(out info)) throw new InvalidOperationException(info);
+            if (string.IsNullOrWhiteSpace(alasan)) throw new InvalidOperationException("Dasar / alasan pengisian referensi wajib diisi.");
+            if (item == null || item.Count == 0) throw new InvalidOperationException("Tidak ada isian yang disimpan.");
+            var catatan = new List<string>();
+            Database.Cadangkan();
+            using (var con = Database.BukaBersama(true))
+            using (var tx = con.BeginTransaction())
+            {
+                foreach (Dictionary<string, object> x in item)
+                {
+                    string jenis = Convert.ToString(x["jenis"]);
+                    string kunci = Convert.ToString(x["kunci"] ?? "");
+                    string mentah = Convert.ToString(x.ContainsKey("kode") ? x["kode"] : "").Trim();
+                    string kode = mentah.Length == 0 ? "" : SektorEkonomi.NormKelompok(mentah);
+                    if (jenis != "rek" && jenis != "produk") throw new InvalidOperationException("Jenis referensi tidak dikenal: " + jenis);
+                    kunci = jenis == "rek" ? NormRek(kunci.Replace(" ", "")) : NormAwalan(kunci);
+                    if (kunci.Length == 0) throw new InvalidOperationException(jenis == "rek" ? "Nomor rekening kosong." : "Awalan kode produk kosong.");
+                    if (mentah.Length > 0 && kode.Length == 0) throw new InvalidOperationException("Kelompok sektor tidak dikenal: " + mentah);
+                    if (kode.Length == 0)
+                    {
+                        Database.Exec(con, "DELETE FROM ref_sektor_manual WHERE jenis=@p0 AND kunci=@p1", jenis, kunci);
+                        catatan.Add(jenis + " " + kunci + " dihapus");
+                        continue;
+                    }
+                    Database.Exec(con, "INSERT OR REPLACE INTO ref_sektor_manual(jenis,kunci,kode,alasan,pengguna,waktu) VALUES(@p0,@p1,@p2,@p3,@p4,@p5)",
+                        jenis, kunci, kode, alasan.Trim(), Environment.UserName, Database.Sekarang());
+                    catatan.Add(jenis + " " + kunci + " → " + SektorEkonomi.Nama(kode));
+                }
+                SimpanInfo(con, "diubah", Database.Sekarang());
+                Database.CatatAktivitas(con, "", "referensi-sektor", string.Join("; ", catatan.ToArray()) + " · dasar: " + alasan.Trim());
+                tx.Commit();
+            }
+            LogProses.CatatPanel(DateTime.Today.ToString("yyyy-MM-dd"), "Referensi hapus buku", "Kelompok sektor manual", LogProses.OK, LogProses.R()
                 .Tambah("Perubahan", string.Join("; ", catatan.ToArray())).Tambah("Dasar", alasan.Trim()));
             return new Dictionary<string, object> { { "jumlah", catatan.Count } };
         }
@@ -1020,6 +1243,15 @@ namespace CKPNLibrary.Data
                         (rd.GetString(0) == "rek" ? p.GunaManualRek : p.GunaManualProduk)[rd.GetString(1)] = rd.GetString(2);
             }
             catch { }
+            // Tahap 10: isian manual kelompok sektor (tabel baru; database lama tanpa tabel → abaikan)
+            try
+            {
+                using (var cmd = Database.Cmd(con, "SELECT jenis,kunci,kode FROM ref_sektor_manual"))
+                using (var rd = cmd.ExecuteReader())
+                    while (rd.Read())
+                        (rd.GetString(0) == "rek" ? p.Sektor.ManualRek : p.Sektor.ManualProduk)[rd.GetString(1)] = rd.GetString(2);
+            }
+            catch { }
             string pj = BacaInfo(con, "panjang");
             int n;
             if (pj != null && int.TryParse(pj, out n) && Array.IndexOf(PanjangDipindai, n) >= 0) p.Panjang = n;
@@ -1027,9 +1259,17 @@ namespace CKPNLibrary.Data
 
         private static List<RekHB> BacaRek(SQLiteConnection con)
         {
+            // Tahap 10: kolom sektor_rekening (skema v16); database yang belum dimigrasi dibaca tanpa kolom itu
+            try { return BacaRek(con, true); }
+            catch (SQLiteException) { return BacaRek(con, false); }
+        }
+
+        private static List<RekHB> BacaRek(SQLiteConnection con, bool denganSektor)
+        {
             var hasil = new List<RekHB>();
             using (var cmd = Database.Cmd(con,
-                "SELECT no_rek,rek_asli,cif,nama,jenis_instrumen,tgl_hb,tahun_hb,baki,tahun_file,kolom_m,kc_rekening,kc_rekening_tahun,sandi_hb,sandi_rekening,guna_rekening FROM ref_kc_hapusbuku"))
+                "SELECT no_rek,rek_asli,cif,nama,jenis_instrumen,tgl_hb,tahun_hb,baki,tahun_file,kolom_m,kc_rekening,kc_rekening_tahun,sandi_hb,sandi_rekening,guna_rekening" +
+                (denganSektor ? ",sektor_rekening" : "") + " FROM ref_kc_hapusbuku"))
             using (var rd = cmd.ExecuteReader())
                 while (rd.Read())
                     hasil.Add(new RekHB
@@ -1037,9 +1277,41 @@ namespace CKPNLibrary.Data
                         NoRek = rd.GetString(0), RekAsli = S(rd, 1), Cif = S(rd, 2), Nama = S(rd, 3), Produk = S(rd, 4), TglHB = S(rd, 5),
                         TahunHB = rd.IsDBNull(6) ? 0 : rd.GetInt32(6), Baki = rd.IsDBNull(7) ? 0 : rd.GetDouble(7), TahunFile = S(rd, 8),
                         KolomM = S(rd, 9), KcRekening = rd.IsDBNull(10) ? null : rd.GetString(10), KcRekeningTahun = rd.IsDBNull(11) ? 0 : rd.GetInt32(11),
-                        SandiHB = S(rd, 12), SandiRekening = S(rd, 13), GunaRekening = S(rd, 14)
+                        SandiHB = S(rd, 12), SandiRekening = S(rd, 13), GunaRekening = S(rd, 14), SektorRekening = denganSektor ? S(rd, 15) : null
                     });
             return hasil;
+        }
+
+        /// <summary>Tahap 10: hitungan rekening aktif per awalan kode produk per kelompok sektor.</summary>
+        private static Dictionary<string, int> BacaAggSektor(SQLiteConnection con)
+        {
+            var hasil = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                using (var cmd = Database.Cmd(con, "SELECT panjang,awalan,kode,jumlah FROM ref_sektor_produk"))
+                using (var rd = cmd.ExecuteReader())
+                    while (rd.Read()) hasil[rd.GetInt32(0) + "|" + rd.GetString(1) + "|" + rd.GetString(2)] = rd.GetInt32(3);
+            }
+            catch { }
+            return hasil;
+        }
+
+        /// <summary>Tahap 10: kelompok sektor dari hasil pindai (sandi kolom T → kelompok; kosong → cadangan) + sebaran kode produk.</summary>
+        private static void IsiSektor(Peta p, List<RekHB> rek, Dictionary<string, int> aggSektor)
+        {
+            foreach (var x in rek)
+            {
+                if (string.IsNullOrEmpty(x.KcRekening)) continue;   // tidak ditemukan sebagai rekening aktif
+                string kel = string.IsNullOrEmpty(x.SektorRekening) ? SektorEkonomi.Cadangan : SektorEkonomi.DariSandi(x.SektorRekening);
+                if (kel.Length > 0) p.Sektor.ScanRek[x.NoRek] = kel;
+            }
+            p.Sektor.Bangun(aggSektor, p.Panjang);
+        }
+
+        private static string NamaUnitMode(string modeId)
+        {
+            var m = ModeHitung.Cari(modeId);
+            return m == null ? "unit" : m.NamaUnit;
         }
 
         /// <summary>Tahap 8c: hitungan rekening aktif per awalan kode produk per jenis penggunaan.</summary>

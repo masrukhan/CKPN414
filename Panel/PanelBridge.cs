@@ -587,6 +587,12 @@ namespace CKPNLibrary.Panel
                                                                      Convert.ToString(Ambil(args, "alasan") ?? "")));
                         break;
 
+                    // Tahap 10: kelompok sektor ekonomi rekening hapus buku (isian manual)
+                    case "simpanReferensiSektor":
+                        Balas(host, id, ReferensiKC.SimpanManualSektor(Ambil(args, "item") as System.Collections.IList,
+                                                                       Convert.ToString(Ambil(args, "alasan") ?? "")));
+                        break;
+
                     case "panjangReferensiKC":
                         Balas(host, id, ReferensiKC.AturPanjang(Convert.ToInt32(Ambil(args, "panjang"))));
                         break;

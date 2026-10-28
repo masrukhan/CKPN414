@@ -766,11 +766,19 @@
   var modeInfo = null;   // statusP.mode: aktif, resmi, simulasi, daftar mode, lite
   function modeAkad() { return !modeInfo || modeInfo.aktif === "akad"; }
   var NAMA_GUNA = { "1": "Modal Kerja", "2": "Investasi", "3": "Konsumsi" };
+  // Tahap 10: kelompok sektor ekonomi (sama dengan SektorEkonomi.Kelompok di C#)
+  var NAMA_SEKTOR = {
+    "01": "Pertanian, Kehutanan & Perikanan", "02": "Industri & Pertambangan", "03": "Konstruksi & Real Estat (Developer)",
+    "04": "Perdagangan", "05": "Akomodasi & Makan Minum", "06": "Transportasi, Pergudangan & Komunikasi", "07": "Jasa & Lainnya",
+    "08": "Konsumtif Penghasilan Tetap – Pemilikan Rumah", "09": "Konsumtif Penghasilan Tetap – Kendaraan",
+    "10": "Konsumtif Penghasilan Tetap – Multiguna"
+  };
   function modeId() { return modeInfo ? modeInfo.aktif : "akad"; }
   function labelKode(k) {
     if (!k) return k || "";
     if (modeAkad()) return k;
     if (modeId() === "penggunaan") return String(k).split(",").map(function (x) { return NAMA_GUNA[x] || x; }).join(", ");
+    if (modeId() === "sektor") return String(k).split(",").map(function (x) { return NAMA_SEKTOR[x] || x; }).join(", ");
     return "sandi " + String(k).split(",").join(", ");
   }
 
@@ -1953,7 +1961,12 @@
     if (guna) teks("susunan-pengantar", "Beri nama grup untuk setiap jenis penggunaan (kolom S template APOLLO). Jenis dengan nama grup " +
       "yang sama dihitung bersama: seluruh jenis akad KC0600–KC1100, PD & LGD gabungan. Baris agunan mengikuti kontraknya; " +
       "isian kosong dihitung sebagai Konsumsi. Berlaku untuk seluruh periode di tahun ini.");
-    $("btn-susunan-perkc").textContent = akad ? "Satu grup per kode" : guna ? "Satu grup per jenis" : "Satu grup per kantor";
+    var sektor = modeId() === "sektor";
+    if (sektor) teks("susunan-pengantar", "Beri nama grup untuk setiap kelompok sektor ekonomi (sandi kolom T template APOLLO, diringkas " +
+      "menurut dua digit awal KBLI 2020). Kelompok dengan nama grup yang sama dihitung bersama: seluruh jenis akad KC0600–KC1100, " +
+      "PD & LGD gabungan — mis. tiga kelompok konsumtif penghasilan tetap digabung menjadi satu grup. Baris agunan mengikuti kontraknya; " +
+      "sandi kosong dihitung sebagai Jasa & Lainnya. Berlaku untuk seluruh periode di tahun ini.");
+    $("btn-susunan-perkc").textContent = akad ? "Satu grup per kode" : guna ? "Satu grup per jenis" : sektor ? "Satu grup per kelompok" : "Satu grup per kantor";
     tampil("susunan-pindai-baris", modeId() === "kantor");
     $("btn-susunan-pindai").disabled = !statusP.bolehMenulis;
     $("susunan-pindai-hasil").textContent = "";
@@ -1993,6 +2006,7 @@
       var rek = u.rekening;
       var lab = el("label", "kode", akad ? u.kode : u.wajib ? u.label : u.kode + (rek !== null && rek !== undefined ? " · " + rek + " rek" : ""));
       lab.setAttribute("for", "sg-" + i);
+      if (u.rentang) lab.title = "Sandi sektor (2 digit awal KBLI 2020): " + u.rentang;
       if (!akad && u.rincian) {
         var r = Object.keys(u.rincian).map(function (kc) { return kc + ": " + u.rincian[kc]; });
         lab.title = (u.nama ? u.nama + " · " : "") + (r.length ? r.join(", ") : "tidak ada rekening di template terakhir") +
@@ -2886,10 +2900,18 @@
       label: function (s) { return s.kode + " · " + (s.nama || NAMA_GUNA[s.kode] || s.kode); },
       sub: function (s) { return s.sandi.map(function (x) { return NAMA_GUNA[x] || x; }).join(", "); },
       catatan: "Jenis penggunaan dari kolom S sheet KC0600–KC1100; baris agunan mengikuti kontraknya, isian kosong dihitung sebagai Konsumsi."
+    },
+    sektor: {
+      data: "sektor", wadah: "ov-sektor", pilih: "ov-sektor-tampil", judulKolom: "Kelompok sektor",
+      kosong: "Data per kelompok sektor belum ada di snapshot ini. Tekan \u201cMuat dari template\u201d untuk mengambilnya.",
+      label: function (s) { return s.kode + " · " + (s.nama || NAMA_SEKTOR[s.kode] || s.kode); },
+      sub: function (s) { return s.sandi.map(function (x) { return NAMA_SEKTOR[x] || x; }).join(", "); },
+      catatan: "Sandi sektor ekonomi dari kolom T sheet KC0600–KC1100, dikelompokkan menurut dua digit awal KBLI 2020; " +
+        "baris agunan mengikuti kontraknya, sandi kosong dihitung sebagai Jasa & Lainnya."
     }
   };
 
-  function gambarOverviewKantor(d) { gambarOverviewUnit(d, "kantor"); gambarOverviewUnit(d, "penggunaan"); }
+  function gambarOverviewKantor(d) { gambarOverviewUnit(d, "kantor"); gambarOverviewUnit(d, "penggunaan"); gambarOverviewUnit(d, "sektor"); }
 
   function gambarOverviewUnit(d, jenis) {
     var c = OV_UNIT[jenis];
@@ -2937,6 +2959,11 @@
         var kc = Object.keys(s.perKC).sort().map(function (k) { return k + " " + nilaiOv(s.perKC[k]); });
         if (kc.length) td.appendChild(el("div", "teks-kecil jarak-atas", "OS per segmen: " + kc.join(" · ")));
       }
+      if (s.sandiSektor && s.sandiSektor.length) {
+        var ds = s.sandiSektor.slice(0, 12).map(function (x) { return x.sandi + " " + nilaiOv(x.os) + " (" + x.n + ")"; });
+        td.appendChild(el("div", "teks-kecil jarak-atas", "Sandi sektor terbesar: " + ds.join(" · ") +
+          (s.sandiSektor.length > 12 ? " · +" + (s.sandiSektor.length - 12) + " sandi lain" : "")));
+      }
       trD.appendChild(td);
       tb.appendChild(trD);
       tr.tabIndex = 0;
@@ -2954,10 +2981,13 @@
     var cat = c.catatan + " Klik baris untuk rincian per kualitas dan OS per segmen. NPF yang lebih tinggi dari NPF bank ditandai merah.";
     if (jenis === "penggunaan" && d.penggunaanCadangan)
       cat += " " + d.penggunaanCadangan + " baris pembiayaan tanpa isian jenis penggunaan dihitung sebagai Konsumsi.";
+    if (jenis === "sektor" && d.sektorCadangan)
+      cat += " " + d.sektorCadangan + " baris pembiayaan tanpa sandi sektor dihitung sebagai Jasa & Lainnya.";
     w.appendChild(el("p", "teks-kecil catatan", cat));
   }
   $("ov-kantor-tampil").addEventListener("change", function () { if (dataOverview) gambarOverviewUnit(dataOverview, "kantor"); });
   $("ov-guna-tampil").addEventListener("change", function () { if (dataOverview) gambarOverviewUnit(dataOverview, "penggunaan"); });
+  $("ov-sektor-tampil").addEventListener("change", function () { if (dataOverview) gambarOverviewUnit(dataOverview, "sektor"); });
 
   function tabelKualitas(s) {
     var t = el("table", "tabel-kualitas");
@@ -5884,18 +5914,20 @@
           }).concat([{ kelas: "total", sel: ["Total", "", fmt.format(ov.total.debitur), rp(ov.total.totalOS), "100,0%", rp(ov.total.totalEAD), persenDok(ov.total.npf)] }]),
           { angka: [2, 3, 4, 5, 6], kecil: true }));
       } else {
-        var kantor = midDok === "kantor";
+        var kantor = midDok === "kantor", sektorDok = midDok === "sektor";
         var peta = grupKantorPeta(midDok);
-        h.appendChild(judulBag("2. Portofolio per " + (kantor ? "sandi kantor" : "jenis penggunaan")));
-        h.appendChild(tabelDok([kantor ? "Kantor" : "Jenis penggunaan", "Grup", "Debitur", "OS (Rp)", "Porsi", "EAD (Rp)", "NPF"],
+        h.appendChild(judulBag("2. Portofolio per " + (kantor ? "sandi kantor" : sektorDok ? "kelompok sektor ekonomi" : "jenis penggunaan")));
+        h.appendChild(tabelDok([kantor ? "Kantor" : sektorDok ? "Kelompok sektor" : "Jenis penggunaan", "Grup", "Debitur", "OS (Rp)", "Porsi", "EAD (Rp)", "NPF"],
           dataUnit.map(function (s) {
             var label = kantor ? (s.kode === "(kosong)" ? "Tanpa sandi" : s.kode + (s.nama ? " · " + s.nama : ""))
-                               : s.kode + " · " + (s.nama || NAMA_GUNA[s.kode] || "");
+                               : s.kode + " · " + (s.nama || (sektorDok ? NAMA_SEKTOR : NAMA_GUNA)[s.kode] || "");
             return [label, peta ? (peta[s.kode] || "—") : "—", fmt.format(s.debitur), rp(s.totalOS),
               porsi(s.totalOS || 0), rp(s.totalEAD), persenDok(s.npf)];
           }).concat([{ kelas: "total", sel: ["Total", "", fmt.format(ov.total.debitur), rp(ov.total.totalOS), "100,0%", rp(ov.total.totalEAD), persenDok(ov.total.npf)] }]),
           { angka: [2, 3, 4, 5, 6], kecil: true }));
-        if (!kantor && ov.penggunaanCadangan)
+        if (sektorDok && ov.sektorCadangan)
+          h.appendChild(paragraf(ov.sektorCadangan + " baris pembiayaan tanpa sandi sektor dihitung sebagai Jasa & Lainnya.", "kecil"));
+        if (!kantor && !sektorDok && ov.penggunaanCadangan)
           h.appendChild(paragraf(ov.penggunaanCadangan + " baris pembiayaan tanpa isian jenis penggunaan dihitung sebagai Konsumsi.", "kecil"));
       }
       h.appendChild(paragraf("Sumber: snapshot overview " + (ov.fileTemplate || "") + (ov.waktuSnapshot ? " · " + ov.waktuSnapshot : ""), "kecil"));
@@ -6512,134 +6544,154 @@
     return li;
   }
 
-  // ---------------- Tahap 8c: jenis penggunaan rekening hapus buku ----------------
-  var ubahGuna = {};
-  function pilihGuna(nilai, kosong, label) {
-    var s = el("select", "isian pilih-kc");
-    var o = el("option", "", kosong || "— pilih jenis —");
-    o.value = "";
-    s.appendChild(o);
-    ["1", "2", "3"].forEach(function (k) { var x = el("option", "", k + " · " + NAMA_GUNA[k]); x.value = k; s.appendChild(x); });
-    s.value = nilai || "";
-    s.disabled = !refKC.bolehMenulis;
-    if (label) s.setAttribute("aria-label", label);
-    return s;
-  }
-  function catatGuna(jenis, kunci, kode) {
-    ubahGuna[jenis + "|" + kunci] = { jenis: jenis, kunci: kunci, kode: kode };
-    var n = Object.keys(ubahGuna).length;
-    $("btn-refkc-guna-simpan").textContent = n ? "Simpan " + n + " isian jenis penggunaan" : "Simpan isian jenis penggunaan";
-    $("btn-refkc-guna-simpan").disabled = !n || !refKC.bolehMenulis;
-  }
-  function gambarRefGuna(d) {
-    var gu = d.guna;
-    ubahGuna = {};
-    $("btn-refkc-guna-simpan").textContent = "Simpan isian jenis penggunaan";
-    $("btn-refkc-guna-simpan").disabled = true;
-    ["refkc-guna-ringkas", "refkc-guna-tanpa", "refkc-guna-produk", "refkc-guna-manual", "refkc-guna-hasil"].forEach(function (id) { $(id).innerHTML = ""; });
-    if (!gu) return;
-    var tanpa = gu.tanpa || [];
-    teks("refkc-guna-judul", "Jenis penggunaan rekening hapus buku" + (tanpa.length ? " · " + tanpa.length + " perlu dilengkapi" : " · lengkap"));
-    if (modeId() === "penggunaan" && tanpa.length) $("refkc-guna-blok").open = true;
-
-    // ringkasan per jenis + asal penentuan (cohort)
-    var tb = el("table", "tabel-ringkas");
-    gu.perKode.forEach(function (k) {
-      var tr = el("tr");
-      tr.appendChild(el("td", "", k.kode + " · " + k.nama));
-      tr.appendChild(el("td", "", k.n + " rek"));
-      tr.appendChild(el("td", "", jt(k.baki)));
-      tb.appendChild(tr);
-    });
-    var tr0 = el("tr", tanpa.length ? "kurang" : "");
-    tr0.appendChild(el("td", "", "Tanpa jenis penggunaan"));
-    tr0.appendChild(el("td", "", gu.ringkas.tanpa.n + " rek"));
-    tr0.appendChild(el("td", "", jt(gu.ringkas.tanpa.baki)));
-    tb.appendChild(tr0);
-    $("refkc-guna-ringkas").appendChild(el("div", "label-kecil", "Rekening cohort " + (d.currYear - 5) + "–" + d.currYear));
-    $("refkc-guna-ringkas").appendChild(tb);
-    var asal = { "manual-rek": "isian per rekening", "rekening": "rekening di KC0600–KC1100", "manual-produk": "isian per kode produk", "produk": "jenis terbanyak kode produk" };
-    var teksAsal = Object.keys(asal).filter(function (k) { return gu.ringkas[k] && gu.ringkas[k].n; })
-      .map(function (k) { return asal[k] + " " + gu.ringkas[k].n; });
-    if (teksAsal.length) $("refkc-guna-ringkas").appendChild(el("div", "teks-kecil", "Asal: " + teksAsal.join(" · ")));
-
-    // rekening tanpa jenis penggunaan
-    teks("refkc-guna-tanpa-judul", tanpa.length ? "Belum ada jenis penggunaan · " + tanpa.length + " rek (" +
-      jt(tanpa.reduce(function (a, r) { return a + r.baki; }, 0)) + ")" : "Belum ada jenis penggunaan");
-    if (!tanpa.length) $("refkc-guna-tanpa").appendChild(el("div", "teks-kecil", "Semua rekening cohort sudah memiliki jenis penggunaan."));
-    else {
-      var ul = el("ul", "daftar-rek-ref");
-      tanpa.slice(0, 300).forEach(function (r) {
-        var li = el("li", "baris-antara");
-        var info = el("div");
-        info.appendChild(el("div", "", (r.rek || r.kunci) + (r.nama ? " · " + r.nama : "")));
-        info.appendChild(el("div", "teks-kecil", "Hapus buku " + r.tahunHB + " · " + jt(r.baki) + " · kode produk " + r.awalan + (r.produk ? " · " + r.produk : "")));
-        li.appendChild(info);
-        var sel = pilihGuna("", "— jenis —", "Jenis penggunaan rekening " + (r.rek || r.kunci));
-        sel.addEventListener("change", function () { catatGuna("rek", r.kunci, sel.value); });
-        li.appendChild(sel);
-        ul.appendChild(li);
-      });
-      $("refkc-guna-tanpa").appendChild(ul);
-      if (tanpa.length > 300) $("refkc-guna-tanpa").appendChild(el("div", "teks-kecil", "Ditampilkan 300 rekening dengan baki terbesar. Isi per kode produk untuk sisanya."));
+  // ---------------- Tahap 8c / 10: atribut rekening hapus buku (jenis penggunaan, kelompok sektor) ----------------
+  // Satu pembuat untuk kedua atribut: id elemen memakai awalan cfg.id ("refkc-guna" / "refkc-sektor").
+  function buatRefAtribut(cfg) {
+    var ubah = {};
+    var id = function (x) { return cfg.id + (x ? "-" + x : ""); };
+    function pilih(nilai, kosong, label) {
+      var s = el("select", "isian pilih-kc");
+      var o = el("option", "", kosong || "— pilih —");
+      o.value = "";
+      s.appendChild(o);
+      cfg.kode.forEach(function (k) { var x = el("option", "", k + " · " + cfg.nama[k]); x.value = k; s.appendChild(x); });
+      s.value = nilai || "";
+      s.disabled = !refKC.bolehMenulis;
+      if (label) s.setAttribute("aria-label", label);
+      return s;
     }
-
-    // per kode produk
-    var produk = gu.produk || [];
-    teks("refkc-guna-produk-judul", "Per kode produk · " + produk.length + " kode");
-    var tp = el("table", "tabel-ringkas");
-    var hp = el("tr");
-    ["Kode", "Rek HB", "Sebaran rek aktif", "Dipakai", "Isian"].forEach(function (x) { hp.appendChild(el("th", "", x)); });
-    tp.appendChild(hp);
-    produk.forEach(function (pr) {
-      var tr = el("tr");
-      tr.appendChild(el("td", "", pr.awalan));
-      tr.appendChild(el("td", "", String(pr.hapusBuku)));
-      tr.appendChild(el("td", "", pr.distribusi.length ? pr.distribusi.map(function (x) { return NAMA_GUNA[x.kode] + " " + x.n; }).join(" · ") : "—"));
-      var dipakai = pr.manual || pr.pemenang;
-      tr.appendChild(el("td", "", dipakai ? NAMA_GUNA[dipakai] + (pr.manual ? " (isian)" : "") : "—"));
-      var td = el("td");
-      var sel = pilihGuna(pr.manual || "", "otomatis", "Jenis penggunaan kode produk " + pr.awalan);
-      sel.addEventListener("change", function () { catatGuna("produk", pr.awalan, sel.value); });
-      td.appendChild(sel);
-      tr.appendChild(td);
-      tp.appendChild(tr);
-    });
-    var gp = el("div", "gulir-x");
-    gp.appendChild(tp);
-    $("refkc-guna-produk").appendChild(gp);
-
-    // isian manual per rekening yang sudah ada
-    var manRek = (gu.manual || []).filter(function (m) { return m.jenis === "rek"; });
-    if (manRek.length) {
-      var w = $("refkc-guna-manual");
-      w.appendChild(el("div", "label-kecil jarak-atas", "Isian per rekening · " + manRek.length));
-      var ul2 = el("ul", "daftar-rek-ref");
-      manRek.forEach(function (m) {
-        var li = el("li", "baris-antara");
-        li.appendChild(el("div", "teks-kecil", m.kunci + " · " + m.nama + " · " + m.pengguna + " " + m.waktu + (m.alasan ? " · " + m.alasan : "")));
-        var sel = pilihGuna(m.kode, "hapus isian", "Jenis penggunaan rekening " + m.kunci);
-        sel.addEventListener("change", function () { catatGuna("rek", m.kunci, sel.value); });
-        li.appendChild(sel);
-        ul2.appendChild(li);
-      });
-      w.appendChild(ul2);
+    function teksSimpan(n) { return n ? "Simpan " + n + " isian " + cfg.label : "Simpan isian " + cfg.label; }
+    function catat(jenis, kunci, kode) {
+      ubah[jenis + "|" + kunci] = { jenis: jenis, kunci: kunci, kode: kode };
+      var n = Object.keys(ubah).length;
+      $("btn-" + id("simpan")).textContent = teksSimpan(n);
+      $("btn-" + id("simpan")).disabled = !n || !refKC.bolehMenulis;
     }
-  }
-  $("btn-refkc-guna-simpan").addEventListener("click", function () {
-    var item = Object.keys(ubahGuna).map(function (k) { return ubahGuna[k]; });
-    var alasan = $("refkc-alasan").value.trim();
-    if (!alasan) { pesanDi("refkc-guna-hasil", "Isi dasar / alasan pengisian di atas terlebih dahulu.", false); $("refkc-alasan").focus(); return; }
-    var b = this;
-    b.disabled = true;
-    panggil("simpanReferensiGuna", { item: item, alasan: alasan }).then(function (r) {
-      ubahGuna = {};
-      return muatRefKC().then(function () {
-        if (!$("kartu-refkc").hidden) gambarRefKC();
-        pesanDi("refkc-guna-hasil", r.jumlah + " isian jenis penggunaan tersimpan. Hitung ulang grup agar LGD ER memakai referensi terbaru.", true);
+    function gambar(d) {
+      var gu = d[cfg.data];
+      ubah = {};
+      $("btn-" + id("simpan")).textContent = teksSimpan(0);
+      $("btn-" + id("simpan")).disabled = true;
+      ["ringkas", "tanpa", "produk", "manual", "hasil"].forEach(function (x) { $(id(x)).innerHTML = ""; });
+      if (!gu) return;
+      var tanpa = gu.tanpa || [];
+      teks(id("judul"), cfg.judul + (tanpa.length ? " · " + tanpa.length + " perlu dilengkapi" : " · lengkap"));
+      if (modeId() === cfg.mode && tanpa.length) $(id("blok")).open = true;
+
+      // ringkasan per kode + asal penentuan (cohort)
+      var tb = el("table", "tabel-ringkas");
+      gu.perKode.forEach(function (k) {
+        var tr = el("tr");
+        tr.appendChild(el("td", "", k.kode + " · " + k.nama));
+        tr.appendChild(el("td", "", k.n + " rek"));
+        tr.appendChild(el("td", "", jt(k.baki)));
+        tb.appendChild(tr);
       });
-    }).catch(function (e) { pesanDi("refkc-guna-hasil", e.message, false); b.disabled = false; });
+      var tr0 = el("tr", tanpa.length ? "kurang" : "");
+      tr0.appendChild(el("td", "", "Tanpa " + cfg.label));
+      tr0.appendChild(el("td", "", gu.ringkas.tanpa.n + " rek"));
+      tr0.appendChild(el("td", "", jt(gu.ringkas.tanpa.baki)));
+      tb.appendChild(tr0);
+      $(id("ringkas")).appendChild(el("div", "label-kecil", "Rekening cohort " + (d.currYear - 5) + "–" + d.currYear));
+      $(id("ringkas")).appendChild(tb);
+      var asal = { "manual-rek": "isian per rekening", "rekening": "rekening di KC0600–KC1100", "manual-produk": "isian per kode produk", "produk": cfg.terbanyak };
+      var teksAsal = Object.keys(asal).filter(function (k) { return gu.ringkas[k] && gu.ringkas[k].n; })
+        .map(function (k) { return asal[k] + " " + gu.ringkas[k].n; });
+      if (teksAsal.length) $(id("ringkas")).appendChild(el("div", "teks-kecil", "Asal: " + teksAsal.join(" · ")));
+
+      // rekening tanpa atribut
+      teks(id("tanpa-judul"), tanpa.length ? "Belum ada " + cfg.label + " · " + tanpa.length + " rek (" +
+        jt(tanpa.reduce(function (a, r) { return a + r.baki; }, 0)) + ")" : "Belum ada " + cfg.label);
+      if (!tanpa.length) $(id("tanpa")).appendChild(el("div", "teks-kecil", "Semua rekening cohort sudah memiliki " + cfg.label + "."));
+      else {
+        var ul = el("ul", "daftar-rek-ref");
+        tanpa.slice(0, 300).forEach(function (r) {
+          var li = el("li", "baris-antara");
+          var info = el("div");
+          info.appendChild(el("div", "", (r.rek || r.kunci) + (r.nama ? " · " + r.nama : "")));
+          info.appendChild(el("div", "teks-kecil", "Hapus buku " + r.tahunHB + " · " + jt(r.baki) + " · kode produk " + r.awalan + (r.produk ? " · " + r.produk : "")));
+          li.appendChild(info);
+          var sel = pilih("", "— " + cfg.pendek + " —", cfg.judulPilih + " rekening " + (r.rek || r.kunci));
+          sel.addEventListener("change", function () { catat("rek", r.kunci, sel.value); });
+          li.appendChild(sel);
+          ul.appendChild(li);
+        });
+        $(id("tanpa")).appendChild(ul);
+        if (tanpa.length > 300) $(id("tanpa")).appendChild(el("div", "teks-kecil", "Ditampilkan 300 rekening dengan baki terbesar. Isi per kode produk untuk sisanya."));
+      }
+
+      // per kode produk
+      var produk = gu.produk || [];
+      teks(id("produk-judul"), "Per kode produk · " + produk.length + " kode");
+      var tp = el("table", "tabel-ringkas");
+      var hp = el("tr");
+      ["Kode", "Rek HB", "Sebaran rek aktif", "Dipakai", "Isian"].forEach(function (x) { hp.appendChild(el("th", "", x)); });
+      tp.appendChild(hp);
+      produk.forEach(function (pr) {
+        var tr = el("tr");
+        tr.appendChild(el("td", "", pr.awalan));
+        tr.appendChild(el("td", "", String(pr.hapusBuku)));
+        tr.appendChild(el("td", "", pr.distribusi.length ? pr.distribusi.map(function (x) { return cfg.singkat(x.kode) + " " + x.n; }).join(" · ") : "—"));
+        var dipakai = pr.manual || pr.pemenang;
+        tr.appendChild(el("td", "", dipakai ? cfg.singkat(dipakai) + (pr.manual ? " (isian)" : "") : "—"));
+        var td = el("td");
+        var sel = pilih(pr.manual || "", "otomatis", cfg.judulPilih + " kode produk " + pr.awalan);
+        sel.addEventListener("change", function () { catat("produk", pr.awalan, sel.value); });
+        td.appendChild(sel);
+        tr.appendChild(td);
+        tp.appendChild(tr);
+      });
+      var gp = el("div", "gulir-x");
+      gp.appendChild(tp);
+      $(id("produk")).appendChild(gp);
+
+      // isian manual per rekening yang sudah ada
+      var manRek = (gu.manual || []).filter(function (m) { return m.jenis === "rek"; });
+      if (manRek.length) {
+        var w = $(id("manual"));
+        w.appendChild(el("div", "label-kecil jarak-atas", "Isian per rekening · " + manRek.length));
+        var ul2 = el("ul", "daftar-rek-ref");
+        manRek.forEach(function (m) {
+          var li = el("li", "baris-antara");
+          li.appendChild(el("div", "teks-kecil", m.kunci + " · " + m.nama + " · " + m.pengguna + " " + m.waktu + (m.alasan ? " · " + m.alasan : "")));
+          var sel = pilih(m.kode, "hapus isian", cfg.judulPilih + " rekening " + m.kunci);
+          sel.addEventListener("change", function () { catat("rek", m.kunci, sel.value); });
+          li.appendChild(sel);
+          ul2.appendChild(li);
+        });
+        w.appendChild(ul2);
+      }
+    }
+    $("btn-" + id("simpan")).addEventListener("click", function () {
+      var item = Object.keys(ubah).map(function (k) { return ubah[k]; });
+      var alasan = $("refkc-alasan").value.trim();
+      if (!alasan) { pesanDi(id("hasil"), "Isi dasar / alasan pengisian di atas terlebih dahulu.", false); $("refkc-alasan").focus(); return; }
+      var b = this;
+      b.disabled = true;
+      panggil(cfg.perintah, { item: item, alasan: alasan }).then(function (r) {
+        ubah = {};
+        return muatRefKC().then(function () {
+          if (!$("kartu-refkc").hidden) gambarRefKC();
+          pesanDi(id("hasil"), r.jumlah + " isian " + cfg.label + " tersimpan. Hitung ulang grup agar LGD ER memakai referensi terbaru.", true);
+        });
+      }).catch(function (e) { pesanDi(id("hasil"), e.message, false); b.disabled = false; });
+    });
+    return { gambar: gambar };
+  }
+
+  var refGuna = buatRefAtribut({
+    id: "refkc-guna", data: "guna", mode: "penggunaan", label: "jenis penggunaan", pendek: "jenis", judulPilih: "Jenis penggunaan",
+    judul: "Jenis penggunaan rekening hapus buku", terbanyak: "jenis terbanyak kode produk",
+    kode: ["1", "2", "3"], nama: NAMA_GUNA, perintah: "simpanReferensiGuna",
+    singkat: function (k) { return NAMA_GUNA[k] || k; }
   });
+  var refSektor = buatRefAtribut({
+    id: "refkc-sektor", data: "sektor", mode: "sektor", label: "kelompok sektor", pendek: "kelompok", judulPilih: "Kelompok sektor",
+    judul: "Kelompok sektor ekonomi rekening hapus buku", terbanyak: "kelompok terbanyak kode produk",
+    kode: Object.keys(NAMA_SEKTOR).sort(), nama: NAMA_SEKTOR, perintah: "simpanReferensiSektor",
+    singkat: function (k) { return k; }
+  });
+  function gambarRefGuna(d) { refGuna.gambar(d); refSektor.gambar(d); }
 
   function gambarRefTanpa(d) {
     var w = $("refkc-tanpa");

@@ -133,16 +133,21 @@ namespace CKPNLibrary.Modules
                             cell.Value2 = SumBucket(allData, specs, setSkip, bucket.Lo, bucket.Hi);
                         }
 
-                        if (ExcelHelper.SheetAda(srcWb, WoSheet))
+                        // PAPSI BPRS: baris WO = pembiayaan yang DIHAPUS BUKU PADA BULAN posisi ini
+                        // (KC2900 kolom I di bulan tsb; nominal kolom J), bukan seluruh saldo KC2900.
+                        int thWo, blnWo;
+                        if (HapusBuku.BulanPosisi(bulanLabel, refDateStr, out thWo, out blnWo))
                         {
-                            var wsWo = (Excel.Worksheet)srcWb.Worksheets[WoSheet];
-                            int woLastRow = ExcelHelper.CariLastRow(wsWo, WoCol, WoStartRow - 1);
-                            if (woLastRow >= WoStartRow)
-                            {
-                                Excel.Range woRng = (Excel.Range)wsWo.Range[WoCol + WoStartRow, WoCol + woLastRow];
-                                woSum = (double)wsWo.Application.WorksheetFunction.Sum(woRng);
-                            }
+                            var wo = HapusBuku.Bulanan(srcWb, thWo, blnWo);
+                            woSum = wo.Nominal;
+                            if (wo.TanggalTakTerbaca > 0)
+                                errLines.AppendLine("- " + bulanLabel + ": " + wo.TanggalTakTerbaca +
+                                    " rekening KC2900 tanggal hapus bukunya tidak terbaca (tidak dihitung sebagai hapus buku bulan ini).");
                         }
+                        else
+                            errLines.AppendLine("- " + bulanLabel + ": bulan posisi tidak terbaca dari Master kolom B/F; " +
+                                "hapus buku bulan ini diisi 0.");
+
                         ((Excel.Range)wsTarget.Cells[19, targetCol]).Value2 = woSum;
                         ((Excel.Range)wsTarget.Cells[17, targetCol]).Formula = "=" + targetCol + "18+" + targetCol + "19";
 

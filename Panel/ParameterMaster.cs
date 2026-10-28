@@ -323,7 +323,9 @@ namespace CKPNLibrary.Panel
                 string path = Teks(m, "D" + r);
                 if (path.Length == 0 || path.ToLowerInvariant().Contains("pilih"))
                 {
-                    p.Tambah(id, "Path file tahun " + y + " (Master!D" + r + ") belum diisi.");
+                    // Tahap 9h: data < 6 tahun → tahun awal boleh dikosongkan. Tahun berjalan (baris 65) tetap wajib;
+                    // urutan tahun diperiksa modul LGD ER.
+                    if (r == 65) p.Tambah(id, "Path file tahun berjalan " + y + " (Master!D65) belum diisi.");
                     continue;
                 }
                 if (!File.Exists(path)) p.Tambah(id, "File tahun " + y + " tidak ditemukan: " + path);

@@ -43,6 +43,9 @@ namespace CKPNLibrary.Modules
         // Sheet dibuka di awal penulisan, lalu dikunci ulang di finally.
         private const string PW_SHEET = "HaiiWhatt??";
 
+        // Tahap 9h: tahun pertama yang punya file KC2900 (kohort sebelumnya memakai nilai hapus buku kolom J)
+        private int _tahunAwalData;
+
         public LGDExpectedRecoveries(Excel.Application app)
         {
             _app = app ?? throw new ArgumentNullException("app");
@@ -69,6 +72,10 @@ namespace CKPNLibrary.Modules
             var filePaths = ParseFilePaths(filePathsStr);
             if (filePaths.Count == 0)
                 throw new ArgumentException("filePathsStr tidak valid: " + filePathsStr);
+
+            // Tahap 9h: tahun tanpa file (path kosong, atau file yang sama dengan tahun lain) = belum ada data
+            List<int> tahunTanpaData;
+            _tahunAwalData = HapusBuku.SaringFileLgdEr(filePaths, currYear, out tahunTanpaData);
 
             // Validasi semua file ada
             foreach (var kv in filePaths)
@@ -169,6 +176,18 @@ namespace CKPNLibrary.Modules
             // ---- Header utama ----
             TulisHeaderUtama(wsL, currYear, minYear);
 
+            // Tahap 9h: keterangan bila data KC2900 belum mencakup seluruh kohort
+            string catatanData = HapusBuku.CatatanLgdEr(_tahunAwalData, minYear);
+            if (catatanData != null)
+            {
+                Excel.Range cat = (Excel.Range)wsL.Range["L4", "O4"];
+                cat.Merge();
+                cat.Value2 = catatanData;
+                cat.WrapText = true; cat.Font.Italic = true; cat.Font.Size = 9;
+                cat.VerticalAlignment = Excel.XlVAlign.xlVAlignTop;
+                ((Excel.Range)wsL.Rows[4]).RowHeight = 60;
+            }
+
             // ---- Bangun tiap cohort block ----
             int    curRow       = 5;
             string subtotalRows = "";
@@ -219,6 +238,8 @@ namespace CKPNLibrary.Modules
             pesan = "Selesai.\nTotal rekening: " + accountMeta.Count +
                     " dalam " + cohortRek.Count + " cohort.";
 
+            if (catatanData != null) pesan += "\n\n" + catatanData;
+
             if (statRefKC.TotalTanpaKC > 0)
             {
                 pesan += "\n\nPERHATIAN: " + statRefKC.TotalTanpaKC +
@@ -256,6 +277,7 @@ namespace CKPNLibrary.Modules
             string[] prodArr = ExcelHelper.BacaKolomString(ws, "G", KC2900Start, lastRow);
             string[] rekArr  = ExcelHelper.BacaKolomString(ws, "H", KC2900Start, lastRow);
             double[] tglArr  = ExcelHelper.BacaKolomDouble(ws, "I", KC2900Start, lastRow);
+            double[] jmlArr  = ExcelHelper.BacaKolomDouble(ws, "J", KC2900Start, lastRow);  // Tahap 9h: nilai saat dihapus buku
             double[] bakiArr = ExcelHelper.BacaKolomDouble(ws, "L", KC2900Start, lastRow);
             string[] refArr  = ExcelHelper.BacaKolomString(ws, "M", KC2900Start, lastRow);
 
@@ -279,11 +301,24 @@ namespace CKPNLibrary.Modules
 
                 // Jika noRek sudah ada (duplikat), akumulasi baki
                 if (d.ContainsKey(noRek))
+                {
                     d[noRek][0] += bakiArr[i];
+                    d[noRek][2] += jmlArr[i];
+                }
                 else
-                    d[noRek] = new[]{ bakiArr[i], tglArr[i] };
+                    d[noRek] = new[]{ bakiArr[i], tglArr[i], jmlArr[i] };
             }
             return d;
+        }
+
+        // Tahap 9h: nilai saat dihapus buku (KC2900 kolom J) pada file tahun yr
+        private double GetJumlahHB(Dictionary<int, Dictionary<string, double[]>> dataByYear,
+                                   int yr, string noRek)
+        {
+            if (!dataByYear.ContainsKey(yr)) return 0;
+            double[] v;
+            if (dataByYear[yr].TryGetValue(NormNoRek(noRek), out v) && v.Length > 2) return v[2];
+            return 0;
         }
 
         private double GetBaki(Dictionary<int, Dictionary<string, double[]>> dataByYear,
@@ -416,18 +451,30 @@ namespace CKPNLibrary.Modules
                     double[] recov = new double[7];   // index 2..6
                     bool[]   hasYr = new bool[7];
 
+                                        // Tahap 9h: kolom tahun sebelum file pertama (_tahunAwalData) tidak teramati → dikosongkan.
+                    // Kohort yang lebih tua dari file pertama: saldo awal = nilai hapus buku (KC2900 kolom J),
+                    // pemulihan s.d. file pertama = nilai hapus buku − saldo file pertama (ditulis di kolom tahun itu).
+                    int jAwal = Math.Max(1, _tahunAwalData - cohortYear + 1);
+                    bool[] ada = new bool[7];
                     for (int j = 1; j <= 6; j++)
-                        baki[j] = cohortYear + j - 1 <= currYear
-                            ? GetBaki(dataByYear, cohortYear + j - 1, noRek)
-                            : 0;
+                    {
+                        int thKol = cohortYear + j - 1;
+                        ada[j] = thKol <= currYear && j >= jAwal;
+                        baki[j] = ada[j] ? GetBaki(dataByYear, thKol, noRek) : 0;
+                    }
+                    double saldoAwal = baki[1];
+                    if (jAwal > 1)
+                    {
+                        double jml = GetJumlahHB(dataByYear, cohortYear + jAwal - 1, noRek);
+                        saldoAwal = jml > 0 ? jml : baki[jAwal];
+                    }
 
                     for (int j = 2; j <= 6; j++)
                     {
-                        if (cohortYear + j - 1 <= currYear)
-                        {
-                            hasYr[j] = true;
-                            recov[j] = baki[j - 1] > baki[j] ? baki[j - 1] - baki[j] : 0;
-                        }
+                        if (!ada[j]) continue;
+                        hasYr[j] = true;
+                        double sebelum = j == jAwal ? saldoAwal : baki[j - 1];
+                        recov[j] = sebelum > baki[j] ? sebelum - baki[j] : 0;
                     }
 
                     // Baris saldo
@@ -436,13 +483,15 @@ namespace CKPNLibrary.Modules
                     ((Excel.Range)ws.Cells[outRow, "D"]).Formula = "=Master!$F$" + masterRowRef;
                     ((Excel.Range)ws.Cells[outRow, "D"]).NumberFormat = FMT_YEAR;
                     ((Excel.Range)ws.Cells[outRow, "D"]).HorizontalAlignment = Excel.XlHAlign.xlHAlignCenter;
-                    ((Excel.Range)ws.Cells[outRow, "E"]).Value2 = baki[1];
+                    ((Excel.Range)ws.Cells[outRow, "E"]).Value2 = saldoAwal;
                     ((Excel.Range)ws.Cells[outRow, "E"]).NumberFormat = FMT_NUM;
 
                     for (int j = 1; j <= 6; j++)
                     {
                         Excel.Range cell = (Excel.Range)ws.Cells[outRow, 5 + j];
-                        if (cohortYear + j - 1 <= currYear) cell.Value2 = baki[j];
+                        if (ada[j]) cell.Value2 = baki[j];
+                        else if (cohortYear + j - 1 <= currYear)
+                            ((Excel.Range)ws.Range[ws.Cells[outRow, 5 + j], ws.Cells[outRow + 1, 5 + j]]).Interior.Color = 0xEEEEEE;   // belum ada data
                         cell.NumberFormat = FMT_NUM;
                     }
 

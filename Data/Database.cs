@@ -25,7 +25,7 @@ namespace CKPNLibrary.Data
     /// </summary>
     internal static class Database
     {
-        public const int VersiSkema = 15;
+        public const int VersiSkema = 16;
         private static readonly HashSet<string> _skemaSiap = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly object _kunci = new object();
 
@@ -40,7 +40,8 @@ namespace CKPNLibrary.Data
             "penyesuaian_individu", "penyesuaian_lgdcs", "log_penyesuaian", "memo", "parameter_aba",
             "profil_template", "profil_template_info", "overview_periode",
             "ref_kc_manual", "ref_kc_produk", "ref_kc_hapusbuku", "ref_kc_lingkup", "ref_kc_info",
-            "mode_tahun", "sandi_kantor", "ref_guna_manual", "ref_guna_produk", "ruang_lingkup_tahun"
+            "mode_tahun", "sandi_kantor", "ref_guna_manual", "ref_guna_produk", "ruang_lingkup_tahun",
+            "ref_sektor_manual", "ref_sektor_produk"
         };
 
         // ================================================================
@@ -455,7 +456,19 @@ namespace CKPNLibrary.Data
                     }
                     CatatanLog.Tulis("Database: migrasi ke skema v15 selesai (" + Path.GetFileName(path) + ")");
                 }
-                // Migrasi versi berikutnya ditambahkan di sini: if (versi < 16) { ... }
+                // ---- v16 (Tahap 10): kelompok sektor ekonomi rekening hapus buku (mode per kelompok sektor) ----
+                if (versi < 16)
+                {
+                    using (var tx = con.BeginTransaction())
+                    {
+                        // Semua isi v16 menyangkut tabel bersama → hanya di database utama
+                        if (utama) foreach (var sql in SkemaV16) Exec(con, sql);
+                        Exec(con, "INSERT OR REPLACE INTO meta(kunci,nilai) VALUES('versi_skema','16')");
+                        tx.Commit();
+                    }
+                    CatatanLog.Tulis("Database: migrasi ke skema v16 selesai (" + Path.GetFileName(path) + ")");
+                }
+                // Migrasi versi berikutnya ditambahkan di sini: if (versi < 17) { ... }
                 // (perubahan pada TabelBersama: jalankan hanya bila utama == true)
 
                 if (!utama)
@@ -831,6 +844,26 @@ namespace CKPNLibrary.Data
 
         // Ruang lingkup KC1000: tunggakan bagi hasil (AN) masuk perhitungan CKPN? Belum diisi = tidak.
         // Tunggakan pokok (AL) selalu hanya kualitas Macet (5).
+        // Tahap 10: sandi sektor ekonomi (kolom T) rekening yang sama di KC0600–KC1100; isian manual & sebaran kelompok per kode produk
+        private static readonly string[] SkemaV16 =
+        {
+            "ALTER TABLE ref_kc_hapusbuku ADD COLUMN sektor_rekening TEXT",
+            @"CREATE TABLE IF NOT EXISTS ref_sektor_manual (
+                jenis     TEXT NOT NULL CHECK (jenis IN ('rek','produk')),
+                kunci     TEXT NOT NULL,
+                kode      TEXT NOT NULL,
+                alasan    TEXT,
+                pengguna  TEXT,
+                waktu     TEXT,
+                PRIMARY KEY (jenis, kunci))",
+            @"CREATE TABLE IF NOT EXISTS ref_sektor_produk (
+                panjang  INTEGER NOT NULL,
+                awalan   TEXT NOT NULL,
+                kode     TEXT NOT NULL,
+                jumlah   INTEGER NOT NULL,
+                PRIMARY KEY (panjang, awalan, kode))"
+        };
+
         private static readonly string[] SkemaV15 =
         {
             @"CREATE TABLE IF NOT EXISTS ruang_lingkup_tahun (
