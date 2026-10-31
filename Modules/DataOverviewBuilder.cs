@@ -30,7 +30,7 @@ namespace CKPNLibrary.Modules
     ///   EAD KC0600-0900 : sama dengan OS (kolom SheetSpec)
     ///       KC1000      : AL bila kualitas = 5 (Macet), selain itu 0; + AN (juga hanya kualitas 5) bila
     ///                     bagi hasil dimasukkan ke ruang lingkup (⚙ Pengaturan, bawaan: tidak)
-    ///       KC1100      : AL + AM (tunggakan pokok + ujroh)
+    ///       KC1100      : AL (tunggakan pokok, semua kualitas) + AM (tunggakan imbalan, hanya kualitas 1–2)
     ///   Kualitas        : kolom SheetSpec.ColKualitas (1..5); baris tanpa nama (agunan) dilewati
     ///   PPKA            : MapCKPN per sheet
     ///   NPF             : (Kurang Lancar + Diragukan + Macet) / total OS
@@ -442,9 +442,16 @@ namespace CKPNLibrary.Modules
                 return r;
             }
             if (shName == "KC1100")
-                return ead
-                    ? Jumlah2(ws, KC1100_TungPokok, KC1100_Ujroh, dataStart, lastRow)
-                    : Selisih2(ws, KC1100_Nilai, KC1100_Susut, dataStart, lastRow);
+            {
+                if (!ead) return Selisih2(ws, KC1100_Nilai, KC1100_Susut, dataStart, lastRow);
+                // Ruang lingkup: pokok sewa semua kualitas; imbalan hanya kualitas 1–2
+                double[] pokok = ExcelHelper.BacaKolomDouble(ws, KC1100_TungPokok, dataStart, lastRow);
+                double[] ujroh = ExcelHelper.BacaKolomDouble(ws, KC1100_Ujroh, dataStart, lastRow);
+                RuangLingkup.TerapkanKC1100(spec, ws, dataStart, lastRow, ujroh);
+                double[] r = new double[pokok.Length];
+                for (int i = 0; i < r.Length; i++) r[i] = pokok[i] + (i < ujroh.Length ? ujroh[i] : 0);
+                return r;
+            }
 
             switch (spec.Mode)
             {

@@ -11,8 +11,14 @@ using Excel = Microsoft.Office.Interop.Excel;
 namespace CKPNLibrary.Helpers
 {
     /// <summary>
-    /// Ruang lingkup tunggakan KC1000 (Musyarakah/Mudharabah).
+    /// Ruang lingkup tunggakan KC1000 (Musyarakah/Mudharabah) dan KC1100 (Ijarah/IMBT).
     ///
+    /// KC1100 (ketentuan tetap, tanpa pilihan):
+    ///   • Tunggakan pokok sewa (AL) dihitung untuk semua kualitas.
+    ///   • Tunggakan imbalan/ujroh (AM) hanya dihitung bila kualitas (AF) = 1 (Lancar) atau 2 (DPK).
+    ///     Kualitas 3–5 → tunggakan imbalan dianggap 0. Lihat <see cref="TerapkanKC1100"/>.
+    ///
+    /// KC1000:
     /// Ketentuan:
     ///   • Tunggakan pokok (AL) hanya dihitung bila kualitas pembiayaan (AE) = 5 (Macet).
     ///     Kualitas 1–4 → tunggakan pokok dianggap 0.
@@ -68,6 +74,26 @@ namespace CKPNLibrary.Helpers
                 for (int i = 0; i < nomBasil.Length; i++)
                     if (!basil || i >= kual.Length || kual[i] != 5) nomBasil[i] = 0;
         }
+
+        /// <summary>
+        /// Terapkan ruang lingkup KC1100 pada larik tunggakan imbalan/ujroh (AM), diubah di tempat:
+        /// hanya baris berkualitas 1 atau 2 yang dipertahankan; kualitas 3–5 (atau tidak terbaca) → 0.
+        /// Tunggakan pokok (AL) tidak disentuh. Tidak berbuat apa pun untuk sheet selain mode Tunggakan1 (KC1100).
+        /// Panggil SEBELUM imbalan dijumlahkan ke tunggakan pokok.
+        /// </summary>
+        public static void TerapkanKC1100(SheetSpec spec, Excel.Worksheet ws, int dataStart, int lastRow, double[] nomUjroh)
+        {
+            if (spec == null || spec.Mode != SheetMode.Tunggakan1 || ws == null || nomUjroh == null || lastRow < dataStart) return;
+            string kolom = string.IsNullOrEmpty(spec.ColKualitas) ? KolomKualitasKC1100 : spec.ColKualitas;
+            int[] kual = BacaKualitas(ws, kolom, dataStart, lastRow);
+            for (int i = 0; i < nomUjroh.Length; i++)
+                if (i >= kual.Length || (kual[i] != 1 && kual[i] != 2)) nomUjroh[i] = 0;
+        }
+
+        /// <summary>Kolom kualitas KC1100 template APOLLO (cadangan bila SheetSpec tidak mengisinya).</summary>
+        public const string KolomKualitasKC1100 = "AF";
+
+        public const string LabelKC1100 = "Tunggakan pokok sewa semua kualitas; tunggakan imbalan hanya kualitas Lancar (1) dan DPK (2)";
 
         /// <summary>True bila tunggakan bagi hasil KC1000 masuk ruang lingkup (Master!H11 workbook aplikasi).</summary>
         public static bool BasilKC1000()

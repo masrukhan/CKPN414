@@ -28,16 +28,41 @@
 
   <!-- Tahap 5f: pemilih periode global — dipakai Ringkasan, Hitung, Tetapkan, dan Analisis -->
   <div class="periode-global">
-    <select id="pilih-periode" class="pilih-periode" aria-label="Periode yang ditampilkan">
-      <option value="">Memuat periode…</option>
-    </select>
-    <div class="periode-global-sub">
-      <span id="hp-sub">—</span>
-      <span id="hp-status" class="chip-status" hidden></span>
+    <!-- Pemilih periode: tombol ‹ › + kalender tahun (12 bulan, status per bulan) -->
+    <div class="periode-nav">
+      <button id="btn-periode-mundur" class="tombol-geser" type="button" title="Periode sebelumnya" aria-label="Periode sebelumnya">&#8249;</button>
+      <div class="periode-kotak">
+        <button id="btn-periode" class="pilih-periode" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="kalender-periode">
+          <span class="pp-teks"><b id="pp-tanggal">Memuat periode…</b><span id="pp-tambahan" class="pp-tambahan"></span></span>
+          <span class="pp-kanan"><span id="hp-status" class="chip-status" hidden></span><span class="pp-caret" aria-hidden="true">&#9662;</span></span>
+        </button>
+        <div class="periode-global-sub">
+          <span id="hp-sub">—</span>
       <!-- Tahap 7h: grup yang sedang ada di kertas kerja Excel -->
       <button id="chip-excel" class="chip-excel" type="button" hidden title="Isi kertas kerja Excel saat ini"></button>
       <!-- Tahap 8: mode perhitungan aktif -->
       <button id="chip-mode" class="chip-mode" type="button" hidden title="Mode perhitungan"></button>
+        </div>
+        <div id="kalender-periode" class="kalender" role="dialog" aria-label="Pilih periode" hidden>
+          <div class="label-kecil kal-judul">Lihat periode tersimpan</div>
+          <div class="kal-kepala">
+            <button id="kal-tahun-mundur" class="tombol-geser kecil" type="button" aria-label="Tahun sebelumnya">&#8249;</button>
+            <b id="kal-tahun">—</b>
+            <button id="kal-tahun-maju" class="tombol-geser kecil" type="button" aria-label="Tahun berikutnya">&#8250;</button>
+          </div>
+          <div id="kal-bulan" class="kal-bulan"></div>
+          <div class="kal-legenda teks-kecil">
+            <span><i class="lg final"></i>Final</span><span><i class="lg terbuka"></i>Terbuka</span><span><i class="lg kosong"></i>Belum ada data</span>
+          </div>
+          <p class="teks-kecil kal-catatan">Klik bulan tersimpan = hanya melihat; kertas kerja tidak berubah.</p>
+          <div class="kal-kertas">
+            <div class="label-kecil">Kertas kerja</div>
+            <button id="btn-ganti-bulan" class="tombol-ganti-bulan" type="button">
+              <span>Ganti bulan pelaporan…</span><span id="gb-tombol-ket" class="gb-tombol-ket"></span></button>
+          </div>
+        </div>
+      </div>
+      <button id="btn-periode-maju" class="tombol-geser" type="button" title="Periode berikutnya" aria-label="Periode berikutnya">&#8250;</button>
     </div>
   </div>
 
@@ -122,72 +147,59 @@
 
   <!-- ================= Ringkasan: status periode + overview data ================= -->
   <section id="tab-ringkasan" class="isi-tab" role="tabpanel">
-    <div class="kartu">
-      <div class="baris-antara">
-        <div class="judul-kartu">Status periode</div>
-        <span id="rs-tanggal" class="teks-kecil"></span>
-      </div>
-      <ol id="periode-alur" class="alur" aria-label="Tahapan periode"></ol>
+    <!-- Status periode: progres + langkah berikutnya (detail workbook/metode/pengirim ada di header & Pengaturan) -->
+    <div class="kartu kartu-status">
+      <ol id="periode-alur" class="alur alur-ringkas" aria-label="Tahapan periode"></ol>
       <div id="ringkas-berikut" class="kotak-berikut" hidden></div>
-      <div id="periode-info" class="teks-kecil">Memuat…</div>
+      <div id="periode-info" class="teks-kecil"></div>
     </div>
 
+    <!-- Angka utama: 4 angka selalu tampil, sisanya di "Lainnya" -->
     <div class="kartu">
       <div class="baris-antara">
-        <div class="judul-kartu">Portofolio · overview data</div>
-        <button id="btn-ov-muat" class="tombol-sekunder" type="button">Muat dari template</button>
+        <div class="judul-kartu">Angka utama</div>
+        <div class="kanan-kecil">
+          <span id="ov-rekon-chip" class="rekon-chip" hidden></span>
+          <select id="ov-satuan" class="pilih pilih-kecil" aria-label="Satuan angka">
+            <option value="juta">juta Rp</option>
+            <option value="penuh">Rp penuh</option>
+          </select>
+        </div>
       </div>
-      <div id="ov-info" class="teks-kecil">Snapshot overview periode terpilih dari database; diambil dari file template Master!D14 bila belum ada.</div>
-      <div class="baris-antara jarak-atas">
-        <span id="ov-satuan-ket" class="teks-kecil">Angka dalam juta Rp</span>
-        <select id="ov-satuan" class="pilih" aria-label="Satuan angka">
-          <option value="juta">Juta Rp</option>
-          <option value="penuh">Rp penuh</option>
-        </select>
-      </div>
+      <div id="ov-utama" class="angka-utama"></div>
+      <div id="ov-info" class="teks-kecil">Memuat…</div>
+      <button id="btn-ov-muat-kosong" class="tombol-sekunder jarak-atas" type="button" hidden>Muat dari template</button>
+      <details id="ov-lainnya" class="ov-lainnya">
+        <summary><span class="tutup-teks">Lainnya (aset, laba, sumber data)</span><span class="buka-teks">Sembunyikan</span></summary>
+        <div id="ov-keuangan" class="angka-utama angka-lain"></div>
+        <div class="teks-kecil ov-sumber"><span id="ov-sumber"></span>
+          <button id="btn-ov-muat" class="tautan" type="button">Muat dari template</button></div>
+        <div id="ov-rekon" class="teks-kecil"></div>
+        <div id="ov-log"></div>
+      </details>
     </div>
-    <div class="kartu">
-      <div class="judul-kartu">Angka utama</div>
-      <div id="ov-keuangan" class="angka-grup angka-ov"></div>
-      <div id="ov-rekon" class="teks-kecil jarak-atas"></div>
-    </div>
-    <div class="kartu">
-      <div class="judul-kartu">Per KC: outstanding, EAD &amp; NPF</div>
-      <div id="ov-tabel" class="teks-kecil">Tekan Muat data.</div>
-      <div id="ov-log"></div>
-    </div>
-    <!-- Tahap 8b: portofolio per sandi lokasi kantor -->
-    <div class="kartu" id="kartu-ov-kantor">
+
+    <!-- Rincian portofolio: satu kartu, dimensi dipilih lewat chip -->
+    <div class="kartu" id="kartu-rincian-ov">
       <div class="baris-antara">
-        <div class="judul-kartu">Per kantor: outstanding, EAD &amp; NPF</div>
-        <select id="ov-kantor-tampil" class="pilih" aria-label="Tampilan per kantor" hidden>
-          <option value="sandi">Per sandi</option>
-          <option value="grup">Per grup kantor</option>
-        </select>
+        <div class="judul-kartu">Rincian portofolio</div>
+        <button id="btn-ov-cara" class="tautan tautan-info" type="button" aria-expanded="false" aria-controls="ov-cara">&#9432; Cara hitung</button>
       </div>
-      <div id="ov-kantor" class="teks-kecil">Tekan Muat data.</div>
-    </div>
-    <!-- Tahap 8c: portofolio per jenis penggunaan -->
-    <div class="kartu" id="kartu-ov-guna">
-      <div class="baris-antara">
-        <div class="judul-kartu">Per jenis penggunaan: outstanding, EAD &amp; NPF</div>
-        <select id="ov-guna-tampil" class="pilih" aria-label="Tampilan per jenis penggunaan" hidden>
-          <option value="jenis">Per jenis</option>
+      <div class="chip-dimensi" role="group" aria-label="Dimensi rincian">
+        <button type="button" data-dim="kc" aria-pressed="true">Akad / KC</button>
+        <button type="button" data-dim="kantor" aria-pressed="false">Kantor</button>
+        <button type="button" data-dim="penggunaan" aria-pressed="false">Jenis penggunaan</button>
+        <button type="button" data-dim="sektor" aria-pressed="false">Sektor ekonomi</button>
+      </div>
+      <div id="ov-cara" class="kotak-cara teks-kecil" hidden></div>
+      <div class="baris-antara ov-tampil-baris" id="ov-tampil-baris" hidden>
+        <span class="teks-kecil" id="ov-tampil-ket"></span>
+        <select id="ov-tampil" class="pilih pilih-kecil" aria-label="Tampilan rincian">
+          <option value="unit">Per unit</option>
           <option value="grup">Per grup</option>
         </select>
       </div>
-      <div id="ov-guna" class="teks-kecil">Tekan Muat data.</div>
-    </div>
-    <!-- Tahap 10: portofolio per kelompok sektor ekonomi -->
-    <div class="kartu" id="kartu-ov-sektor">
-      <div class="baris-antara">
-        <div class="judul-kartu">Per kelompok sektor ekonomi: outstanding, EAD &amp; NPF</div>
-        <select id="ov-sektor-tampil" class="pilih" aria-label="Tampilan per kelompok sektor" hidden>
-          <option value="jenis">Per kelompok</option>
-          <option value="grup">Per grup</option>
-        </select>
-      </div>
-      <div id="ov-sektor" class="teks-kecil">Tekan Muat data.</div>
+      <div id="ov-rincian" class="teks-kecil">Memuat…</div>
     </div>
   </section>
 
@@ -1203,6 +1215,52 @@
     </div>
   </details>
   </section>
+
+<!-- ================= Halaman: Ganti bulan pelaporan (kertas kerja Master) ================= -->
+<div id="hal-ganti-bulan" class="halaman" role="dialog" aria-modal="true" aria-labelledby="gb-judul" hidden>
+  <div class="halaman-kepala">
+    <button id="gb-kembali" class="tombol-kembali" type="button" aria-label="Kembali">&#8592;</button>
+    <div>
+      <div id="gb-judul" class="judul-kartu">Ganti bulan pelaporan</div>
+      <div id="gb-sub" class="teks-kecil">Kertas kerja Master</div>
+    </div>
+  </div>
+  <div class="halaman-isi">
+    <div class="kartu">
+      <div class="baris-antara">
+        <div class="judul-kartu">1 · Pilih bulan</div>
+        <div class="kal-kepala gb-tahun">
+          <button id="gb-tahun-mundur" class="tombol-geser kecil" type="button" aria-label="Tahun sebelumnya">&#8249;</button>
+          <b id="gb-tahun">—</b>
+          <button id="gb-tahun-maju" class="tombol-geser kecil" type="button" aria-label="Tahun berikutnya">&#8250;</button>
+        </div>
+      </div>
+      <div id="gb-bulan" class="gb-bulan"></div>
+      <div id="gb-ringkas" class="teks-kecil jarak-atas">Pilih bulan laporan baru.</div>
+    </div>
+
+    <div class="kartu">
+      <div class="baris-antara">
+        <div class="judul-kartu">2 · Cek file sumber</div>
+        <span id="gb-hitung" class="teks-kecil"></span>
+      </div>
+      <div id="gb-folder" class="path teks-kecil"></div>
+      <div id="gb-file" class="teks-kecil">—</div>
+      <p id="gb-pola" class="teks-kecil catatan"></p>
+    </div>
+
+    <div class="kartu">
+      <div class="judul-kartu">3 · Ikut diperbarui</div>
+      <ul id="gb-ikut" class="gb-ikut teks-kecil"></ul>
+      <p class="teks-kecil catatan">Data periode lain di database tidak berubah. Setelah diterapkan, panel pindah ke periode baru.</p>
+    </div>
+    <div id="gb-hasil" role="status"></div>
+  </div>
+  <div class="halaman-kaki">
+    <button id="gb-batal" class="tombol-sekunder" type="button">Batal</button>
+    <button id="gb-terapkan" class="tombol-utama" type="button" disabled>Terapkan ke kertas kerja</button>
+  </div>
+</div>
 </main>
 
 <!-- Tahap 6: salinan dokumen untuk dicetak / PDF (hanya tampil di @media print) -->

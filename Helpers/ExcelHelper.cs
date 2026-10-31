@@ -211,6 +211,8 @@ namespace CKPNLibrary.Helpers
                     hariPokok = BacaKolomDouble(ws, spec.ColHariPokok, dataStart, lastRow);
                     nomPokok  = BacaKolomDouble(ws, spec.ColNomPokok,  dataStart, lastRow);
                     nomUjroh  = BacaKolomDouble(ws, spec.ColNomUjroh,  dataStart, lastRow);
+                    // Ruang lingkup KC1100: imbalan hanya kualitas 1–2; pokok semua kualitas
+                    RuangLingkup.TerapkanKC1100(spec, ws, dataStart, lastRow, nomUjroh);
                     break;
                 case SheetMode.Tunggakan2:
                     hariPokok = BacaKolomDouble(ws, spec.ColHariPokok, dataStart, lastRow);

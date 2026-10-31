@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("CKPNLibrary")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.30.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.30.0+11f0be0a93c2783f902fd08230cd4bfcfc7956ae")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.30.0+175a7346a4a57829b1fe8f8ed799af8bc0fcba6f")]
 [assembly: System.Reflection.AssemblyProductAttribute("CKPNLibrary")]
 [assembly: System.Reflection.AssemblyTitleAttribute("CKPNLibrary")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.30.0.0")]

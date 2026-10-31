@@ -278,6 +278,24 @@ namespace CKPNLibrary.Panel
                         });
                         break;
 
+                    // ---- Ganti bulan pelaporan kertas kerja (Master!C4 + path file sumber) ----
+                    case "rencanaGantiBulan":
+                        string tglGb = Convert.ToString(Ambil(args, "tanggal") ?? "");
+                        JalankanDiExcel(host, id, app => GantiBulan.Rencana(app, tglGb));
+                        break;
+
+                    case "pilihFileSumber":
+                        string judulFs = Convert.ToString(Ambil(args, "judul") ?? "");
+                        string awalFs = Convert.ToString(Ambil(args, "path") ?? "");
+                        JalankanDiExcel(host, id, app => GantiBulan.PilihFile(judulFs, awalFs));
+                        break;
+
+                    case "terapkanGantiBulan":
+                        string tglGbT = Convert.ToString(Ambil(args, "tanggal") ?? "");
+                        var isiGb = Ambil(args, "isi") as System.Collections.IEnumerable;
+                        JalankanDiExcel(host, id, app => GantiBulan.Terapkan(app, tglGbT, isiGb));
+                        break;
+
                     // ---- Tahap 8: mode perhitungan (per akad / per sandi kantor) ----
                     case "infoMode":
                         Balas(host, id, ModeHitung.Info(Convert.ToInt32(Ambil(args, "tahun") ?? DateTime.Today.Year)));

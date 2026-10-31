@@ -11,7 +11,7 @@ namespace CKPNLibrary.Models
 
         /// <summary>
         /// KC1100 (LOGIKA BARU): masuk jika ada nama debitur (kolom D tidak kosong).
-        /// OS/EAD = tunggakan pokok (AL) + tunggakan ujroh/imbalan (AM) tanpa syarat hari.
+        /// OS/EAD = tunggakan pokok semua kualitas (AL) + tunggakan ujroh/imbalan (AM) hanya kualitas 1-2.
         /// Hari tunggakan gabungan pokok & ujroh ada di AK (ColHariPokok) →
         /// dipakai sebagai basis bucket PD Net Flow.
         /// Baris tanpa nama = baris agunan, di-skip.
@@ -115,7 +115,7 @@ namespace CKPNLibrary.Models
 
                 case "KC1100":
                     // Filter: baris dengan nama debitur (kolom D tidak kosong)
-                    // OS/EAD: tunggakan pokok (AL) + tunggakan ujroh/imbalan (AM) — semua, tanpa syarat hari
+                    // OS/EAD: tunggakan pokok (AL) semua kualitas + tunggakan ujroh/imbalan (AM) — semua, hanya kualitas 1-2
                     // ColHariPokok (AK) = hari tunggakan gabungan pokok & ujroh → basis bucket PD Net Flow
                     // CATATAN: di sini "AM" = NOMINAL ujroh. Berbeda peran dgn KC1000 (Tunggakan2)
                     //          yang memakai AM sebagai ColHariBasil (hari tunggakan basil).

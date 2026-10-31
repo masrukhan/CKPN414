@@ -738,6 +738,8 @@ namespace CKPNLibrary.Modules
                             h1Arr = ExcelHelper.BacaKolomDouble(ws, spec.ColHariPokok, dataStart, lastRow);
                             n1Arr = ExcelHelper.BacaKolomDouble(ws, spec.ColNomPokok,  dataStart, lastRow);
                             double[] ujrohArr = ExcelHelper.BacaKolomDouble(ws, spec.ColNomUjroh, dataStart, lastRow);
+                            // Ruang lingkup KC1100: imbalan hanya kualitas 1–2; pokok semua kualitas
+                            RuangLingkup.TerapkanKC1100(spec, ws, dataStart, lastRow, ujrohArr);
                             int mUj = Math.Min(n1Arr.Length, ujrohArr.Length);
                             for (int k = 0; k < mUj; k++) n1Arr[k] += ujrohArr[k];
                             break;
@@ -929,6 +931,8 @@ namespace CKPNLibrary.Modules
                             // konsisten dengan CKPN Individu & PD Net Flow (kini pokok+ujroh).
                             n1Arr = ExcelHelper.BacaKolomDouble(ws, spec.ColNomPokok,  dataStart5, lastRow);
                             double[] ujrohArr = ExcelHelper.BacaKolomDouble(ws, spec.ColNomUjroh, dataStart5, lastRow);
+                            // Ruang lingkup KC1100: imbalan hanya kualitas 1–2; pokok semua kualitas
+                            RuangLingkup.TerapkanKC1100(spec, ws, dataStart5, lastRow, ujrohArr);
                             int mUj = Math.Min(n1Arr.Length, ujrohArr.Length);
                             for (int k = 0; k < mUj; k++) n1Arr[k] += ujrohArr[k];
                             break;

@@ -274,6 +274,7 @@ namespace CKPNLibrary.Panel
                 .Tambah("Penyesuaian tersimpan", terapkanPenyesuaian ? "diterapkan" : "tidak diterapkan (hasil sistem murni)")
                 .Tambah("Signifikansi individu", Signifikansi.Label(Signifikansi.Baca(wb), ParameterMaster.BacaTopN(wb)))
                 .Tambah("Ruang lingkup KC1000", RuangLingkup.LabelTahunMaster(wb))
+                .Tambah("Ruang lingkup KC1100", RuangLingkup.LabelKC1100)
                 .TambahBila(acuan != null, "PD & LGD", acuan == null ? null : "acuan " + acuan.Label + " (Net Flow, Migration, LGD ER, LGD CS dilewati)"));
             PanelBridge.Siarkan("runMulai", new Dictionary<string, object>
             {
