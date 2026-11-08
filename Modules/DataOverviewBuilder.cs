@@ -26,7 +26,10 @@ namespace CKPNLibrary.Modules
     /// Definisi kolom (tidak berubah dari versi sebelumnya):
     ///   OS  KC0600-0800 : AC            KC0900 : AA
     ///       KC1000      : AG (saldo modal)
-    ///       KC1100      : AB - AI (nilai kontrak - akumulasi penyusutan)
+    ///       KC1100      : X - AI (harga perolehan - akumulasi penyusutan) = sisa pokok ijarah,
+    ///                     sama dengan GB0200 E25 - E26. BUKAN AB (nilai kontrak = pokok + seluruh ujroh awal),
+    ///                     karena AB - AI ikut memuat ujroh yang belum jatuh tempo → OS & NPF ijarah terlalu besar.
+    ///                     OS ini hanya untuk Ringkasan/NPF/kontrol neraca; CKPN KC1100 memakai EAD tunggakan (AL + AM).
     ///   EAD KC0600-0900 : sama dengan OS (kolom SheetSpec)
     ///       KC1000      : AL bila kualitas = 5 (Macet), selain itu 0; + AN (juga hanya kualitas 5) bila
     ///                     bagi hasil dimasukkan ke ruang lingkup (⚙ Pengaturan, bawaan: tidak)
@@ -56,7 +59,7 @@ namespace CKPNLibrary.Modules
 
         // --- Kolom khusus KC1000 & KC1100 ---
         private const string KC1000_OS        = "AG";
-        private const string KC1100_Nilai     = "AB";
+        private const string KC1100_Perolehan = "X";    // harga perolehan (pokok awal ijarah) — bukan AB nilai kontrak
         private const string KC1100_Susut     = "AI";
         private const string KC1000_TungPokok = "AL";
         private const string KC1000_TungBasil = "AN";
@@ -110,6 +113,10 @@ namespace CKPNLibrary.Modules
             public int SektorCadangan;
             public List<string> Log = new List<string>();
             public int GunaCadangan;   // baris pembiayaan tanpa jenis penggunaan → Konsumsi
+            /// <summary>Kontrol OS neraca vs segmen (Analisis › Kontrol): nilai sel GB0200 E1..E40.</summary>
+            public Dictionary<int, double> GB;
+            /// <summary>Kontrol OS neraca vs segmen: jumlah kolom nominatif & baris penyebab per KC.</summary>
+            public Dictionary<string, KontrolNeraca.Segmen> Kontrol = new Dictionary<string, KontrolNeraca.Segmen>(StringComparer.OrdinalIgnoreCase);
         }
 
         // ================================================================
@@ -211,9 +218,24 @@ namespace CKPNLibrary.Modules
                 sektor.Add(d);
             }
 
+            // Kontrol OS neraca (GB0200) vs OS segmen (KC0600–KC1100) — disimpan bersama snapshot
+            // sehingga Analisis › Kontrol terbaca tanpa membuka template lagi.
+            object kontrol = null;
+            if (h.AdaKeuangan && h.GB != null)
+            {
+                try
+                {
+                    var pesanSeg = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var sg in h.Segmen) if (!string.IsNullOrEmpty(sg.Pesan)) pesanSeg[sg.Kode] = sg.Pesan;
+                    kontrol = KontrolNeraca.Susun(h.GB, h.OSNeraca, h.Kontrol, pesanSeg);
+                }
+                catch (Exception ex) { h.Log.Add("Kontrol OS neraca vs segmen gagal disusun: " + ex.Message); }
+            }
+
             return new Dictionary<string, object>
             {
                 { "periode", periode },
+                { "kontrolNeraca", kontrol },
                 { "sektor", sektor }, { "sektorCadangan", h.SektorCadangan },
                 { "lingkupKC1000", RuangLingkup.LabelPanjang(BasilKC1000) },
                 { "penggunaan", guna }, { "penggunaanCadangan", h.GunaCadangan },
@@ -309,6 +331,7 @@ namespace CKPNLibrary.Modules
                 h.CKPNNeraca   = v("E36");
                 h.LabaLalu     = v("E71");
                 h.LabaBerjalan = v("E73");
+                h.GB           = KontrolNeraca.BacaGB0200(ws);   // rincian pos untuk Analisis › Kontrol
             }
             else h.Log.Add("Sheet 'GB0200' tidak ada di template.");
 
@@ -364,6 +387,11 @@ namespace CKPNLibrary.Modules
             double[] ppkaArr = KolomCKPN.TryGetValue(kode, out colCkpn)
                 ? ExcelHelper.BacaKolomDouble(ws, colCkpn, dataStart, lastRow)
                 : new double[namaArr.Length];
+
+            // Kontrol OS neraca vs segmen: kolom-kolom yang dirujuk GB0200/KC0200 + baris penyebab selisih.
+            // Gagal di sini tidak boleh menggagalkan Overview.
+            try { h.Kontrol[kode] = KontrolNeraca.BacaSegmen(ws, kode, dataStart, lastRow, namaArr, kualArr, rekArr, osArr); }
+            catch (Exception ex) { log.Add(kode + ": kontrol neraca tidak terbaca — " + ex.Message); }
 
             for (int i = 0; i < namaArr.Length; i++)
             {
@@ -443,7 +471,7 @@ namespace CKPNLibrary.Modules
             }
             if (shName == "KC1100")
             {
-                if (!ead) return Selisih2(ws, KC1100_Nilai, KC1100_Susut, dataStart, lastRow);
+                if (!ead) return Selisih2(ws, KC1100_Perolehan, KC1100_Susut, dataStart, lastRow);
                 // Ruang lingkup: pokok sewa semua kualitas; imbalan hanya kualitas 1–2
                 double[] pokok = ExcelHelper.BacaKolomDouble(ws, KC1100_TungPokok, dataStart, lastRow);
                 double[] ujroh = ExcelHelper.BacaKolomDouble(ws, KC1100_Ujroh, dataStart, lastRow);

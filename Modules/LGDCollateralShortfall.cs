@@ -75,7 +75,10 @@ namespace CKPNLibrary.Modules
                 case "KC1000":
                     return new KCSpec { ColKual="AE", ColBaki1="AG", ColBaki2="", ColAgn="AY", ColIkatan="AQ", ColJenis="AP" };
                 case "KC1100":
-                    return new KCSpec { ColKual="AF", ColBaki1="AB", ColBaki2="AI", ColAgn="AX", ColIkatan="AP", ColJenis="AO" };
+                    // Baki ijarah = X (harga perolehan/pokok awal) − AI (akumulasi penyusutan) = sisa pokok,
+                    // sama dengan OS neraca GB0200 E25 − E26. Bukan AB (nilai kontrak = pokok + seluruh ujroh awal)
+                    // karena AB − AI ikut memuat ujroh yang belum jatuh tempo → baki & kekurangan agunan terlalu besar.
+                    return new KCSpec { ColKual="AF", ColBaki1="X", ColBaki2="AI", ColAgn="AX", ColIkatan="AP", ColJenis="AO" };
                 default:
                     return null;
             }
@@ -390,7 +393,7 @@ namespace CKPNLibrary.Modules
                     g.Nama = nama;
                     g.Kual = kual;
                     g.Baki = !string.IsNullOrEmpty(spec.ColBaki2)
-                        ? baki1Arr[i] - baki2Arr[i]   // KC1100: AB - AI
+                        ? baki1Arr[i] - baki2Arr[i]   // KC1100: X - AI (sisa pokok ijarah)
                         : baki1Arr[i];
                 }
 

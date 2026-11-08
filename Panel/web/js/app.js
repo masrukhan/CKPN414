@@ -98,6 +98,7 @@
       }
       if (nama === "versi" && $("kartu-log").open) { muatLog($("lp-bulan").value); muatInfoAuditLog(); }
       if (nama === "rincian") muatRincian();
+      if (nama === "kontrol") muatKontrol();
     } else if (grup === "dokumen") {
       if (nama === "dokgrup") gambarPilihGrupDok();   // Tahap 9c: daftar grup/versi mengikuti periode terkini
       setTimeout(skalaPratinjau, 0);
@@ -2949,17 +2950,30 @@
     w.hidden = !pesan;
   }
 
+  // Tombol muat ada dua: di Ringkasan (atas, sebelah kontrol OS neraca) dan di Analisis › Kontrol.
+  // Keduanya selalu tampil — setelah bulan laporan di Master diganti, user cukup menekan salah satunya.
+  var TOMBOL_MUAT_OV = ["btn-ov-muat", "btn-kn-muat"];
+  var ovSedangMuat = false;
+
+  function labelTombolOv(x, label) {
+    var l = x.querySelector(".label-muat");
+    if (l) l.textContent = label; else x.textContent = label;
+  }
+
   function aturTombolOv() {
-    var b = $("btn-ov-muat"), b2 = $("btn-ov-muat-kosong"), d = statusP;
+    var d = statusP;
     var master = !d || d.periodeMaster;
-    [b, b2].forEach(function (x) {
+    TOMBOL_MUAT_OV.forEach(function (id) {
+      var x = $(id);
+      if (!x) return;
       x.dataset.mode = master ? "template" : "file";
-      x.textContent = master ? (ovStatus.ada ? "Muat ulang dari template" : "Muat dari template") : "Ambil dari file template…";
-      x.title = master ? "Baca ulang file template Master!D14 lalu simpan sebagai snapshot periode ini"
-                       : "Pilih file template periode " + (d ? d.tanggal : "") + " lalu simpan sebagai snapshot";
+      if (ovSedangMuat) { labelTombolOv(x, "Membaca template…"); x.disabled = true; return; }
+      labelTombolOv(x, master ? (ovStatus.ada ? "Muat ulang dari template" : "Muat dari template") : "Ambil dari file template…");
+      x.title = master ? "Baca ulang file template Master!D14 lalu simpan sebagai data periode ini. " +
+                         "Tekan setiap kali bulan laporan atau file template di Master diganti."
+                       : "Pilih file template periode " + (d ? d.tanggal : "") + " lalu simpan sebagai data periode itu";
       x.disabled = !master && !(d && d.bolehMenulis);
     });
-    b2.hidden = !!dataOverview;
   }
 
   function kosongkanOverview(pesan) {
@@ -2974,6 +2988,7 @@
     gambarRincianOv();
     infoOv(pesan);
     aturTombolOv();
+    gambarKontrol();
   }
 
   function muatOverviewPeriode(d, paksa) {
@@ -3003,10 +3018,13 @@
 
   function muatOverview() {
     var b = $("btn-ov-muat");
+    if (ovSedangMuat) return;
     if (b.dataset.mode === "file") return ambilOverviewDariFile();
-    b.disabled = true; $("btn-ov-muat-kosong").disabled = true;
-    b.textContent = "Membaca template…";
+    ovSedangMuat = true;
+    aturTombolOv();
     infoOv("Membuka file template (Master!D14) — beberapa detik.");
+    teks("kn-info", "Membuka file template (Master!D14) — beberapa detik.");
+    $("kn-info").hidden = false;
     panggil("overviewData", {}, 600000).then(function (d) {
       if (statusP && d.periode && d.periode !== statusP.tanggal) {
         // Master!C4 berbeda dari periode header: tampilkan periode Master
@@ -3023,13 +3041,15 @@
       if (statusP) gambarSyarat(statusP);
     }).catch(function (e) {
       infoOv(e.message);
-    }).then(function () { aturTombolOv(); });
+      teks("kn-info", e.message);
+      $("kn-info").hidden = false;
+    }).then(function () { ovSedangMuat = false; aturTombolOv(); });
   }
 
   function ambilOverviewDariFile() {
     var d = statusP;
     if (!d) return;
-    $("btn-ov-muat").disabled = true; $("btn-ov-muat-kosong").disabled = true;
+    TOMBOL_MUAT_OV.forEach(function (id) { $(id).disabled = true; });
     infoOv("Pilih file template periode " + tanggalPanjang(d.tanggal) + " di jendela Excel…");
     panggil("overviewDariFile", { tanggal: d.tanggal }, 600000).then(function () {
       muatOverviewPeriode(d, true);
@@ -3075,10 +3095,14 @@
       var sama = Math.abs(beda) < 1;
       chip.hidden = false;
       chip.className = "rekon-chip " + (sama ? "ok" : "beda");
-      chip.textContent = sama ? "✓ OS segmen = neraca" : "⚠ OS segmen ≠ neraca";
-      chip.title = sama ? "Total OS KC0600–KC1100 sama dengan OS neraca GB0200."
+      chip.textContent = sama ? "✓ OS segmen = neraca ›" : "⚠ OS segmen ≠ neraca ›";
+      var ket = sama ? "Total OS KC0600–KC1100 sama dengan OS neraca GB0200."
         : "OS neraca GB0200 " + (beda > 0 ? "lebih besar " : "lebih kecil ") + nilaiOv(Math.abs(beda)) + " dari total OS segmen.";
-      if (!sama) rekon.textContent = chip.title + " Cek pos yang tidak masuk KC0600–KC1100.";
+      chip.title = ket + " Klik untuk melihat kontrol per pos neraca vs segmen (Analisis › Kontrol).";
+      if (!sama) {
+        rekon.appendChild(document.createTextNode(ket + " "));
+        rekon.appendChild(tombol("Lihat letak selisih per pos → Analisis › Kontrol", "tautan", bukaKontrolNeraca));
+      }
     }
     var log = $("ov-log");
     log.innerHTML = "";
@@ -3086,6 +3110,7 @@
     if ((d.log || []).length) $("ov-lainnya").open = true;
 
     gambarRincianOv();
+    gambarKontrol();
   }
 
   function tileAngka(label, nilai, sub, cls) {
@@ -3168,7 +3193,7 @@
         return "OS dan EAD per sheet KC. KC0600–KC0900: EAD = OS. " +
           "KC1000: OS saldo modal (AG); EAD tunggakan pokok (AL) hanya kualitas Macet" +
           (d.lingkupKC1000 && /bagi hasil/i.test(d.lingkupKC1000) && !/tidak dihitung/i.test(d.lingkupKC1000) ? ", ditambah tunggakan bagi hasil (AN) kualitas Macet" : "") + ". " +
-          "KC1100: OS nilai kontrak − penyusutan (AB − AI); EAD tunggakan pokok sewa (AL) semua kualitas + tunggakan imbalan (AM) hanya kualitas Lancar dan DPK. " +
+          "KC1100: OS sisa pokok ijarah = harga perolehan − akumulasi penyusutan (X − AI); EAD tunggakan pokok sewa (AL) semua kualitas + tunggakan imbalan (AM) hanya kualitas Lancar dan DPK. " +
           "Debitur = jumlah CIF berbeda di sheet tersebut.";
       }
     },
@@ -3364,8 +3389,271 @@
     return t;
   }
 
+  // =====================================================================
+  // 8b. Analisis › Kontrol — OS neraca (GB0200) vs OS segmen (KC0600–KC1100)
+  //     Data dari snapshot overview periode (kunci kontrolNeraca, disusun KontrolNeraca.cs),
+  //     jadi tidak perlu membuka template lagi; snapshot lama tanpa kunci ini → minta muat ulang.
+  // =====================================================================
+  function bukaKontrolNeraca() { pindahTab("analisis", "kontrol"); }
+
+  function muatKontrol() {
+    gambarKontrol();
+    if (!statusP) return;
+    var p = muatOverviewPeriode(statusP);   // dari snapshot; tidak membuka template bila sudah ada
+    if (p && p.then) p.then(gambarKontrol);
+  }
+
+  function nilaiSelisihKn(v) {
+    if (v === null || v === undefined) return "—";
+    return Math.abs(v) < 1 ? "0" : (v > 0 ? "+" : "−") + nilaiOv(Math.abs(v));
+  }
+
+  function selKn(v, kosong) {
+    var td = el("td", "angka" + (v !== null && v !== undefined && Math.abs(v) >= 1 ? " kurang" : " kn-nol"));
+    td.textContent = kosong ? "—" : nilaiSelisihKn(v);
+    return td;
+  }
+
+  function gambarKontrol() {
+    var info = $("kn-info"), utama = $("kn-utama"), urai = $("kn-urai"), wadah = $("kn-tabel"), chip = $("kn-chip");
+    if (!info) return;
+    utama.innerHTML = ""; urai.innerHTML = ""; wadah.innerHTML = "";
+    chip.hidden = true;
+    $("kn-sumber").textContent = "";
+    var d = dataOverview;
+    function pesan(t) { info.textContent = t; info.hidden = false; wadah.textContent = "—"; }
+    if (ovSedangMuat) return pesan("Membaca template…");
+    if (!d) return pesan($("ov-info").textContent || "Data portofolio periode ini belum dimuat. Tekan Muat dari template.");
+    if (statusP && d.periode && d.periode !== statusP.tanggal) return pesan("Memuat…");
+    var k = d.kontrolNeraca;
+    if (!d.keuangan) return pesan("Sheet GB0200 tidak ada di file template, kontrol neraca tidak dapat disusun.");
+    if (!k) return pesan("Data periode ini tersimpan sebelum kontrol per pos tersedia. Tekan Muat ulang dari template " +
+                         "untuk mengambil rincian pos neraca dan segmen.");
+    info.textContent = ""; info.hidden = true;
+
+    teks("kn-sumber", "Posisi " + tanggalPanjang(d.periode) + " · " + (d.fileTemplate || "—") +
+         " · OS neraca = GB0200 " + k.rumusNeraca + " · " + ($("ov-satuan").value === "juta" ? "juta Rp" : "Rp"));
+    var sama = Math.abs(k.selisih) < 1;
+    chip.hidden = false;
+    chip.className = "rekon-chip " + (sama ? "ok" : "beda");
+    chip.textContent = sama ? "✓ OS segmen = neraca" : "⚠ OS segmen ≠ neraca";
+
+    utama.appendChild(tileAngka("OS neraca (GB0200)", nilaiOv(k.osNeraca)));
+    utama.appendChild(tileAngka("OS segmen (KC0600–1100)", nilaiOv(k.osSegmen)));
+    utama.appendChild(tileAngka("Selisih", nilaiSelisihKn(k.selisih), null, sama ? "" : "kurang"));
+
+    // ---- asal selisih: empat bagian yang jumlahnya persis = selisih ----
+    if (sama) {
+      urai.appendChild(el("div", "teks-kecil ok", "Tidak ada selisih — setiap pos neraca sama dengan OS segmennya."));
+    } else {
+      var c = k.komponen || {};
+      urai.appendChild(el("div", "judul-kecil jarak-atas", "Asal selisih"));
+      var ta = el("table", "tabel-rincian kn-asal");
+      [["Neraca GB0200 ≠ nominatif KC", c.sumber,
+        "GB0200 dan sheet KC bukan dari tarikan yang sama, sheet KC tidak lengkap, atau ada rekening di luar nominatif."],
+       ["Nominatif KC tidak masuk OS segmen", c.cakupan,
+        "Baris tanpa nama debitur / kualitas tidak valid, atau kolom OS berbeda dengan kolom neraca. Barisnya ada di rincian segmen."],
+       ["Pos neraca tanpa segmen CKPN (Salam E21)", c.tanpaSegmen,
+        "Masuk OS neraca tetapi tidak ada sheet segmen di perhitungan CKPN."],
+       ["Subtotal GB0200 ≠ rinciannya", c.subtotal,
+        "Sel E7/E16/E24 tidak sama dengan penjumlahan pos di bawahnya."]
+      ].forEach(function (x) {
+        if (x[1] === undefined || Math.abs(x[1]) < 1) return;
+        var tr = el("tr");
+        var c1 = el("td");
+        c1.appendChild(el("div", "nama-baris", x[0]));
+        c1.appendChild(el("div", "teks-kecil", x[2]));
+        tr.appendChild(c1);
+        tr.appendChild(selKn(x[1]));
+        ta.appendChild(tr);
+      });
+      (k.subtotal || []).forEach(function (st) {
+        if (Math.abs(st.selisih) < 1) return;
+        var tr = el("tr");
+        var c1 = el("td", "kn-indent");
+        c1.appendChild(el("div", "", st.sel + " " + st.nama + ": " + nilaiOv(st.nilai) + " vs " + st.rumus + " = " + nilaiOv(st.rinci)));
+        tr.appendChild(c1);
+        tr.appendChild(selKn(st.selisih));
+        ta.appendChild(tr);
+      });
+      urai.appendChild(ta);
+    }
+
+    // ---- tabel per segmen ----
+    var tb = el("table", "tabel-ov tabel-rincian tabel-kn");
+    var h = el("tr");
+    [["Segmen", ""], ["Neraca", "angka"], ["OS segmen", "angka"], ["Selisih", "angka"]]
+      .forEach(function (x) { h.appendChild(el("th", x[1], x[0])); });
+    tb.appendChild(h);
+
+    (k.segmen || []).forEach(function (s) {
+      var beda = Math.abs(s.selisih) >= 1;
+      var tr = el("tr", "baris-klik" + (beda ? " kn-beda" : ""));
+      var c1 = el("td");
+      c1.appendChild(el("div", "nama-baris", s.kode + " · " + s.nama));
+      var sub = s.pos.map(function (p) { return p.sel; }).join(", ");
+      c1.appendChild(el("div", "teks-kecil", "GB0200 " + sub + (s.ada ? "" : " · " + (s.pesan || "sheet tidak terbaca"))));
+      tr.appendChild(c1);
+      tr.appendChild(el("td", "angka", nilaiOv(s.netoNeraca)));
+      tr.appendChild(el("td", "angka", s.ada ? nilaiOv(s.osSegmen) : "—"));
+      tr.appendChild(selKn(s.selisih));
+      tb.appendChild(tr);
+
+      var trD = el("tr", "rinci");
+      var td = el("td");
+      td.colSpan = 4;
+      td.appendChild(rinciKontrolSegmen(s));
+      trD.appendChild(td);
+      tb.appendChild(trD);
+      trD.hidden = !beda;   // segmen yang berselisih langsung terbuka
+      tr.tabIndex = 0;
+      tr.setAttribute("aria-expanded", trD.hidden ? "false" : "true");
+      function buka() {
+        trD.hidden = !trD.hidden;
+        tr.setAttribute("aria-expanded", trD.hidden ? "false" : "true");
+      }
+      tr.addEventListener("click", buka);
+      tr.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); buka(); } });
+    });
+
+    (k.tanpaSegmen || []).forEach(function (p) {
+      if (Math.abs(p.nilai) < 1) return;
+      var tr = el("tr", "kn-beda");
+      var c1 = el("td");
+      c1.appendChild(el("div", "nama-baris", p.nama + " (" + p.sel + ")"));
+      c1.appendChild(el("div", "teks-kecil", "Tidak ada sheet segmen CKPN"));
+      tr.appendChild(c1);
+      tr.appendChild(el("td", "angka", nilaiOv(p.nilai)));
+      tr.appendChild(el("td", "angka", "—"));
+      tr.appendChild(selKn(p.nilai));
+      tb.appendChild(tr);
+    });
+    if (Math.abs((k.komponen || {}).subtotal || 0) >= 1) {
+      var trS = el("tr", "kn-beda");
+      trS.appendChild(el("td", "", "Selisih subtotal GB0200"));
+      trS.appendChild(el("td", "angka", nilaiOv(k.komponen.subtotal)));
+      trS.appendChild(el("td", "angka", "—"));
+      trS.appendChild(selKn(k.komponen.subtotal));
+      tb.appendChild(trS);
+    }
+
+    var trT = el("tr", "baris-total");
+    trT.appendChild(el("td", "", "Total"));
+    trT.appendChild(el("td", "angka", nilaiOv(k.osNeraca)));
+    trT.appendChild(el("td", "angka", nilaiOv(k.osSegmen)));
+    trT.appendChild(selKn(k.selisih));
+    tb.appendChild(trT);
+    wadah.appendChild(tb);
+  }
+
+  // Rincian satu segmen: pos neraca vs kolom nominatif, cakupan OS segmen, baris penyebab, objek CKPN di luar OS
+  function rinciKontrolSegmen(s) {
+    var w = el("div", "kn-rinci");
+
+    var tp = el("table", "tabel-kualitas tabel-kn-pos");
+    var h = el("tr");
+    [["Pos GB0200", ""], ["Neraca", "angka"], ["Nominatif " + s.kode, "angka"], ["Selisih", "angka"]]
+      .forEach(function (x) { h.appendChild(el("th", x[1], x[0])); });
+    tp.appendChild(h);
+    s.pos.forEach(function (p) {
+      var tr = el("tr");
+      var c1 = el("td");
+      c1.appendChild(el("div", "", p.sel + " · " + p.nama + (p.pengurang ? " (−/−)" : "")));
+      c1.appendChild(el("div", "teks-kecil", "sandi " + p.sandi + " · kolom " + p.kolomKC));
+      tr.appendChild(c1);
+      tr.appendChild(el("td", "angka", nilaiOv(p.neraca)));
+      tr.appendChild(el("td", "angka", s.ada ? nilaiOv(p.kc) : "—"));
+      tr.appendChild(selKn(s.ada ? p.selisih : p.neraca));
+      tp.appendChild(tr);
+    });
+    // baris neto → OS segmen
+    var trN = el("tr", "baris-total");
+    trN.appendChild(el("td", "", "OS neto"));
+    trN.appendChild(el("td", "angka", nilaiOv(s.netoNeraca)));
+    trN.appendChild(el("td", "angka", s.ada ? nilaiOv(s.netoKC) : "—"));
+    trN.appendChild(selKn(s.selSumber));
+    tp.appendChild(trN);
+    var trO = el("tr");
+    var cO = el("td");
+    cO.appendChild(el("div", "", "OS segmen CKPN"));
+    cO.appendChild(el("div", "teks-kecil", "kolom " + s.kolomOS + ", baris berdebitur kualitas 1–5"));
+    trO.appendChild(cO);
+    trO.appendChild(el("td", "angka", ""));
+    trO.appendChild(el("td", "angka", s.ada ? nilaiOv(s.osSegmen) : "—"));
+    trO.appendChild(selKn(s.selCakupan));
+    tp.appendChild(trO);
+    w.appendChild(tp);
+
+    if (!s.ada) {
+      w.appendChild(el("div", "peringatan-box", s.kode + ": " + (s.pesan || "sheet tidak terbaca") +
+        ". Seluruh nilai neraca pos ini menjadi selisih."));
+    } else if (Math.abs(s.selSumber) >= 1) {
+      w.appendChild(el("div", "peringatan-box",
+        "Neraca dan nominatif " + s.kode + " berbeda " + nilaiSelisihKn(s.selSumber) +
+        ". Pastikan GB0200 dan " + s.kode + " berasal dari tarikan & tanggal yang sama, dan sheet " + s.kode + " berisi seluruh rekening."));
+    }
+    if (s.ada && Math.abs(s.selCakupan) >= 1) {
+      var t = [];
+      if (s.nDikecualikan) t.push(s.nDikecualikan + " baris bernilai " + nilaiOv(s.dikecualikan) +
+        " tidak masuk OS segmen (tanpa nama debitur / kualitas tidak valid)");
+      if (s.nBedaKolom) t.push(s.nBedaKolom + " baris dengan kolom neraca " + s.kolomNeto.split(" (")[0] +
+        " ≠ kolom OS " + s.kolomOS.split(" (")[0] + " (selisih " + nilaiSelisihKn(s.bedaKolom) + ")");
+      w.appendChild(el("div", "peringatan-box", "Nominatif ≠ OS segmen: " + t.join("; ") + "."));
+    }
+    if (s.contoh && s.contoh.length) {
+      var jml = (s.nDikecualikan || 0) + (s.nBedaKolom || 0);
+      w.appendChild(el("div", "judul-kecil jarak-atas", "Baris penyebab di sheet " + s.kode +
+        (jml > s.contoh.length ? " (" + s.contoh.length + " terbesar dari " + jml + ")" : "")));
+      var tc = el("table", "tabel-kualitas tabel-kn-baris");
+      var hc = el("tr");
+      [["Baris", ""], ["Rekening / nama", ""], ["Nilai", "angka"], ["Sebab", ""]]
+        .forEach(function (x) { hc.appendChild(el("th", x[1], x[0])); });
+      tc.appendChild(hc);
+      s.contoh.forEach(function (r) {
+        var tr = el("tr");
+        tr.appendChild(el("td", "", String(r.baris)));
+        var c2 = el("td");
+        c2.appendChild(el("div", "", r.rek || "—"));
+        if (r.nama) c2.appendChild(el("div", "teks-kecil", r.nama));
+        tr.appendChild(c2);
+        tr.appendChild(el("td", "angka", nilaiSelisihKn(r.nilai)));
+        tr.appendChild(el("td", "teks-kecil", r.alasan));
+        tc.appendChild(tr);
+      });
+      w.appendChild(tc);
+    }
+    if (s.info && s.info.length) {
+      w.appendChild(el("div", "judul-kecil jarak-atas", "Objek CKPN di luar OS"));
+      var ti = el("table", "tabel-kualitas tabel-kn-pos");
+      var hi = el("tr");
+      [["Pos", ""], ["Neraca", "angka"], ["Nominatif " + s.kode, "angka"], ["Selisih", "angka"]]
+        .forEach(function (x) { hi.appendChild(el("th", x[1], x[0])); });
+      ti.appendChild(hi);
+      s.info.forEach(function (p) {
+        var tr = el("tr");
+        var c1 = el("td");
+        c1.appendChild(el("div", "", (p.sel ? p.sel + " · " : "") + p.nama));
+        c1.appendChild(el("div", "teks-kecil", "kolom " + p.kolomKC + " · " + p.ket));
+        tr.appendChild(c1);
+        tr.appendChild(el("td", "angka", p.neraca === null || p.neraca === undefined ? "tidak ada pos" : nilaiOv(p.neraca)));
+        tr.appendChild(el("td", "angka", nilaiOv(p.kc)));
+        tr.appendChild(selKn(p.selisih, p.selisih === null || p.selisih === undefined));
+        ti.appendChild(tr);
+      });
+      w.appendChild(ti);
+    }
+    return w;
+  }
+
+  $("ov-rekon-chip").addEventListener("click", bukaKontrolNeraca);
+  $("btn-kn-muat").addEventListener("click", muatOverview);
+  $("btn-kn-cara").addEventListener("click", function () {
+    var w = $("kn-cara");
+    w.hidden = !w.hidden;
+    this.setAttribute("aria-expanded", w.hidden ? "false" : "true");
+  });
+
   $("btn-ov-muat").addEventListener("click", muatOverview);
-  $("btn-ov-muat-kosong").addEventListener("click", muatOverview);
   $("ov-satuan").addEventListener("change", gambarOverview);
 
 

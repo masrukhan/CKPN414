@@ -158,22 +158,24 @@
     <div class="kartu">
       <div class="baris-antara">
         <div class="judul-kartu">Angka utama</div>
-        <div class="kanan-kecil">
-          <span id="ov-rekon-chip" class="rekon-chip" hidden></span>
-          <select id="ov-satuan" class="pilih pilih-kecil" aria-label="Satuan angka">
-            <option value="juta">juta Rp</option>
-            <option value="penuh">Rp penuh</option>
-          </select>
-        </div>
+        <select id="ov-satuan" class="pilih pilih-kecil" aria-label="Satuan angka">
+          <option value="juta">juta Rp</option>
+          <option value="penuh">Rp penuh</option>
+        </select>
+      </div>
+      <!-- Muat ulang dari template + kontrol OS neraca: diletakkan berdampingan di atas karena setelah
+           bulan laporan di Master diganti, data perlu dimuat ulang lalu kontrol neraca dicek -->
+      <div class="baris-antara baris-ov-aksi">
+        <button id="btn-ov-muat" class="tombol-sekunder tombol-muat-ov" type="button">
+          <span class="ikon-muat" aria-hidden="true">&#8635;</span> <span class="label-muat">Muat dari template</span></button>
+        <button id="ov-rekon-chip" class="rekon-chip" type="button" hidden></button>
       </div>
       <div id="ov-utama" class="angka-utama"></div>
       <div id="ov-info" class="teks-kecil">Memuat…</div>
-      <button id="btn-ov-muat-kosong" class="tombol-sekunder jarak-atas" type="button" hidden>Muat dari template</button>
       <details id="ov-lainnya" class="ov-lainnya">
         <summary><span class="tutup-teks">Lainnya (aset, laba, sumber data)</span><span class="buka-teks">Sembunyikan</span></summary>
         <div id="ov-keuangan" class="angka-utama angka-lain"></div>
-        <div class="teks-kecil ov-sumber"><span id="ov-sumber"></span>
-          <button id="btn-ov-muat" class="tautan" type="button">Muat dari template</button></div>
+        <div class="teks-kecil ov-sumber"><span id="ov-sumber"></span></div>
         <div id="ov-rekon" class="teks-kecil"></div>
         <div id="ov-log"></div>
       </details>
@@ -683,11 +685,13 @@
   <!-- ================= Analisis: Tren · Komposisi · Versi ================= -->
   <section id="tab-analisis" class="isi-tab" role="tabpanel" hidden>
     <div class="segmen sub-nav" role="group" aria-label="Bagian analisis" data-grup="analisis">
-      <!-- Tahap 7j: urutan mengikuti alur kerja — rincian hasil, versi, lalu tren & komposisi -->
+      <!-- Tahap 7j: urutan mengikuti alur kerja — rincian hasil, versi, lalu tren & komposisi;
+           Kontrol (OS neraca vs segmen) paling kanan -->
       <button type="button" data-sub="rincian" aria-pressed="true">Rincian</button>
       <button type="button" data-sub="versi" aria-pressed="false">Versi</button>
       <button type="button" data-sub="tren" aria-pressed="false">Tren</button>
       <button type="button" data-sub="komposisi" aria-pressed="false">Komposisi</button>
+      <button type="button" data-sub="kontrol" aria-pressed="false">Kontrol</button>
     </div>
 
     <!-- ---------- Analisis › Tren (riwayat antarperiode) ---------- -->
@@ -831,6 +835,41 @@
         <div id="an-nf-sankey" class="wadah-grafik"></div>
         <details class="jarak-atas"><summary class="teks-kecil tautan-ringkas">Tabel roll rate &amp; PD per bucket</summary>
           <div id="an-nf-tabel" class="gulir-x"></div></details>
+      </div>
+    </div>
+
+    <!-- ---------- Analisis › Kontrol: OS neraca (GB0200) vs OS segmen (KC0600–KC1100) ---------- -->
+    <div id="sub-kontrol" class="isi-sub" hidden>
+      <div class="kartu">
+        <div class="baris-antara">
+          <div class="judul-kartu">OS neraca vs OS segmen</div>
+          <span id="kn-chip" class="rekon-chip" hidden></span>
+        </div>
+        <div id="kn-sumber" class="teks-kecil"></div>
+        <div id="kn-utama" class="angka-utama kn-utama"></div>
+        <div id="kn-info" class="teks-kecil">Memuat…</div>
+        <div id="kn-urai"></div>
+        <div class="baris-tombol jarak-atas">
+          <button id="btn-kn-muat" class="tombol-sekunder tombol-muat-ov" type="button">
+            <span class="ikon-muat" aria-hidden="true">&#8635;</span> <span class="label-muat">Muat dari template</span></button>
+        </div>
+      </div>
+
+      <div class="kartu">
+        <div class="baris-antara">
+          <div class="judul-kartu">Per segmen</div>
+          <button id="btn-kn-cara" class="tautan tautan-info" type="button" aria-expanded="false" aria-controls="kn-cara">&#9432; Cara baca</button>
+        </div>
+        <div id="kn-cara" class="kotak-cara teks-kecil" hidden>
+          Setiap pos GB0200 disandingkan dengan kolom nominatif KC yang membentuknya (relasi rumus KC0200).
+          <b>Neraca</b> = nilai sel GB0200. <b>Nominatif KC</b> = jumlah kolom itu untuk seluruh baris sheet KC.
+          <b>OS segmen</b> = OS yang dipakai Ringkasan &amp; perhitungan CKPN (baris berdebitur, kualitas 1–5).
+          Selisih neraca vs nominatif berarti GB0200 dan KC tidak dari tarikan yang sama atau ada rekening di luar nominatif;
+          selisih nominatif vs OS segmen berarti ada baris tanpa nama/kualitas atau kolom OS berbeda dengan kolom neraca —
+          barisnya ditampilkan di rincian segmen. Piutang sewa (E15) bukan OS: ia dikeluarkan dari OS neraca dan menjadi objek CKPN KC1100
+          bersama tunggakan ujroh (tidak ada pos neraca).
+        </div>
+        <div id="kn-tabel" class="teks-kecil">—</div>
       </div>
     </div>
 

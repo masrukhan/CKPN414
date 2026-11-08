@@ -840,6 +840,35 @@ body.mode-jendela .kepala > * { max-width: 948px; margin-left: auto; margin-righ
 .rekon-chip.ok { color: var(--sukses); }
 .rekon-chip.beda { color: var(--peringatan); }
 .rekon-chip[hidden] { display: none; }
+/* Chip kontrol OS neraca = tombol menuju Analisis › Kontrol */
+button.rekon-chip { border: 1px solid currentColor; background: #fff; border-radius: 999px; padding: 3px 10px;
+  font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; }
+button.rekon-chip.ok { color: var(--sukses); background: #E7F2EC; border-color: #BFDCCB; }
+button.rekon-chip.beda { color: var(--peringatan); background: var(--peringatan-bg); border-color: #E8C98E; }
+button.rekon-chip:hover { text-decoration: underline; }
+button.rekon-chip:focus-visible { outline: 2px solid var(--aksen); outline-offset: 1px; }
+/* Baris aksi Ringkasan: Muat ulang dari template (kiri) · kontrol OS neraca (kanan) */
+.baris-ov-aksi { margin-top: 8px; flex-wrap: wrap; }
+.tombol-muat-ov { height: 30px; font-size: 12.5px; border-color: var(--aksen); color: var(--aksen); font-weight: 600; background: #fff; }
+.tombol-muat-ov .ikon-muat { font-size: 14px; display: inline-block; }
+.tombol-muat-ov:disabled .ikon-muat { animation: putar-muat 1s linear infinite; }
+@keyframes putar-muat { to { transform: rotate(360deg); } }
+
+/* Analisis › Kontrol (OS neraca vs OS segmen) */
+.kn-utama { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+#kn-info[hidden] { display: none; }
+#kn-sumber { margin-top: 4px; }
+.judul-kecil { font-size: 12px; font-weight: 600; color: var(--teks); margin-bottom: 4px; }
+.tabel-kn tr.kn-beda > td:first-child .nama-baris { color: var(--peringatan); font-weight: 600; }
+.tabel-kn tr.baris-total td, .tabel-kn-pos tr.baris-total td { font-weight: 600; border-top: 1px solid var(--garis); }
+.tabel-kn td.kn-nol, .tabel-kn-pos td.kn-nol, .kn-asal td.kn-nol { color: var(--teks-2); }
+.kn-asal td { vertical-align: top; }
+.kn-asal td.kn-indent { padding-left: 14px; color: var(--teks-2); }
+.kn-rinci .tabel-kualitas { margin-top: 4px; }
+.kn-rinci .tabel-kualitas td .teks-kecil { font-family: "Segoe UI", system-ui, sans-serif; color: var(--teks-2); font-size: 10.5px; }
+.tabel-kn-baris td.teks-kecil { text-align: left; font-family: inherit; white-space: normal; }
+.tabel-kn-baris td:nth-child(2) { text-align: left; font-family: inherit; }
+@media (max-width: 420px) { .kn-utama { grid-template-columns: repeat(1, minmax(0, 1fr)); } }
 
 .angka-utama { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 10px 0 6px; }
 .angka-utama:empty { display: none; }
@@ -851,7 +880,6 @@ body.mode-jendela .kepala > * { max-width: 948px; margin-left: auto; margin-righ
 .angka-lain { padding-top: 10px; border-top: 1px solid #EFEDE6; }
 .angka-lain .tile-nilai { font-size: 13px; }
 #ov-info[hidden] { display: none; }
-#btn-ov-muat-kosong[hidden] { display: none; }
 .ov-lainnya[hidden] { display: none; }
 .ov-lainnya summary { cursor: pointer; font-size: 12px; color: var(--aksen); list-style: none; margin-top: 4px; }
 .ov-lainnya summary::-webkit-details-marker { display: none; }
