@@ -1020,7 +1020,10 @@
       <div id="susunan-isi" class="susunan-isi"></div>
       <div class="baris-tombol">
         <button id="btn-susunan-perkc" class="tombol-sekunder" type="button">Satu grup per kode</button>
+        <!-- Rekomendasi grup + Top-N dari jumlah CIF per segmen di template periode Master -->
+        <button id="btn-susunan-rek" class="tombol-sekunder tombol-rek" type="button">&#10022; Rekomendasi grup &amp; Top-N</button>
       </div>
+      <div id="susunan-rek" class="susunan-rek" hidden></div>
       <fieldset class="pilih-metode">
         <legend class="label-isian">Metode konsolidasi tahun ini (satu untuk semua grup)</legend>
         <label class="opsi"><input type="radio" name="susunan-metode" value="nf"> <span>PD Net Flow + LGD weighted</span></label>
@@ -1152,10 +1155,11 @@
         <summary id="refkc-guna-judul">Jenis penggunaan rekening hapus buku</summary>
         <p class="teks-kecil">KC2900 tidak memiliki kolom jenis penggunaan. Untuk mode per jenis penggunaan, jenisnya diambil dari
           rekening yang sama di KC0600–KC1100 file tahunan, lalu dari isian manual per kode produk, lalu dari jenis terbanyak
-          kode produk tersebut. Rekening yang tetap tanpa jenis penggunaan <b>tidak masuk LGD ER grup mana pun</b> — lengkapi di bawah
-          (memakai dasar / alasan pengisian di atas).</p>
+          kode produk tersebut. Rekening yang tidak ditemukan di file tahunan hanya <b>ditebak dari kode produk</b> — periksa daftar
+          <b>Perlu dicek</b> dan pilih jenis penggunaan yang benar per debitur (isian per rekening paling diutamakan).
+          Rekening tanpa jenis penggunaan <b>tidak masuk LGD ER grup mana pun</b>. Penyimpanan memakai dasar / alasan pengisian di atas.</p>
         <div id="refkc-guna-ringkas"></div>
-        <div class="label-kecil jarak-atas" id="refkc-guna-tanpa-judul">Belum ada jenis penggunaan</div>
+        <div class="label-kecil jarak-atas" id="refkc-guna-tanpa-judul">Koreksi per rekening</div>
         <div id="refkc-guna-tanpa"></div>
         <details class="lipat-ref">
           <summary id="refkc-guna-produk-judul">Per kode produk</summary>
@@ -1173,10 +1177,12 @@
         <summary id="refkc-sektor-judul">Kelompok sektor ekonomi rekening hapus buku</summary>
         <p class="teks-kecil">KC2900 tidak memiliki kolom sandi sektor ekonomi. Untuk mode per kelompok sektor, kelompoknya diambil dari
           sandi sektor (kolom T) rekening yang sama di KC0600–KC1100 file tahunan, lalu dari isian manual per kode produk, lalu dari
-          kelompok terbanyak kode produk tersebut. Rekening yang tetap tanpa kelompok <b>tidak masuk LGD ER grup mana pun</b> — lengkapi
-          di bawah (memakai dasar / alasan pengisian di atas). Pada sebaran kode produk, kelompok ditulis dengan kodenya (01–10).</p>
+          kelompok terbanyak kode produk tersebut. Satu kode produk biasanya dipakai banyak sektor, sehingga rekening yang tidak
+          ditemukan di file tahunan hanya <b>ditebak</b> — periksa daftar <b>Perlu dicek</b> dan pilih kelompok sektor yang benar per
+          debitur (isian per rekening paling diutamakan). Rekening tanpa kelompok <b>tidak masuk LGD ER grup mana pun</b>.
+          Penyimpanan memakai dasar / alasan pengisian di atas. Pada sebaran kode produk, kelompok ditulis dengan kodenya (01–10).</p>
         <div id="refkc-sektor-ringkas"></div>
-        <div class="label-kecil jarak-atas" id="refkc-sektor-tanpa-judul">Belum ada kelompok sektor</div>
+        <div class="label-kecil jarak-atas" id="refkc-sektor-tanpa-judul">Koreksi per rekening</div>
         <div id="refkc-sektor-tanpa"></div>
         <details class="lipat-ref">
           <summary id="refkc-sektor-produk-judul">Per kode produk</summary>

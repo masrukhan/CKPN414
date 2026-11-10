@@ -901,6 +901,9 @@ namespace CKPNLibrary.Data
             foreach (var s in new[] { SManualRek, SRekening, SManualProduk, SProduk, STanpa }) perSumber[s] = new double[2];
             var perKode = new Dictionary<string, double[]>();
             var tanpa = new List<object>();
+            // Seluruh rekening cohort + atribut terpakai & asalnya → panel bisa mengoreksi per rekening, termasuk
+            // yang hanya ditebak dari kode produk (sumber "produk"/"manual-produk"), bukan hanya yang kosong.
+            var daftarRek = new List<Dictionary<string, object>>();
             var hbPerAwalan = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             foreach (var r in rek)
             {
@@ -908,6 +911,7 @@ namespace CKPNLibrary.Data
                 string sumber;
                 string g = p.TentukanGuna(r.NoRek, out sumber);
                 perSumber[sumber][0]++; perSumber[sumber][1] += r.Baki;
+                daftarRek.Add(BarisAtribut(r, g, sumber, p.Panjang));
                 if (g.Length > 0)
                 {
                     double[] k;
@@ -960,8 +964,28 @@ namespace CKPNLibrary.Data
             return new Dictionary<string, object>
             {
                 { "ringkas", ringkas }, { "perKode", kode }, { "tanpa", tanpa }, { "produk", produk }, { "manual", manual },
-                { "panjang", p.Panjang }
+                { "panjang", p.Panjang }, { "rekening", UrutBaki(daftarRek) }
             };
+        }
+
+        /// <summary>
+        /// Satu rekening hapus buku cohort untuk koreksi atribut (jenis penggunaan / kelompok sektor) per rekening.
+        /// kode = atribut yang dipakai sekarang; sumber = asal penentuannya (manual-rek, rekening, manual-produk, produk, tanpa).
+        /// </summary>
+        private static Dictionary<string, object> BarisAtribut(RekHB r, string kode, string sumber, int panjang)
+        {
+            return new Dictionary<string, object>
+            {
+                { "kunci", r.NoRek }, { "rek", r.RekAsli }, { "cif", r.Cif }, { "nama", r.Nama }, { "produk", r.Produk },
+                { "tahunHB", r.TahunHB }, { "baki", r.Baki }, { "awalan", Awalan(r.NoRek, panjang) },
+                { "kode", kode ?? "" }, { "sumber", sumber }
+            };
+        }
+
+        private static List<Dictionary<string, object>> UrutBaki(List<Dictionary<string, object>> x)
+        {
+            x.Sort((a, b) => ((double)b["baki"]).CompareTo((double)a["baki"]));
+            return x;
         }
 
         private static Dictionary<string, object> Baris(RekHB r, string kc, string sumber, bool cohort, Peta p)
@@ -1034,6 +1058,9 @@ namespace CKPNLibrary.Data
             foreach (var s in new[] { SManualRek, SRekening, SManualProduk, SProduk, STanpa }) perSumber[s] = new double[2];
             var perKode = new Dictionary<string, double[]>();
             var tanpa = new List<object>();
+            // Seluruh rekening cohort + atribut terpakai & asalnya → panel bisa mengoreksi per rekening, termasuk
+            // yang hanya ditebak dari kode produk (sumber "produk"/"manual-produk"), bukan hanya yang kosong.
+            var daftarRek = new List<Dictionary<string, object>>();
             var hbPerAwalan = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             foreach (var r in rek)
             {
@@ -1041,6 +1068,7 @@ namespace CKPNLibrary.Data
                 string sumber;
                 string g = a.Tentukan(r.NoRek, out sumber);
                 perSumber[sumber][0]++; perSumber[sumber][1] += r.Baki;
+                daftarRek.Add(BarisAtribut(r, g, sumber, p.Panjang));
                 if (g.Length > 0)
                 {
                     double[] k;
@@ -1092,7 +1120,7 @@ namespace CKPNLibrary.Data
             return new Dictionary<string, object>
             {
                 { "ringkas", ringkas }, { "perKode", kode }, { "tanpa", tanpa }, { "produk", produk }, { "manual", manual },
-                { "panjang", p.Panjang }
+                { "panjang", p.Panjang }, { "rekening", UrutBaki(daftarRek) }
             };
         }
 

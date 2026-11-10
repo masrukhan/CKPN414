@@ -348,6 +348,32 @@ namespace CKPNLibrary.Panel
                         });
                         break;
 
+                    // Rekomendasi susunan grup & Top-N: baca CIF + baki debet per unit dari template Master!D14.
+                    // Hanya membaca (tidak perlu hak pengirim); panel yang menyusun opsi grup & Top-N.
+                    case "rekomendasiSusunan":
+                        JalankanDiExcel(host, id, app =>
+                        {
+                            if (CKPNPipeline.SedangBerjalan || BatchGrup.Aktif)
+                                throw new InvalidOperationException("Perhitungan sedang berjalan. Coba lagi setelah selesai.");
+                            Excel.Workbook wbR = CariWorkbookAplikasi(app);
+                            if (wbR == null) throw new InvalidOperationException("Workbook aplikasi CKPN tidak sedang terbuka.");
+                            DateTime tR;
+                            string tglR = ParameterMaster.BacaTanggalLaporan(wbR, out tR) ? tR.ToString("yyyy-MM-dd") : "";
+                            CKPNPipeline.MatikanGhostingSekali();
+                            var kursorR = app.Cursor;
+                            app.Cursor = Excel.XlMousePointer.xlWait;
+                            try
+                            {
+                                return RekomendasiSusunan.Pindai(app, ParameterMaster.BacaPathTemplate(wbR), tglR);
+                            }
+                            finally
+                            {
+                                try { app.Cursor = kursorR; } catch { }
+                                try { wbR.Activate(); } catch { }
+                            }
+                        });
+                        break;
+
                     case "simpanNamaKantor":
                         var namaK = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                         var nkMap = Ambil(args, "nama") as Dictionary<string, object>;

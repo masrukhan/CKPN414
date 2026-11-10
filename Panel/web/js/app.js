@@ -2242,6 +2242,10 @@
     $("btn-susunan-pindai").disabled = !statusP.bolehMenulis;
     $("susunan-pindai-hasil").textContent = "";
     gambarUnitSusunan();
+    // rekomendasi: data CIF dipakai ulang hanya untuk periode & mode yang sama
+    if (rekSusunan && rekSusunan.kunci !== kunciRek()) rekSusunan = null;
+    $("susunan-rek").innerHTML = ""; tampil("susunan-rek", false);
+    $("btn-susunan-rek").disabled = false;
     // nilai awal Top-N per nama grup: ketetapan tersimpan → Master!C10 → 10
     $("susunan-topn-grup").innerHTML = "";   // buang isian sesi sebelumnya
     topNIsian = {};
@@ -2387,18 +2391,331 @@
           inp.setAttribute("aria-label", "Top-N " + n);
         }
       }
+      // info jumlah CIF grup (setelah rekomendasi dimuat): user tidak perlu bolak-balik ke Ringkasan
+      var info = el("div", "teks-kecil sig-info");
+      function aturInfo() { gambarInfoSig(info, n, sel.value, Number(inp.value)); }
       sel.addEventListener("change", function () {
         // simpan isian metode sebelumnya sebelum berganti
         if (sel.value === "nominal") { if (inp.value !== "") topNIsian[n] = Number(inp.value); }
         else if (inp.value !== "") sg.ambangJt = Number(inp.value);
         sg.metode = sel.value; sigIsian[n] = sg;
         aturInput();
+        aturInfo();
       });
+      inp.addEventListener("input", aturInfo);
       aturInput();
-      baris.appendChild(sel); baris.appendChild(inp); baris.appendChild(satuan); baris.appendChild(ket);
+      aturInfo();
+      baris.appendChild(sel); baris.appendChild(inp); baris.appendChild(satuan); baris.appendChild(ket); baris.appendChild(info);
       w.appendChild(lab); w.appendChild(baris);
     });
   }
+
+  // =====================================================================
+  // Rekomendasi susunan grup & Top-N
+  //   Data: CIF + baki debet per unit (KC / sandi kantor / jenis penggunaan / kelompok sektor) dari template
+  //   periode Master (RekomendasiSusunan.cs). Gabungan unit dihitung sebagai CIF unik — sama dengan CKPN
+  //   Individu yang menjumlah semua kontrak satu CIF.
+  //   Aturan:
+  //     - Top-N maksimal 30% dari jumlah CIF grup (sisa ≥ 70% menjadi populasi kolektif).
+  //     - Grup dengan CIF < CIF_MIN_GRUP digabung: lebih dulu dengan grup tipis lain di kelompok yang sama,
+  //       lalu dengan grup terbesar di kelompoknya, terakhir dengan grup terbesar bank.
+  //     - Mode akad: opsi per jenis akad dan opsi per kelompok akad (piutang / bagi hasil / ijarah);
+  //       per kelompok disarankan bila ada akad berisi yang terlalu tipis (persebaran tidak merata).
+  // =====================================================================
+  var rekSusunan = null;          // hasil rekomendasiSusunan + indeks unit
+  var PORSI_TOPN_MAKS = 0.30;     // Top-N ≤ 30% CIF grup
+  var CIF_MIN_GRUP = 30;          // grup lebih kecil dari ini digabung (Top-N maks 9, kolektif ≥ 21 CIF)
+  var NAMA_AKAD = { KC0600: "Murabahah", KC0700: "Istishna", KC0800: "Multijasa", KC0900: "Qardh", KC1000: "Bagi Hasil", KC1100: "Ijarah" };
+  var KELOMPOK_AKAD = [
+    { nama: "Piutang", kode: ["KC0600", "KC0700", "KC0800", "KC0900"], ket: "jual beli (murabahah, istishna), multijasa, qardh" },
+    { nama: "Bagi Hasil", kode: ["KC1000"], ket: "mudarabah, musyarakah" },
+    { nama: "Ijarah", kode: ["KC1100"], ket: "piutang sewa" }
+  ];
+
+  function kunciRek() { return modeId() + "|" + (statusP ? statusP.tanggal : ""); }
+  function maksTopN(cif) { return Math.floor(cif * PORSI_TOPN_MAKS); }
+
+  // nama grup → daftar kode unit menurut isian editor saat ini
+  function kodeGrupSusunan(nama) {
+    var k = [];
+    $("susunan-isi").querySelectorAll("input[data-kode]").forEach(function (inp) {
+      if (inp.value.trim() === nama) k.push(inp.dataset.kode);
+    });
+    return k;
+  }
+
+  // statistik gabungan unit: CIF unik, CIF berbaki, rekening, baki per CIF
+  function statistikGrup(kode) {
+    var peta = {}, rek = 0;
+    (kode || []).forEach(function (k) {
+      var u = rekSusunan && rekSusunan.indeks[k];
+      if (!u) return;
+      rek += u.rekening;
+      for (var i = 0; i < u.cif.length; i++) peta[u.cif[i]] = (peta[u.cif[i]] || 0) + u.baki[i];
+    });
+    var baki = Object.keys(peta).map(function (c) { return peta[c]; });
+    var berbaki = baki.filter(function (v) { return v > 0; }).length;
+    return { cif: baki.length, berbaki: berbaki, rekening: rek, baki: baki };
+  }
+
+  // Top-N saran: target SOP, dibatasi 30% CIF dan jumlah CIF berbaki (CIF baki 0 tidak berguna di ranking)
+  function saranTopN(st, target) {
+    var m = maksTopN(st.cif);
+    if (m < 1) return 0;
+    var t = Math.min(target || 10, m);
+    if (st.berbaki > 0) t = Math.min(t, st.berbaki);
+    return Math.max(1, t);
+  }
+
+  // Target Top-N menurut SOP: isian grup bernama sama → Top-N yang paling banyak dipakai susunan tersimpan
+  // → Master!C10 → 10. Rekomendasi hanya menurunkannya bila melebihi 30% CIF / CIF berbaki.
+  function targetTopN(nama) {
+    if (topNIsian[nama]) return topNIsian[nama];
+    var hit = {}, modus = 0, n = 0;
+    (statusP && statusP.grup || []).forEach(function (g) {
+      if (!g.topN) return;
+      hit[g.topN] = (hit[g.topN] || 0) + 1;
+      if (hit[g.topN] > n) { n = hit[g.topN]; modus = g.topN; }
+    });
+    return modus || (infoTopN && infoTopN.topNMaster) || 10;
+  }
+
+  // keterangan di bawah isian signifikansi tiap grup
+  function gambarInfoSig(w, nama, metode, nilai) {
+    w.className = "teks-kecil sig-info";
+    w.textContent = "";
+    if (!rekSusunan) return;
+    var st = statistikGrup(kodeGrupSusunan(nama));
+    if (!st.cif) { w.textContent = "Tidak ada CIF di template" + (rekSusunan.tanggal ? " " + labelPeriode(rekSusunan.tanggal) : "") + "."; w.className += " kurang"; return; }
+    var dasar = st.cif + " CIF (" + st.berbaki + " berbaki)";
+    if (metode === "nominal") {
+      var ambang = (nilai || 0) * 1e6;
+      var n = st.baki.filter(function (v) { return v >= ambang && v > 0; }).length;
+      w.textContent = dasar + " · " + n + " CIF ≥ ambang (" + Math.round(n / st.cif * 100) + "%)";
+      if (n >= st.cif) { w.textContent += " — semua CIF menjadi individu, kolektif kosong"; w.className += " kurang"; }
+      else if (n > maksTopN(st.cif)) { w.textContent += " — di atas 30% CIF"; w.className += " waspada"; }
+      return;
+    }
+    var m = maksTopN(st.cif);
+    w.textContent = dasar + " · Top-N maks " + m + " (30%)";
+    if (nilai >= st.cif) { w.textContent += " — Top-N ≥ jumlah CIF, perhitungan akan gagal"; w.className += " kurang"; }
+    else if (nilai > m) { w.textContent += " — melebihi 30%"; w.className += " waspada"; }
+    else if (st.berbaki && nilai > st.berbaki) { w.textContent += " — " + (nilai - st.berbaki) + " CIF Top-N berbaki 0"; w.className += " waspada"; }
+    else w.className += " ok";
+  }
+
+  // ---- penyusun opsi ----
+  function grupBaru(nama, kode, kel) { var g = { nama: nama, kode: kode.slice(), kel: kel }; g.st = statistikGrup(g.kode); return g; }
+
+  // Gabungkan grup tipis (CIF < minimum, termasuk yang kosong). namaGabung(a, b) → nama hasil.
+  function gabungTipis(grup, namaGabung) {
+    var adaGabung = false, adaGabungBerisi = false;
+    for (;;) {
+      var tipis = grup.filter(function (g) { return g.st.cif < CIF_MIN_GRUP; })
+                      .sort(function (a, b) { return a.st.cif - b.st.cif; });
+      if (!tipis.length || grup.length < 2) break;
+      var g = tipis[0];
+      var lain = grup.filter(function (x) { return x !== g; });
+      var sekel = lain.filter(function (x) { return x.kel === g.kel; });
+      var sekelTipis = sekel.filter(function (x) { return x.st.cif < CIF_MIN_GRUP; });
+      function terbesar(arr) { return arr.slice().sort(function (a, b) { return b.st.cif - a.st.cif; })[0]; }
+      var t = sekelTipis.length ? terbesar(sekelTipis) : sekel.length ? terbesar(sekel) : terbesar(lain);
+      adaGabung = true;
+      if (g.st.cif > 0 && t.st.cif > 0) adaGabungBerisi = true;
+      t.nama = namaGabung(t, g);
+      t.kode = t.kode.concat(g.kode);
+      t.isi = (t.isi || [t.namaAsal || t.nama]).concat(g.isi || [g.namaAsal || g.nama]);
+      t.st = statistikGrup(t.kode);
+      grup.splice(grup.indexOf(g), 1);
+    }
+    return { grup: grup, adaGabung: adaGabung, adaGabungBerisi: adaGabungBerisi };
+  }
+
+  function urutKodeUnit(kode) {
+    var urut = unitSusunan().map(function (u) { return u.kode; });
+    return kode.slice().sort(function (a, b) { return urut.indexOf(a) - urut.indexOf(b); });
+  }
+
+  function opsiAkad() {
+    var kelOf = {};
+    KELOMPOK_AKAD.forEach(function (k) { k.kode.forEach(function (c) { kelOf[c] = k.nama; }); });
+    // A. per jenis akad
+    var a = KC_SEMUA.map(function (k) { var g = grupBaru(NAMA_AKAD[k], [k], kelOf[k]); g.namaAsal = g.nama; return g; });
+    var berisiKel = {};
+    KC_SEMUA.forEach(function (k) { if (statistikGrup([k]).cif > 0) berisiKel[kelOf[k]] = (berisiKel[kelOf[k]] || 0) + 1; });
+    var ha = gabungTipis(a, function (t, g) {
+      // akad kosong tidak mengubah nama; gabungan akad berisi → "Istishna + Qardh", atau nama kelompok
+      // bila seluruh akad berisi di kelompok itu sudah tergabung
+      if (!(g.st.cif > 0 && t.st.cif > 0)) return t.nama;
+      var urutAkad = KC_SEMUA.map(function (k) { return NAMA_AKAD[k]; });
+      var isi = (t.isiBerisi || [t.namaAsal]).concat(g.isiBerisi || [g.namaAsal])
+        .sort(function (x, y) { return urutAkad.indexOf(x) - urutAkad.indexOf(y); });
+      t.isiBerisi = isi;
+      if (t.kel === g.kel && isi.length >= (berisiKel[t.kel] || 0)) return t.kel;
+      return isi.length > 2 ? isi[0] + " dkk" : isi.join(" + ");
+    });
+    // B. per kelompok akad
+    var b = KELOMPOK_AKAD.map(function (k) { var g = grupBaru(k.nama, k.kode, "semua"); g.namaAsal = k.nama; return g; });
+    var hb = gabungTipis(b, function (t, g) { return g.st.cif > 0 && t.st.cif > 0 ? t.nama + " + " + g.nama : t.nama; });
+
+    var opsi = [{
+      id: "akad", judul: "Per jenis akad",
+      ket: ha.adaGabungBerisi ? "Akad dengan CIF < " + CIF_MIN_GRUP + " digabung ke akad sekelompok."
+                              : "Setiap akad yang berisi menjadi grup sendiri; akad tanpa CIF ikut ke akad sekelompok.",
+      grup: ha.grup, disarankan: !ha.adaGabungBerisi
+    }, {
+      id: "kelompok", judul: "Per kelompok akad",
+      ket: "Piutang (" + KELOMPOK_AKAD[0].ket + ") · Bagi Hasil · Ijarah. " +
+           (hb.adaGabung ? "Kelompok kosong / CIF < " + CIF_MIN_GRUP + " digabung ke kelompok terbesar." : ""),
+      grup: hb.grup, disarankan: ha.adaGabungBerisi
+    }];
+    return opsi;
+  }
+
+  function opsiUnit() {
+    var m = modeId(), sektor = m === "sektor";
+    var units = unitSusunan().filter(function (u) {
+      var d = rekSusunan.indeks[u.kode];
+      return u.wajib || u.rekening > 0 || (d && d.jumlahCif > 0);   // unit berekening wajib masuk grup (aturan Simpan)
+    });
+    function kelUnit(k) { return sektor ? (["08", "09", "10"].indexOf(k) >= 0 ? "konsumtif" : "produktif") : "semua"; }
+    function namaUnit(u) { return u.wajib ? u.nama : (u.nama || "Kantor " + u.kode); }
+    var a = units.map(function (u) { var g = grupBaru(namaUnit(u), [u.kode], kelUnit(u.kode)); g.namaAsal = g.nama; return g; });
+    var ha = gabungTipis(a, function (t, g) {
+      if (!(g.st.cif > 0 && t.st.cif > 0)) return t.nama;
+      if (t.st.cif >= CIF_MIN_GRUP) return t.nama;                    // diserap grup besar → nama tetap
+      var isi = (t.isi || [t.namaAsal]).concat(g.isi || [g.namaAsal]);
+      return sektor && t.kel === "konsumtif" && g.kel === "konsumtif" ? "Konsumtif Penghasilan Tetap"
+           : isi.length > 2 ? isi[0] + " dkk" : isi.join(" + ");
+    });
+    var label = m === "kantor" ? "Per kantor" : m === "penggunaan" ? "Per jenis penggunaan" : "Per kelompok sektor";
+    var opsi = [{
+      id: "unit", judul: label,
+      ket: ha.adaGabungBerisi ? "Unit dengan CIF < " + CIF_MIN_GRUP + " digabung" + (sektor ? " (konsumtif dengan konsumtif)." : ".")
+                              : "Setiap unit yang berisi menjadi grup sendiri.",
+      grup: ha.grup, disarankan: true
+    }];
+    if (ha.grup.length > 1 && ha.adaGabungBerisi) {
+      var semua = grupBaru("Semua", units.map(function (u) { return u.kode; }), "semua");
+      opsi.push({ id: "satu", judul: "Satu grup", ket: "Seluruh unit dihitung bersama — pilihan bila persebaran sangat timpang.",
+                  grup: [semua], disarankan: false });
+    }
+    return opsi;
+  }
+
+  function susunOpsiRek() {
+    var opsi = modeAkad() ? opsiAkad() : opsiUnit();
+    // nama unik + Top-N saran per grup
+    opsi.forEach(function (o) {
+      var dipakai = {};
+      o.grup.forEach(function (g) {
+        var n = g.nama, i = 2;
+        while (dipakai[n]) n = g.nama + " " + (i++);
+        g.nama = n; dipakai[n] = 1;
+        g.kode = urutKodeUnit(g.kode);
+        g.topN = saranTopN(g.st, targetTopN(g.nama));
+      });
+      o.tidakLayak = o.grup.filter(function (g) { return maksTopN(g.st.cif) < 1; }).length > 0;
+    });
+    // opsi kembar (partisi sama) cukup satu
+    function sidik(o) { return o.grup.map(function (g) { return g.kode.join(","); }).sort().join("|"); }
+    var hasil = [], lihat = {};
+    opsi.forEach(function (o) { var k = sidik(o); if (lihat[k]) { if (o.disarankan) lihat[k].disarankan = true; return; } lihat[k] = o; hasil.push(o); });
+    if (!hasil.some(function (o) { return o.disarankan; })) hasil[0].disarankan = true;
+    hasil.sort(function (a, b) { return (b.disarankan ? 1 : 0) - (a.disarankan ? 1 : 0); });
+    return hasil;
+  }
+
+  function terapkanOpsiRek(o) {
+    var namaKode = {};
+    o.grup.forEach(function (g) { g.kode.forEach(function (k) { namaKode[k] = g.nama; }); });
+    $("susunan-isi").querySelectorAll("input[data-kode]").forEach(function (inp) {
+      inp.value = namaKode[inp.dataset.kode] || "";
+    });
+    o.grup.forEach(function (g) {
+      if (g.topN >= 1) topNIsian[g.nama] = g.topN;
+      sigIsian[g.nama] = { metode: "ranking", ambangJt: (sigIsian[g.nama] || {}).ambangJt || null };
+    });
+    // isian lama tidak boleh menimpa Top-N saran saat daftar dibangun ulang
+    $("susunan-topn-grup").innerHTML = "";
+    gambarTopNGrup();
+    teks("susunan-rek-status", "Opsi “" + o.judul + "” diterapkan ke isian. Periksa, isi dasar kebijakan, lalu Simpan susunan.");
+  }
+
+  function gambarRekSusunan() {
+    var w = $("susunan-rek");
+    w.innerHTML = "";
+    tampil("susunan-rek", true);
+    var r = rekSusunan;
+    var kepala = el("div", "baris-antara");
+    kepala.appendChild(el("div", "judul-kecil", "Rekomendasi grup & Top-N"));
+    kepala.appendChild(tombol("Tutup", "tautan", function () { tampil("susunan-rek", false); }));
+    w.appendChild(kepala);
+    w.appendChild(el("div", "teks-kecil", "Dari " + r.file + (r.tanggal ? " · posisi " + tanggalPanjang(r.tanggal) : "") + " · " +
+      fmt.format(r.jumlahCif) + " CIF. Top-N maksimal 30% CIF grup; grup dengan CIF < " + CIF_MIN_GRUP + " digabung. " +
+      "CIF berbaki = baki debet > 0 menurut dasar CKPN Individu (ijarah & bagi hasil: tunggakan)."));
+    if (r.tanpaUnit) w.appendChild(el("div", "peringatan-box", r.tanpaUnit + " kontrak tanpa sandi kantor tidak masuk grup mana pun — lengkapi template."));
+
+    susunOpsiRek().forEach(function (o) {
+      var kartu = el("div", "rek-opsi" + (o.disarankan ? " disarankan" : ""));
+      var h = el("div", "baris-antara");
+      var jd = el("div", "nama-baris", o.judul);
+      if (o.disarankan) jd.appendChild(el("span", "lencana-rek", "Disarankan"));
+      h.appendChild(jd);
+      var bt = tombol("Terapkan", "tombol-sekunder tombol-kecil", function () { terapkanOpsiRek(o); });
+      bt.disabled = !statusP.bolehMenulis;
+      h.appendChild(bt);
+      kartu.appendChild(h);
+      kartu.appendChild(el("div", "teks-kecil", o.ket));
+      var t = el("table", "tabel-kualitas tabel-rek");
+      var hr = el("tr");
+      [["Grup", ""], ["CIF", "angka"], ["Top-N", "angka"]].forEach(function (x) { hr.appendChild(el("th", x[1], x[0])); });
+      t.appendChild(hr);
+      o.grup.forEach(function (g) {
+        var tr = el("tr");
+        var c1 = el("td");
+        c1.appendChild(el("div", "", g.nama));
+        c1.appendChild(el("div", "teks-kecil", g.kode.map(labelKode).join(", ")));
+        tr.appendChild(c1);
+        var c2 = el("td", "angka", fmt.format(g.st.cif));
+        c2.title = g.st.berbaki + " CIF berbaki · " + g.st.rekening + " rekening";
+        tr.appendChild(c2);
+        var c3 = el("td", "angka" + (g.topN < 1 ? " kurang" : ""), g.topN < 1 ? "—" : String(g.topN));
+        c3.title = "Maksimal " + maksTopN(g.st.cif) + " (30% dari " + g.st.cif + " CIF)";
+        tr.appendChild(c3);
+        t.appendChild(tr);
+      });
+      kartu.appendChild(t);
+      if (o.tidakLayak) kartu.appendChild(el("div", "peringatan-box", "Ada grup dengan CIF < 4 sehingga Top-N 30% kurang dari 1 — gabungkan grup tersebut."));
+      w.appendChild(kartu);
+    });
+    w.appendChild(el("div", "teks-kecil", "Terapkan mengisi nama grup dan Top-N (metode ranking) di editor; susunan baru berlaku setelah Simpan susunan."));
+    var st = el("div", "teks-kecil ok");
+    st.id = "susunan-rek-status";
+    w.appendChild(st);
+  }
+
+  $("btn-susunan-rek").addEventListener("click", function () {
+    if (!statusP) return;
+    if (rekSusunan && rekSusunan.kunci === kunciRek()) { gambarRekSusunan(); return; }
+    var b = this;
+    b.disabled = true;
+    tampil("susunan-rek", true);
+    $("susunan-rek").innerHTML = "";
+    $("susunan-rek").appendChild(el("div", "teks-kecil", "Membaca CIF per segmen dari template periode Master (Master!D14)…"));
+    panggil("rekomendasiSusunan", {}, 600000).then(function (r) {
+      r.kunci = kunciRek();
+      r.indeks = {};
+      (r.unit || []).forEach(function (u) { r.indeks[u.kode] = u; });
+      rekSusunan = r;
+      gambarRekSusunan();
+      gambarTopNGrup();     // tampilkan info CIF di setiap isian Top-N
+    }).catch(function (e) {
+      $("susunan-rek").innerHTML = "";
+      $("susunan-rek").appendChild(el("div", "peringatan-box", e.message));
+    }).then(function () { b.disabled = false; });
+  });
+
   $("btn-susunan-batal").addEventListener("click", function () { tampil("kartu-susunan", false); });
   $("btn-susunan-simpan").addEventListener("click", function () {
     var peta = {};
@@ -2424,6 +2741,25 @@
       $("susunan-hasil").innerHTML = "";
       $("susunan-hasil").appendChild(el("div", "peringatan-box", "Lengkapi signifikansi CKPN Individu untuk grup: " + salah.join(", ") + "."));
       return;
+    }
+    // Top-N dibanding jumlah CIF grup (hanya bila rekomendasi sudah dimuat untuk periode & mode ini)
+    if (rekSusunan) {
+      var habis = [], lewat = [];
+      Object.keys(topN).forEach(function (nm) {
+        var st = statistikGrup(kodeGrupSusunan(nm));
+        if (!st.cif) return;
+        if (topN[nm] >= st.cif) habis.push(nm + " (Top-N " + topN[nm] + ", CIF " + st.cif + ")");
+        else if (topN[nm] > maksTopN(st.cif)) lewat.push(nm + " (Top-N " + topN[nm] + ", maks " + maksTopN(st.cif) + ")");
+      });
+      if (habis.length) {
+        $("susunan-hasil").innerHTML = "";
+        $("susunan-hasil").appendChild(el("div", "peringatan-box", "Top-N tidak boleh sama dengan atau melebihi jumlah CIF grup — " +
+          "populasi kolektif menjadi kosong dan perhitungan gagal: " + habis.join(", ") +
+          ". Kecilkan Top-N atau gabungkan grup (lihat Rekomendasi grup & Top-N)."));
+        return;
+      }
+      if (lewat.length && !window.confirm("Top-N melebihi 30% jumlah CIF grup: " + lewat.join(", ") +
+          ". Populasi kolektif menjadi kecil sehingga PD/LGD kurang representatif. Tetap simpan?")) return;
     }
     (statusP.grup || []).forEach(function (g) {
       if (!g.signifikan && !g.topN) return;   // belum pernah ditetapkan
@@ -5891,6 +6227,7 @@
       " grup tersimpan — ringkasan hanya memuat grup tersimpan dan konsolidasi belum lengkap."));
     if (ovStatus.tanggal === dok.tanggal && ovStatus.ada === false) w.appendChild(el("div", "peringatan-box", "Snapshot overview periode ini belum ada — bagian portofolio kosong."));
   }
+
   $("dr-catatan").addEventListener("input", function () { if (dr) dr.catatan = this.value; });
   ["ind", "lgd", "memo"].forEach(function (k) {
     $("dr-lamp-" + k).addEventListener("change", function () { if (dr) dr.lampiran[k] = this.checked; });
@@ -7241,26 +7578,11 @@
         .map(function (k) { return asal[k] + " " + gu.ringkas[k].n; });
       if (teksAsal.length) $(id("ringkas")).appendChild(el("div", "teks-kecil", "Asal: " + teksAsal.join(" · ")));
 
-      // rekening tanpa atribut
-      teks(id("tanpa-judul"), tanpa.length ? "Belum ada " + cfg.label + " · " + tanpa.length + " rek (" +
-        jt(tanpa.reduce(function (a, r) { return a + r.baki; }, 0)) + ")" : "Belum ada " + cfg.label);
-      if (!tanpa.length) $(id("tanpa")).appendChild(el("div", "teks-kecil", "Semua rekening cohort sudah memiliki " + cfg.label + "."));
-      else {
-        var ul = el("ul", "daftar-rek-ref");
-        tanpa.slice(0, 300).forEach(function (r) {
-          var li = el("li", "baris-antara");
-          var info = el("div");
-          info.appendChild(el("div", "", (r.rek || r.kunci) + (r.nama ? " · " + r.nama : "")));
-          info.appendChild(el("div", "teks-kecil", "Hapus buku " + r.tahunHB + " · " + jt(r.baki) + " · kode produk " + r.awalan + (r.produk ? " · " + r.produk : "")));
-          li.appendChild(info);
-          var sel = pilih("", "— " + cfg.pendek + " —", cfg.judulPilih + " rekening " + (r.rek || r.kunci));
-          sel.addEventListener("change", function () { catat("rek", r.kunci, sel.value); });
-          li.appendChild(sel);
-          ul.appendChild(li);
-        });
-        $(id("tanpa")).appendChild(ul);
-        if (tanpa.length > 300) $(id("tanpa")).appendChild(el("div", "teks-kecil", "Ditampilkan 300 rekening dengan baki terbesar. Isi per kode produk untuk sisanya."));
-      }
+      // ---- koreksi per rekening ----
+      // Semua rekening cohort tampil beserta atribut yang dipakai dan asalnya. Rekening yang tidak ditemukan di
+      // KC0600–KC1100 file tahunan hanya DITEBAK dari kode produk (mayoritas) → filter bawaan "Perlu dicek"
+      // supaya petugas bisa memilih jenis/kelompok yang benar per debitur, bukan hanya mengisi yang kosong.
+      gambarDaftarRek(gu);
 
       // per kode produk
       var produk = gu.produk || [];
@@ -7287,23 +7609,141 @@
       gp.appendChild(tp);
       $(id("produk")).appendChild(gp);
 
-      // isian manual per rekening yang sudah ada
-      var manRek = (gu.manual || []).filter(function (m) { return m.jenis === "rek"; });
-      if (manRek.length) {
-        var w = $(id("manual"));
-        w.appendChild(el("div", "label-kecil jarak-atas", "Isian per rekening · " + manRek.length));
-        var ul2 = el("ul", "daftar-rek-ref");
-        manRek.forEach(function (m) {
-          var li = el("li", "baris-antara");
-          li.appendChild(el("div", "teks-kecil", m.kunci + " · " + m.nama + " · " + m.pengguna + " " + m.waktu + (m.alasan ? " · " + m.alasan : "")));
-          var sel = pilih(m.kode, "hapus isian", cfg.judulPilih + " rekening " + m.kunci);
-          sel.addEventListener("change", function () { catat("rek", m.kunci, sel.value); });
-          li.appendChild(sel);
-          ul2.appendChild(li);
-        });
-        w.appendChild(ul2);
-      }
     }
+
+    // Asal atribut → label & tingkat kepastian
+    var ASAL = {
+      "manual-rek":    { teks: "isian per rekening", kelas: "ok" },
+      "rekening":      { teks: "data rekening di KC0600–KC1100", kelas: "ok" },
+      "manual-produk": { teks: "isian per kode produk", kelas: "waspada" },
+      "produk":        { teks: "tebakan kode produk", kelas: "waspada" },
+      "tanpa":         { teks: "belum ada", kelas: "kurang" }
+    };
+    var FILTER = [
+      { k: "cek", label: "Perlu dicek", cocok: function (r) { return r.sumber === "produk" || r.sumber === "manual-produk" || r.sumber === "tanpa"; } },
+      { k: "tanpa", label: "Belum ada", cocok: function (r) { return r.sumber === "tanpa"; } },
+      { k: "manual", label: "Isian per rekening", cocok: function (r) { return r.sumber === "manual-rek"; } },
+      { k: "semua", label: "Semua", cocok: function () { return true; } }
+    ];
+    var daftar = { filter: "cek", cari: "", batas: 100, gu: null };
+
+    // nilai manual asli (sebelum diubah) & nilai yang sedang diisi
+    function nilaiAsli(r) { return r.sumber === "manual-rek" ? r.kode : ""; }
+    function nilaiIsi(r) { var u = ubah["rek|" + r.kunci]; return u ? u.kode : nilaiAsli(r); }
+
+    function catatRek(r, kode) {
+      if (kode === nilaiAsli(r)) delete ubah["rek|" + r.kunci];   // kembali ke semula → bukan perubahan
+      else ubah["rek|" + r.kunci] = { jenis: "rek", kunci: r.kunci, kode: kode };
+      var n = Object.keys(ubah).length;
+      $("btn-" + id("simpan")).textContent = teksSimpan(n);
+      $("btn-" + id("simpan")).disabled = !n || !refKC.bolehMenulis;
+    }
+
+    function tersaring() {
+      var gu = daftar.gu, f = FILTER.filter(function (x) { return x.k === daftar.filter; })[0];
+      var q = daftar.cari.toLowerCase();
+      return (gu.rekening || []).filter(function (r) {
+        if (!f.cocok(r)) return false;
+        if (!q) return true;
+        return [r.rek, r.kunci, r.cif, r.nama, r.awalan].some(function (x) { return x && String(x).toLowerCase().indexOf(q) >= 0; });
+      });
+    }
+
+    function gambarDaftarRek(gu) {
+      daftar.gu = gu;
+      daftar.batas = 100;
+      var rek = gu.rekening || [];
+      var nCek = rek.filter(FILTER[0].cocok).length;
+      // tanpa data rekening (DLL lama): kembali ke daftar "tanpa"
+      if (!gu.rekening) rek = gu.tanpa || [];
+      daftar.filter = (gu.tanpa || []).length ? "tanpa" : nCek ? "cek" : "semua";
+      var w = $(id("tanpa"));
+      w.innerHTML = "";
+      teks(id("tanpa-judul"), "Koreksi per rekening · " + nCek + " rek perlu dicek dari " + rek.length + " rek cohort");
+
+      var chip = el("div", "chip-dimensi");
+      FILTER.forEach(function (f) {
+        var n = rek.filter(f.cocok).length;
+        var b = el("button", "", f.label + " · " + n);
+        b.type = "button";
+        b.dataset.k = f.k;
+        b.setAttribute("aria-pressed", f.k === daftar.filter ? "true" : "false");
+        b.addEventListener("click", function () {
+          daftar.filter = f.k; daftar.batas = 100;
+          chip.querySelectorAll("button").forEach(function (x) { x.setAttribute("aria-pressed", x.dataset.k === f.k ? "true" : "false"); });
+          isiDaftar();
+        });
+        chip.appendChild(b);
+      });
+      w.appendChild(chip);
+
+      var cari = el("input", "isian");
+      cari.type = "search";
+      cari.placeholder = "Cari no. rekening, CIF, nama, atau kode produk";
+      cari.setAttribute("aria-label", "Cari rekening hapus buku");
+      cari.addEventListener("input", function () { daftar.cari = cari.value.trim(); daftar.batas = 100; isiDaftar(); });
+      w.appendChild(cari);
+
+      // isi massal: semua rekening hasil saringan (mis. seluruh debitur satu kode produk)
+      var massal = el("div", "baris-isian ref-massal");
+      var selM = pilih("", "— isi semua yang tampil —", cfg.judulPilih + " untuk semua rekening yang tampil");
+      var btM = tombol("Terapkan", "tombol-sekunder tombol-kecil", function () {
+        if (!selM.value) return;
+        var x = tersaring();
+        if (!window.confirm("Isi " + cfg.label + " " + cfg.singkat(selM.value) + " untuk " + x.length + " rekening yang tampil?")) return;
+        x.forEach(function (r) { catatRek(r, selM.value); });
+        isiDaftar();
+      });
+      btM.disabled = !refKC.bolehMenulis;
+      massal.appendChild(selM);
+      massal.appendChild(btM);
+      w.appendChild(massal);
+
+      var isi = el("div");
+      isi.id = id("daftar");
+      w.appendChild(isi);
+      isiDaftar();
+    }
+
+    function isiDaftar() {
+      var w = $(id("daftar"));
+      if (!w) return;
+      w.innerHTML = "";
+      var x = tersaring();
+      if (!x.length) {
+        w.appendChild(el("div", "teks-kecil", daftar.filter === "cek" && !daftar.cari
+          ? "Semua rekening cohort sudah memiliki " + cfg.label + " dari data rekening atau isian per rekening."
+          : "Tidak ada rekening yang cocok."));
+        return;
+      }
+      w.appendChild(el("div", "teks-kecil", x.length + " rek · " + jt(x.reduce(function (a, r) { return a + r.baki; }, 0)) +
+        (x.length > daftar.batas ? " · tampil " + daftar.batas + " baki terbesar" : "")));
+      var ul = el("ul", "daftar-rek-ref");
+      x.slice(0, daftar.batas).forEach(function (r) {
+        var li = el("li", "baris-antara");
+        var info = el("div");
+        info.appendChild(el("div", "", (r.rek || r.kunci) + (r.nama ? " · " + r.nama : "")));
+        info.appendChild(el("div", "teks-kecil", (r.cif ? "CIF " + r.cif + " · " : "") + "hapus buku " + r.tahunHB + " · " + jt(r.baki) +
+          " · kode produk " + r.awalan + (r.produk ? " · " + r.produk : "")));
+        var a = ASAL[r.sumber] || ASAL.tanpa;
+        info.appendChild(el("div", "teks-kecil ref-asal " + a.kelas,
+          r.kode ? "Dipakai: " + r.kode + " · " + (cfg.nama[r.kode] || "") + " (" + a.teks + ")" : "Belum ada " + cfg.label));
+        li.appendChild(info);
+        var sel = pilih(nilaiIsi(r), r.sumber === "manual-rek" ? "hapus isian (otomatis)" : "otomatis" + (r.kode ? ": " + cfg.singkat(r.kode) : ""),
+          cfg.judulPilih + " rekening " + (r.rek || r.kunci));
+        if (ubah["rek|" + r.kunci]) sel.classList.add("ref-diubah");
+        sel.addEventListener("change", function () {
+          catatRek(r, sel.value);
+          sel.classList.toggle("ref-diubah", !!ubah["rek|" + r.kunci]);
+        });
+        li.appendChild(sel);
+        ul.appendChild(li);
+      });
+      w.appendChild(ul);
+      if (x.length > daftar.batas)
+        w.appendChild(tombol("Tampilkan " + Math.min(100, x.length - daftar.batas) + " lagi", "tautan", function () { daftar.batas += 100; isiDaftar(); }));
+    }
+
     $("btn-" + id("simpan")).addEventListener("click", function () {
       var item = Object.keys(ubah).map(function (k) { return ubah[k]; });
       var alasan = $("refkc-alasan").value.trim();

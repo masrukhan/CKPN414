@@ -1003,3 +1003,29 @@ body.ada-halaman { overflow: hidden; }
 .gb-ikut { list-style: none; padding: 0; margin: 8px 0 0; }
 .gb-ikut li { padding: 2px 0 2px 20px; position: relative; color: var(--teks); }
 .gb-ikut li::before { content: "\2713"; position: absolute; left: 2px; color: var(--sukses); font-weight: 700; }
+
+/* Rekomendasi susunan grup & Top-N (⚙ Pengaturan › Susunan grup) */
+.susunan-rek { border: 1px solid var(--garis); border-radius: 8px; padding: 10px; margin: 8px 0 4px; background: #FAFBFC; }
+.susunan-rek[hidden] { display: none; }
+.tombol-rek { border-color: var(--aksen); color: var(--aksen); }
+.rek-opsi { border: 1px solid var(--garis); border-radius: 6px; padding: 8px; margin-top: 8px; background: #fff; }
+.rek-opsi.disarankan { border-color: var(--aksen); box-shadow: inset 3px 0 0 var(--aksen); }
+.rek-opsi .nama-baris { font-weight: 600; }
+.lencana-rek { margin-left: 6px; font-size: 10.5px; font-weight: 600; padding: 1px 6px; border-radius: 999px;
+  background: var(--aksen); color: #fff; vertical-align: 1px; }
+.tombol-kecil { height: 26px; padding: 0 10px; font-size: 12px; }
+.tabel-rek { margin-top: 6px; }
+.tabel-rek td .teks-kecil { font-family: "Segoe UI", system-ui, sans-serif; color: var(--teks-2); font-size: 10.5px; text-align: left; }
+.tabel-rek td:first-child { text-align: left; font-family: inherit; }
+.sig-baris .sig-info { flex: 1 1 100%; margin-top: -2px; }
+.sig-info.ok { color: var(--sukses); }
+.sig-info.waspada { color: var(--peringatan); }
+.sig-info.kurang { font-weight: 600; }
+
+/* Referensi hapus buku: koreksi jenis penggunaan / kelompok sektor per rekening */
+.ref-asal.ok { color: var(--sukses); }
+.ref-asal.waspada { color: var(--peringatan); }
+.ref-asal.kurang { color: var(--galat); font-weight: 600; }
+select.ref-diubah { border-color: var(--aksen); box-shadow: 0 0 0 1px var(--aksen); }
+.ref-massal { display: flex; gap: 6px; align-items: center; margin: 6px 0; }
+.ref-massal select { flex: 1 1 auto; min-width: 0; }
