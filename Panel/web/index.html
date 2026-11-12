@@ -866,8 +866,8 @@
           <b>OS segmen</b> = OS yang dipakai Ringkasan &amp; perhitungan CKPN (baris berdebitur, kualitas 1–5).
           Selisih neraca vs nominatif berarti GB0200 dan KC tidak dari tarikan yang sama atau ada rekening di luar nominatif;
           selisih nominatif vs OS segmen berarti ada baris tanpa nama/kualitas atau kolom OS berbeda dengan kolom neraca —
-          barisnya ditampilkan di rincian segmen. Piutang sewa (E15) bukan OS: ia dikeluarkan dari OS neraca dan menjadi objek CKPN KC1100
-          bersama tunggakan ujroh (tidak ada pos neraca).
+          barisnya ditampilkan di rincian segmen. Baki debet ijarah = aset ijarah − akumulasi penyusutan + piutang sewa (sandi 181 − 182 + 160; KC1100 X − AI + AL).
+          Tunggakan ujroh (tidak ada pos neraca) dan CKPN aset ijarah (E27) tidak masuk OS.
         </div>
         <div id="kn-tabel" class="teks-kecil">—</div>
       </div>
@@ -1289,7 +1289,13 @@
         <div class="judul-kartu">2 · Cek file sumber</div>
         <span id="gb-hitung" class="teks-kecil"></span>
       </div>
-      <div id="gb-folder" class="path teks-kecil"></div>
+      <!-- satu folder sumber untuk semua file (individu, PD, LGD); dicari langsung ke folder -->
+      <div class="baris-antara gb-folder-baris">
+        <div class="gb-folder-isi"><span class="label-kecil">Folder sumber</span>
+          <div id="gb-folder" class="path teks-kecil"></div>
+          <div id="gb-folder-ket" class="teks-kecil"></div></div>
+        <button id="btn-gb-folder" class="tombol-sekunder tombol-kecil" type="button">Ganti folder…</button>
+      </div>
       <div id="gb-file" class="teks-kecil">—</div>
       <p id="gb-pola" class="teks-kecil catatan"></p>
     </div>

@@ -1029,3 +1029,9 @@ body.ada-halaman { overflow: hidden; }
 select.ref-diubah { border-color: var(--aksen); box-shadow: 0 0 0 1px var(--aksen); }
 .ref-massal { display: flex; gap: 6px; align-items: center; margin: 6px 0; }
 .ref-massal select { flex: 1 1 auto; min-width: 0; }
+
+/* Ganti bulan: satu folder sumber */
+.gb-folder-baris { align-items: flex-start; gap: 8px; margin-bottom: 6px; }
+.gb-folder-isi { min-width: 0; flex: 1 1 auto; }
+.gb-folder-isi .path { word-break: break-all; }
+#btn-gb-folder { white-space: nowrap; flex: 0 0 auto; }

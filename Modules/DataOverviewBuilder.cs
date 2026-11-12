@@ -26,10 +26,14 @@ namespace CKPNLibrary.Modules
     /// Definisi kolom (tidak berubah dari versi sebelumnya):
     ///   OS  KC0600-0800 : AC            KC0900 : AA
     ///       KC1000      : AG (saldo modal)
-    ///       KC1100      : X - AI (harga perolehan - akumulasi penyusutan) = sisa pokok ijarah,
-    ///                     sama dengan GB0200 E25 - E26. BUKAN AB (nilai kontrak = pokok + seluruh ujroh awal),
-    ///                     karena AB - AI ikut memuat ujroh yang belum jatuh tempo → OS & NPF ijarah terlalu besar.
+    ///       KC1100      : X - AI + AL (harga perolehan - akumulasi penyusutan + tunggakan pokok sewa)
+    ///                     = baki debet ijarah, sama dengan GB0200 sandi 180 = 181 - 182 + 160 (E25 - E26 + E15).
+    ///                     BUKAN AB (nilai kontrak = pokok + seluruh ujroh awal), karena AB ikut memuat ujroh yang
+    ///                     belum jatuh tempo. Tunggakan ujroh (AM) tidak termasuk (tidak ada pos neraca).
     ///                     OS ini hanya untuk Ringkasan/NPF/kontrol neraca; CKPN KC1100 memakai EAD tunggakan (AL + AM).
+    ///   OS neraca (GB0200): piutang (E7 - E15) + bagi hasil (E16) + salam (E21) + ijarah (E25 - E26 + E15).
+    ///                     Piutang sewa E15 tercatat di bawah piutang (E7) tetapi dihitung sebagai bagian baki ijarah;
+    ///                     CKPN aset ijarah (E27) tidak mengurangi OS.
     ///   EAD KC0600-0900 : sama dengan OS (kolom SheetSpec)
     ///       KC1000      : AL bila kualitas = 5 (Macet), selain itu 0; + AN (juga hanya kualitas 5) bila
     ///                     bagi hasil dimasukkan ke ruang lingkup (⚙ Pengaturan, bawaan: tidak)
@@ -61,6 +65,7 @@ namespace CKPNLibrary.Modules
         private const string KC1000_OS        = "AG";
         private const string KC1100_Perolehan = "X";    // harga perolehan (pokok awal ijarah) — bukan AB nilai kontrak
         private const string KC1100_Susut     = "AI";
+        // KC1100_TungPokok (AL) juga menjadi bagian OS: baki debet ijarah = X - AI + AL
         private const string KC1000_TungPokok = "AL";
         private const string KC1000_TungBasil = "AN";
 
@@ -327,7 +332,10 @@ namespace CKPNLibrary.Modules
                 Func<string, double> v = a => ToDouble(((Excel.Range)ws.Range[a]).Value2);
                 h.AdaKeuangan  = true;
                 h.Asset        = v("E38");
-                h.OSNeraca     = v("E7") + v("E16") + v("E21") + v("E24") - v("E15");
+                // Baki debet ijarah = sandi 181 - 182 + 160 (aset ijarah - akumulasi penyusutan + piutang sewa);
+                // piutang sewa (E15) dipindah dari kelompok piutang (E7) ke ijarah, CKPN aset ijarah (E27) tidak mengurangi OS
+                double ijarah  = v("E25") - v("E26") + v("E15");
+                h.OSNeraca     = (v("E7") - v("E15")) + v("E16") + v("E21") + ijarah;
                 h.CKPNNeraca   = v("E36");
                 h.LabaLalu     = v("E71");
                 h.LabaBerjalan = v("E73");
@@ -471,7 +479,14 @@ namespace CKPNLibrary.Modules
             }
             if (shName == "KC1100")
             {
-                if (!ead) return Selisih2(ws, KC1100_Perolehan, KC1100_Susut, dataStart, lastRow);
+                if (!ead)
+                {
+                    // OS = harga perolehan - akumulasi penyusutan + tunggakan pokok sewa (= sandi 181 - 182 + 160)
+                    double[] os = Selisih2(ws, KC1100_Perolehan, KC1100_Susut, dataStart, lastRow);
+                    double[] tp = ExcelHelper.BacaKolomDouble(ws, KC1100_TungPokok, dataStart, lastRow);
+                    for (int i = 0; i < os.Length && i < tp.Length; i++) os[i] += tp[i];
+                    return os;
+                }
                 // Ruang lingkup: pokok sewa semua kualitas; imbalan hanya kualitas 1–2
                 double[] pokok = ExcelHelper.BacaKolomDouble(ws, KC1100_TungPokok, dataStart, lastRow);
                 double[] ujroh = ExcelHelper.BacaKolomDouble(ws, KC1100_Ujroh, dataStart, lastRow);

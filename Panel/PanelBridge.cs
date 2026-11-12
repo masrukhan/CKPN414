@@ -281,7 +281,14 @@ namespace CKPNLibrary.Panel
                     // ---- Ganti bulan pelaporan kertas kerja (Master!C4 + path file sumber) ----
                     case "rencanaGantiBulan":
                         string tglGb = Convert.ToString(Ambil(args, "tanggal") ?? "");
-                        JalankanDiExcel(host, id, app => GantiBulan.Rencana(app, tglGb));
+                        string folderGb = Convert.ToString(Ambil(args, "folder") ?? "");   // kosong = folder terbanyak di Master
+                        JalankanDiExcel(host, id, app => GantiBulan.Rencana(app, tglGb, folderGb));
+                        break;
+
+                    // satu folder sumber untuk semua file individu, PD, dan LGD
+                    case "pilihFolderSumber":
+                        string awalFd = Convert.ToString(Ambil(args, "path") ?? "");
+                        JalankanDiExcel(host, id, app => GantiBulan.PilihFolder(awalFd));
                         break;
 
                     case "pilihFileSumber":

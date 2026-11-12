@@ -15,9 +15,12 @@ namespace CKPNLibrary.Panel
     ///
     /// Alur:
     ///   1. <see cref="Rencana"/>: untuk bulan baru, hitung bulan/tahun setiap slot path di Master
-    ///      (meniru rumus label Master yang bergantung pada C4 dan D17), lalu cari file sumber tiap slot:
-    ///        a. pola nama yang dipelajari dari path Master saat ini (mis. "..._MMYYYY.xlsm");
-    ///        b. bila tidak ada, pindai folder yang sama dan cocokkan bulan dari nama file (pola lain, mis. "jan26").
+    ///      (meniru rumus label Master yang bergantung pada C4 dan D17), lalu cari file sumber tiap slot
+    ///      LANGSUNG DI SATU FOLDER SUMBER (termasuk subfolder), bukan dari isi sheet Master:
+    ///        a. nama file berakhiran "_MMYYYY" sebelum ekstensi (mis. "apa_saja_012026.xlsm") — nama di depannya bebas;
+    ///        b. bila tidak ada, file lain di folder itu yang namanya memuat bulan tersebut (mis. "jan26") → "nama beda";
+    ///        c. bila tetap tidak ada, path Master saat ini untuk bulan yang sama (bila filenya masih ada).
+    ///      Folder sumber = pilihan user di panel; bawaan = folder yang paling banyak dipakai path Master saat ini.
     ///   2. Panel menampilkan status per slot; user dapat memilih file lain (<see cref="PilihFile"/>).
     ///   3. <see cref="Terapkan"/>: tulis Master!C4 dan path terpilih. Label bulan, tanggal ref, dan periode
     ///      penilaian individu adalah rumus Excel yang mengikuti C4 dengan sendirinya.
@@ -95,55 +98,68 @@ namespace CKPNLibrary.Panel
             SlotUntuk(new DateTime(2026, 1, 31), false).Select(s => s.Sel), StringComparer.OrdinalIgnoreCase);
 
         // =============================================================
-        // Pola nama file
+        // Aturan nama file: <nama bebas>_MMYYYY.<ekstensi>
         // =============================================================
-        /// <summary>Teks bulan dalam berbagai pola; urutan = prioritas (yang panjang dulu).</summary>
-        private static IEnumerable<KeyValuePair<string, string>> Rendering(int y, int m)
+        private static readonly Regex RxAkhiranBulan = new Regex("_([0-9]{2})([0-9]{4})$");
+        private const string ContohPola = "…_MMYYYY.xlsm / .xlsx (mis. …_012026.xlsm)";
+        private const int KedalamanFolder = 3;   // folder sumber + subfolder s.d. 3 tingkat
+
+        /// <summary>Bulan-tahun (yyyymm) bila nama file berakhiran _MMYYYY; 0 bila tidak.</summary>
+        internal static int KunciAkhiran(string namaFile)
         {
-            yield return new KeyValuePair<string, string>("MMYYYY", m.ToString("00") + y.ToString("0000"));
-            yield return new KeyValuePair<string, string>("YYYYMM", y.ToString("0000") + m.ToString("00"));
-            yield return new KeyValuePair<string, string>("bbbYYYY", Bln3[m - 1] + y.ToString("0000"));
-            yield return new KeyValuePair<string, string>("bbbYY", Bln3[m - 1] + Yy(y));
-            yield return new KeyValuePair<string, string>("MMYY", m.ToString("00") + Yy(y));
+            var mt = RxAkhiranBulan.Match(Path.GetFileNameWithoutExtension(namaFile ?? ""));
+            if (!mt.Success) return 0;
+            int bl = int.Parse(mt.Groups[1].Value), th = int.Parse(mt.Groups[2].Value);
+            return bl >= 1 && bl <= 12 && th >= 2000 && th <= 2100 ? th * 100 + bl : 0;
         }
 
-        private static string Render(string pola, int y, int m)
+        /// <summary>Nama depan (sebelum _MMYYYY) dan ekstensi dari path yang mengikuti aturan; null bila tidak.</summary>
+        private static string[] NamaDepan(string path)
         {
-            foreach (var kv in Rendering(y, m)) if (kv.Key == pola) return kv.Value;
-            return null;
+            if (string.IsNullOrEmpty(path) || KunciAkhiran(path) == 0) return null;
+            string n = Path.GetFileNameWithoutExtension(path);
+            return new[] { n.Substring(0, n.Length - 7), Path.GetExtension(path) };
         }
 
-        private class Pola
+        private class Calon
         {
-            public string Folder, Awalan, Akhiran, Kode;   // nama = Awalan + Render(Kode) + Akhiran
-            public bool Kapital;                            // nama bulan berhuruf besar awal (Jan26)
-            public string Kunci { get { return (Folder + "|" + Awalan + "|" + Kode + "|" + Akhiran).ToLowerInvariant(); } }
-            public string Buat(int y, int m)
+            public string Path; public int Kedalaman;
+        }
+
+        /// <summary>Daftar file Excel di folder sumber + subfolder (tanpa file kunci "~$").</summary>
+        private static List<Calon> DaftarFile(string folder)
+        {
+            var hasil = new List<Calon>();
+            var antre = new Queue<KeyValuePair<string, int>>();
+            antre.Enqueue(new KeyValuePair<string, int>(folder, 0));
+            while (antre.Count > 0)
             {
-                string r = Render(Kode, y, m);
-                if (Kapital && r.Length > 0) r = char.ToUpperInvariant(r[0]) + r.Substring(1);
-                return Path.Combine(Folder, Awalan + r + Akhiran);
-            }
-            public string Contoh { get { return Awalan + "{" + Kode.Replace("bbb", "Bln") + "}" + Akhiran; } }
-        }
-
-        /// <summary>Pola nama dari path yang diketahui bulannya (cocokkan teks bulan di nama file, batas bukan digit).</summary>
-        private static Pola PelajariPola(string path, int y, int m)
-        {
-            if (string.IsNullOrEmpty(path)) return null;
-            string nama = Path.GetFileName(path), folder = Path.GetDirectoryName(path) ?? "";
-            foreach (var kv in Rendering(y, m))
-            {
-                var mt = Regex.Match(nama, "(?<![0-9])" + Regex.Escape(kv.Value) + "(?![0-9])", RegexOptions.IgnoreCase);
-                if (!mt.Success) continue;
-                return new Pola
+                var d = antre.Dequeue();
+                try
                 {
-                    Folder = folder, Kode = kv.Key,
-                    Awalan = nama.Substring(0, mt.Index), Akhiran = nama.Substring(mt.Index + mt.Length),
-                    Kapital = kv.Key.StartsWith("bbb") && char.IsUpper(nama[mt.Index])
-                };
+                    foreach (var f in Directory.GetFiles(d.Key, "*.xls*"))
+                        if (!Path.GetFileName(f).StartsWith("~$")) hasil.Add(new Calon { Path = f, Kedalaman = d.Value });
+                    if (d.Value < KedalamanFolder)
+                        foreach (var sub in Directory.GetDirectories(d.Key))
+                            antre.Enqueue(new KeyValuePair<string, int>(sub, d.Value + 1));
+                }
+                catch (Exception ex) { CatatanLog.Tulis("Pindai folder " + d.Key + ": " + ex.Message); }
             }
-            return null;
+            return hasil;
+        }
+
+        /// <summary>
+        /// Calon terbaik bila ada beberapa file untuk bulan yang sama (mis. template + file hasil ekspor):
+        /// nama depan sama dengan yang dipakai Master saat ini untuk bagian itu, lalu folder paling atas,
+        /// lalu .xlsm, lalu nama.
+        /// </summary>
+        private static string Terbaik(List<Calon> l, string[] namaDepan)
+        {
+            string depan = namaDepan != null ? namaDepan[0] : null;
+            return l.OrderBy(x => depan != null && Path.GetFileName(x.Path).StartsWith(depan + "_", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+                    .ThenBy(x => x.Kedalaman)
+                    .ThenBy(x => x.Path.EndsWith(".xlsm", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+                    .ThenBy(x => x.Path, StringComparer.OrdinalIgnoreCase).First().Path;
         }
 
         private static readonly Regex RxAngka = new Regex("(?<![0-9])([0-9]{4,6})(?![0-9])");
@@ -198,7 +214,7 @@ namespace CKPNLibrary.Panel
         // =============================================================
         // Rencana
         // =============================================================
-        public static Dictionary<string, object> Rencana(Excel.Application app, string tanggal)
+        public static Dictionary<string, object> Rencana(Excel.Application app, string tanggal, string folderPilihan)
         {
             Excel.Workbook wb = PanelBridge.CariWorkbookAplikasi(app);
             if (wb == null) throw new InvalidOperationException("Workbook aplikasi CKPN tidak sedang terbuka.");
@@ -214,11 +230,10 @@ namespace CKPNLibrary.Panel
                 throw new InvalidOperationException("Tanggal bulan baru tidak valid: " + tanggal);
             baru = new DateTime(baru.Year, baru.Month, DateTime.DaysInMonth(baru.Year, baru.Month));
 
-            // ---- Peta bulan → file dari isi Master saat ini (slot dihitung dari C4 saat ini) ----
+            // ---- Isi Master saat ini: file per bulan (cadangan), nama depan per bagian, folder terbanyak ----
             var dikenal = new Dictionary<int, string>();
-            var hitungPola = new Dictionary<string, int>();
-            var contohPola = new Dictionary<string, Pola>();
-            var folder = new List<string>();
+            var namaDepan = new Dictionary<string, string[]>();          // bagian → {nama depan, ekstensi}
+            var hitungFolder = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             if (adaKini)
             {
                 foreach (var s in SlotUntuk(kini, setahun))
@@ -227,70 +242,78 @@ namespace CKPNLibrary.Panel
                     if (p.Length == 0 || p.ToLowerInvariant().Contains("pilih")) continue;
                     int k = s.Tahun * 100 + s.Bulan;
                     if (File.Exists(p) && !dikenal.ContainsKey(k)) dikenal[k] = p;
-                    var po = PelajariPola(p, s.Tahun, s.Bulan);
-                    if (po != null)
-                    {
-                        int c; hitungPola.TryGetValue(po.Kunci, out c); hitungPola[po.Kunci] = c + 1;
-                        if (!contohPola.ContainsKey(po.Kunci)) contohPola[po.Kunci] = po;
-                    }
+                    var nd = NamaDepan(p);
+                    if (nd != null && !namaDepan.ContainsKey(s.Bagian)) namaDepan[s.Bagian] = nd;
                     string f = Path.GetDirectoryName(p);
-                    if (!string.IsNullOrEmpty(f) && !folder.Contains(f, StringComparer.OrdinalIgnoreCase)) folder.Add(f);
+                    if (!string.IsNullOrEmpty(f)) { int c; hitungFolder.TryGetValue(f, out c); hitungFolder[f] = c + 1; }
                 }
             }
-            Pola pola = hitungPola.Count == 0 ? null : contohPola[hitungPola.OrderByDescending(x => x.Value).First().Key];
-            if (pola != null) { folder.Remove(pola.Folder); folder.Insert(0, pola.Folder); }
 
-            // ---- Indeks file di folder sumber: bulan → daftar path ----
-            var indeks = new Dictionary<int, List<string>>();
-            foreach (var f in folder)
-            {
-                string[] files;
-                try { files = Directory.GetFiles(f, "*.xls*"); }
-                catch (Exception ex) { CatatanLog.Tulis("Pindai folder " + f + ": " + ex.Message); continue; }
-                foreach (var file in files)
+            // ---- Satu folder sumber untuk semua slot (individu, PD, LGD) ----
+            string folder = (folderPilihan ?? "").Trim();
+            bool folderDipilih = folder.Length > 0;
+            if (!folderDipilih)
+                folder = hitungFolder.Count == 0 ? "" : hitungFolder.OrderByDescending(x => x.Value).First().Key;
+            if (folder.Length > 0 && !Directory.Exists(folder))
+                throw new InvalidOperationException("Folder sumber tidak ditemukan: " + folder);
+
+            // ---- Indeks isi folder: bulan → file berakhiran _MMYYYY (tepat) / file lain yang memuat bulan (longgar) ----
+            var tepat = new Dictionary<int, List<Calon>>();
+            var longgar = new Dictionary<int, List<Calon>>();
+            int jumlahFile = 0;
+            if (folder.Length > 0)
+                foreach (var c in DaftarFile(folder))
                 {
-                    string nm = Path.GetFileName(file);
-                    if (nm.StartsWith("~$")) continue;
-                    int k = KunciDariNama(nm);
+                    jumlahFile++;
+                    string nm = Path.GetFileName(c.Path);
+                    int k = KunciAkhiran(nm);
+                    var tujuan = tepat;
+                    if (k == 0) { k = KunciDariNama(nm); tujuan = longgar; }
                     if (k == 0) continue;
-                    List<string> l;
-                    if (!indeks.TryGetValue(k, out l)) { l = new List<string>(); indeks[k] = l; }
-                    l.Add(file);
+                    List<Calon> l;
+                    if (!tujuan.TryGetValue(k, out l)) { l = new List<Calon>(); tujuan[k] = l; }
+                    l.Add(c);
                 }
-            }
 
             // ---- Slot untuk bulan baru ----
+            string mmyyyy;
             var slot = SlotUntuk(baru, setahun);
             foreach (var s in slot)
             {
                 s.PathKini = TeksSel(m, s.Sel);
                 int k = s.Tahun * 100 + s.Bulan;
-                string pathPola = pola != null ? pola.Buat(s.Tahun, s.Bulan) : null;
-                string dipilih = null;
-                if (pathPola != null && File.Exists(pathPola)) dipilih = pathPola;
+                mmyyyy = s.Bulan.ToString("00") + s.Tahun.ToString("0000");
+                List<Calon> l;
+                string kenal;
+                string[] ndBagian;
+                namaDepan.TryGetValue(s.Bagian, out ndBagian);
+                if (tepat.TryGetValue(k, out l) && l.Count > 0)
+                {
+                    s.PathUsul = Terbaik(l, ndBagian);
+                    s.Status = "ditemukan";
+                    if (l.Count > 1) s.Catatan = l.Count + " file berakhiran _" + mmyyyy + " di folder sumber; dipilih yang nama depannya sama dengan Master saat ini" +
+                                                 " (lalu folder paling atas, .xlsm). Klik baris bila keliru.";
+                }
+                else if (longgar.TryGetValue(k, out l) && l.Count > 0)
+                {
+                    s.PathUsul = Terbaik(l, ndBagian);
+                    s.Status = "nama-beda";
+                    s.Catatan = "Nama file tidak berakhiran _" + mmyyyy + " — pastikan isinya posisi " + BlnPanjang[s.Bulan - 1] + " " + s.Tahun + ".";
+                }
+                else if (dikenal.TryGetValue(k, out kenal))
+                {
+                    // file bulan ini sudah tercatat di Master tetapi berada di luar folder sumber
+                    s.PathUsul = kenal;
+                    s.Status = "nama-beda";
+                    s.Catatan = "Tidak ada di folder sumber; dipakai path Master saat ini.";
+                }
                 else
                 {
-                    string kenal;
-                    if (dikenal.TryGetValue(k, out kenal)) dipilih = kenal;
-                    else
-                    {
-                        List<string> l;
-                        if (indeks.TryGetValue(k, out l) && l.Count > 0)
-                            dipilih = l.OrderBy(x => x.EndsWith(".xlsm", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
-                                       .ThenBy(x => x, StringComparer.OrdinalIgnoreCase).First();
-                    }
-                }
-                if (dipilih != null)
-                {
-                    s.PathUsul = dipilih;
-                    s.Status = pathPola != null && string.Equals(dipilih, pathPola, StringComparison.OrdinalIgnoreCase) ? "ditemukan"
-                             : pola == null ? "ditemukan" : "nama-beda";
-                    if (s.Status == "nama-beda") s.Catatan = "Nama file tidak mengikuti pola " + pola.Contoh + " — pastikan isinya posisi " + BlnPanjang[s.Bulan - 1] + " " + s.Tahun + ".";
-                }
-                else
-                {
-                    s.PathUsul = pathPola ?? "";
+                    // usulan path: nama depan bagian ini dari Master saat ini + _MMYYYY, di folder sumber
+                    s.PathUsul = folder.Length > 0 && ndBagian != null
+                        ? Path.Combine(folder, ndBagian[0] + "_" + mmyyyy + ndBagian[1]) : "";
                     s.Status = "tidak-ada";
+                    s.Catatan = "Tidak ada file berakhiran _" + mmyyyy + " di folder sumber.";
                 }
             }
 
@@ -349,8 +372,8 @@ namespace CKPNLibrary.Panel
                 { "setahun", setahun }, { "pakaiAcuan", pakaiAcuan },
                 { "ringkas", "Net Flow memakai " + nf[0].Label + " s.d. " + nf[nf.Count - 1].Label +
                              " · LGD " + er[0].Tahun + "–" + er[er.Count - 1].Tahun + (pakaiAcuan ? " · PD & LGD acuan Des " + acuanTahun : "") },
-                { "folder", pola != null ? pola.Folder : (folder.Count > 0 ? folder[0] : "") },
-                { "pola", pola != null ? pola.Contoh : "" },
+                { "folder", folder }, { "folderDipilih", folderDipilih }, { "jumlahFile", jumlahFile },
+                { "pola", ContohPola },
                 { "bagian", bagian }, { "ikut", ikut },
                 { "total", total }, { "siap", siap },
                 { "perluCek", slot.Count(x => x.Status == "nama-beda") },
@@ -380,8 +403,27 @@ namespace CKPNLibrary.Panel
                     return new Dictionary<string, object> { { "batal", true } };
                 return new Dictionary<string, object>
                 {
-                    { "batal", false }, { "path", dlg.FileName }, { "kunci", KunciDariNama(dlg.FileName) }
+                    { "batal", false }, { "path", dlg.FileName },
+                    { "kunci", KunciAkhiran(dlg.FileName) != 0 ? KunciAkhiran(dlg.FileName) : KunciDariNama(dlg.FileName) }
                 };
+            }
+        }
+
+        // =============================================================
+        // Pilih folder sumber (satu folder untuk semua file individu, PD, dan LGD)
+        // =============================================================
+        public static Dictionary<string, object> PilihFolder(string awal)
+        {
+            using (var dlg = new System.Windows.Forms.FolderBrowserDialog
+            {
+                Description = "Pilih folder sumber file template (nama file berakhiran _MMYYYY, mis. …_012026.xlsm)",
+                ShowNewFolderButton = false
+            })
+            {
+                try { if (!string.IsNullOrEmpty(awal) && Directory.Exists(awal)) dlg.SelectedPath = awal; } catch { }
+                if (dlg.ShowDialog() != System.Windows.Forms.DialogResult.OK)
+                    return new Dictionary<string, object> { { "batal", true } };
+                return new Dictionary<string, object> { { "batal", false }, { "path", dlg.SelectedPath } };
             }
         }
 

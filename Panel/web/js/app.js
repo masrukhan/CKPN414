@@ -921,7 +921,8 @@
   // =====================================================================
   // Ganti bulan pelaporan: ubah Master!C4 dan path file sumber kertas kerja dari panel
   // =====================================================================
-  var gb = { tahun: null, bulan: null, rencana: null, pilihan: {}, nomor: 0, sibuk: false };
+  // folder: folder sumber pilihan user (kosong = folder terbanyak di path Master saat ini); bertahan selama panel terbuka
+  var gb = { tahun: null, bulan: null, rencana: null, pilihan: {}, nomor: 0, sibuk: false, folder: "" };
   var LABEL_GB = { "ditemukan": "Ditemukan", "nama-beda": "Nama beda", "tidak-ada": "Tidak ada", "kosong": "Dikosongkan", "dipilih": "Dipilih" };
 
   function bulanBerikut(t) {
@@ -958,7 +959,8 @@
     teks("gb-ringkas", pesan);
     $("gb-file").textContent = "—";
     $("gb-hitung").textContent = "";
-    $("gb-folder").textContent = "";
+    $("gb-folder").textContent = gb.folder || "";
+    $("gb-folder-ket").textContent = "";
     $("gb-pola").textContent = "";
     $("gb-ikut").innerHTML = "";
     $("gb-terapkan").disabled = true;
@@ -986,7 +988,7 @@
     var nomor = ++gb.nomor;
     var tgl = akhirBulan(gb.tahun, gb.bulan);
     kosongkanGb("Mencari file sumber untuk " + tanggalPanjang(tgl) + "…");
-    panggil("rencanaGantiBulan", { tanggal: tgl }, 120000).then(function (r) {
+    panggil("rencanaGantiBulan", { tanggal: tgl, folder: gb.folder }, 120000).then(function (r) {
       if (nomor !== gb.nomor) return;
       gb.rencana = r;
       gambarRencanaGb();
@@ -1020,7 +1022,8 @@
     rg.appendChild(posisi);
     if (r.tanggal === r.tanggalKini) rg.appendChild(el("div", "teks-kecil", "Ini bulan kertas kerja saat ini — menerapkan hanya memperbarui path file sumber."));
 
-    teks("gb-folder", r.folder || "");
+    teks("gb-folder", r.folder || "Belum ada — pilih folder sumber.");
+    teks("gb-folder-ket", r.folder ? r.jumlahFile + " file Excel" + (r.folderDipilih ? "" : " · folder yang paling banyak dipakai Master saat ini") : "");
     var w = $("gb-file");
     w.innerHTML = "";
     var siap = 0, total = 0, cek = 0, tidak = 0;
@@ -1063,13 +1066,25 @@
       w.appendChild(det);
     });
     teks("gb-hitung", siap + "/" + total + (cek + tidak ? " · " + (cek + tidak) + " perlu dicek" : ""));
-    $("gb-pola").textContent = (r.pola ? "Dicari otomatis dengan pola nama " + r.pola + " di folder di atas" : "Dicari dari bulan di nama file pada folder sumber Master") +
-      "; bila tidak cocok, dipakai file lain di folder yang sama yang namanya memuat bulan itu. Klik baris untuk memilih file lain.";
+    $("gb-pola").textContent = "Dicari langsung di folder sumber (termasuk subfolder): file yang namanya berakhiran _MMYYYY sebelum ekstensi, " +
+      "mis. …_012026.xlsm — nama di depannya bebas. Bila tidak ada, dipakai file lain yang namanya memuat bulan itu (Nama beda). " +
+      "Klik baris untuk memilih file lain.";
     var ul = $("gb-ikut");
     ul.innerHTML = "";
     (r.ikut || []).forEach(function (x) { ul.appendChild(el("li", "", x)); });
     $("gb-terapkan").disabled = gb.sibuk;
   }
+
+  $("btn-gb-folder").addEventListener("click", function () {
+    var awal = gb.folder || (gb.rencana && gb.rencana.folder) || "";
+    panggil("pilihFolderSumber", { path: awal }, 600000).then(function (h) {
+      if (!h || h.batal) return;
+      gb.folder = h.path;
+      gb.pilihan = {};
+      teks("gb-folder", gb.folder);
+      if (gb.bulan) muatRencanaGb();
+    }).catch(function (e) { alert(e.message); });
+  });
 
   function pilihFileGb(b) {
     var s = statusSlot(b);
@@ -3529,7 +3544,7 @@
         return "OS dan EAD per sheet KC. KC0600–KC0900: EAD = OS. " +
           "KC1000: OS saldo modal (AG); EAD tunggakan pokok (AL) hanya kualitas Macet" +
           (d.lingkupKC1000 && /bagi hasil/i.test(d.lingkupKC1000) && !/tidak dihitung/i.test(d.lingkupKC1000) ? ", ditambah tunggakan bagi hasil (AN) kualitas Macet" : "") + ". " +
-          "KC1100: OS sisa pokok ijarah = harga perolehan − akumulasi penyusutan (X − AI); EAD tunggakan pokok sewa (AL) semua kualitas + tunggakan imbalan (AM) hanya kualitas Lancar dan DPK. " +
+          "KC1100: OS baki debet ijarah = harga perolehan − akumulasi penyusutan + tunggakan pokok sewa (X − AI + AL, = sandi 181 − 182 + 160); EAD tunggakan pokok sewa (AL) semua kualitas + tunggakan imbalan (AM) hanya kualitas Lancar dan DPK. " +
           "Debitur = jumlah CIF berbeda di sheet tersebut.";
       }
     },

@@ -19,21 +19,20 @@ namespace CKPNLibrary.Modules
     ///   E19 Bagi hasil lainnya           = KC1000 Σ AI, jenis akad lain/kosong
     ///   E25 Aset Ijarah                  = KC1100 Σ X (harga perolehan)
     ///   E26 Akumulasi penyusutan         = KC1100 Σ AI
-    ///   E27 CKPN aset ijarah             = KC1100 Σ AJ
-    ///   E15 Piutang Sewa                 = KC1100 Σ AL (tunggakan pokok) — BUKAN OS, dikeluarkan dari OS neraca;
-    ///                                      bersama tunggakan ujroh AM (tidak ada pos neraca) menjadi objek CKPN KC1100
+    ///   E15 Piutang Sewa                 = KC1100 Σ AL (tunggakan pokok) — bagian baki debet ijarah
+    ///   E27 CKPN aset ijarah             = KC1100 Σ AJ — informasi, tidak mengurangi OS
+    ///   Tunggakan ujroh AM               = tidak ada pos neraca, bukan OS (objek CKPN KC1100 kualitas 1–2)
     ///   E21 Salam                        = tidak ada sheet segmen CKPN → selisih tetap
     ///
-    /// OS neraca = E7 + E16 + E21 + E24 − E15 (sama dengan DataOverviewBuilder).
+    /// OS neraca = (E7 − E15) + E16 + E21 + (E25 − E26 + E15) — baki ijarah = sandi 181 − 182 + 160 (sama dengan DataOverviewBuilder).
     /// OS segmen = OS per KC yang dipakai Ringkasan (baris berdebitur, kualitas 1–5):
-    ///   KC0600–0800 AC · KC0900 AA · KC1000 AG · KC1100 X − AI (sisa pokok ijarah, = GB0200 E25 − E26).
-    ///   Bila CKPN aset ijarah (AJ / E27) terisi, nilainya tampil sebagai selisih kolom KC1100 karena E24 = E25 − E26 − E27.
+    ///   KC0600–0800 AC · KC0900 AA · KC1000 AG · KC1100 X − AI + AL (baki debet ijarah, = GB0200 E25 − E26 + E15).
     ///
     /// Selisih total dipecah menjadi empat bagian yang jumlahnya PERSIS sama dengan selisih:
     ///   a. pos neraca tanpa segmen (Salam)
     ///   b. selisih sumber   : nilai GB0200 ≠ jumlah kolom nominatif KC (tarikan berbeda / rekening di luar nominatif)
     ///   c. selisih cakupan  : nominatif KC ≠ OS segmen (baris tanpa nama/kualitas, atau kolom OS beda dengan kolom neraca)
-    ///   d. selisih subtotal : subtotal GB0200 (E7, E16, E24) ≠ penjumlahan rinciannya
+    ///   d. selisih subtotal : subtotal GB0200 (E7, E16) ≠ penjumlahan rinciannya
     /// </summary>
     internal static class KontrolNeraca
     {
@@ -80,7 +79,7 @@ namespace CKPNLibrary.Modules
             {
                 case "KC0900": return "AA (Nominal)";
                 case "KC1000": return "AG (Nominal)";
-                case "KC1100": return "X − AI (harga perolehan − akumulasi penyusutan)";
+                case "KC1100": return "X − AI + AL (harga perolehan − akumulasi penyusutan + tunggakan pokok)";
                 default:       return "AC (Saldo harga pokok)";
             }
         }
@@ -91,7 +90,7 @@ namespace CKPNLibrary.Modules
             {
                 case "KC0900": return "AC (Jumlah)";
                 case "KC1000": return "AI (Jumlah)";
-                case "KC1100": return "X − AI − AJ (harga perolehan − penyusutan − CKPN aset)";
+                case "KC1100": return "X − AI + AL (harga perolehan − penyusutan + tunggakan pokok)";
                 default:       return "AE − AD (jumlah − margin ditangguhkan)";
             }
         }
@@ -151,7 +150,7 @@ namespace CKPNLibrary.Modules
                 case "KC1100":
                 {
                     double[] x = kol("X"), ai = kol("AI"), aj = kol("AJ"), al = kol("AL"), am = kol("AM");
-                    for (int i = 0; i < n; i++) neto[i] = x[i] - ai[i] - aj[i];
+                    for (int i = 0; i < n; i++) neto[i] = x[i] - ai[i] + al[i];   // = sandi 181 − 182 + 160
                     k.Kolom["X"] = Jumlah(x);
                     k.Kolom["AI"] = Jumlah(ai);
                     k.Kolom["AJ"] = Jumlah(aj);
@@ -178,9 +177,7 @@ namespace CKPNLibrary.Modules
                         k.BedaKolom += beda;
                         k.NBedaKolom++;
                         kandidat.Add(Contoh(dataStart + i, rekArr, namaArr, kualArr, i, beda,
-                            kode == "KC1100"
-                                ? "CKPN aset ijarah (AJ) mengurangi pos neraca E24, tidak mengurangi OS"
-                                : "kolom neraca " + KolomNeto(kode).Split(' ')[0] + " ≠ kolom OS " + KolomOS(kode).Split(' ')[0]));
+                            "kolom neraca " + KolomNeto(kode).Split(' ')[0] + " ≠ kolom OS " + KolomOS(kode).Split(' ')[0]));
                     }
                 }
                 else if (Math.Abs(neto[i]) >= 1)
@@ -276,14 +273,14 @@ namespace CKPNLibrary.Modules
                     default: // KC1100
                         pos.Add(Pos("E25", 181, "Aset Ijarah", E(25), "X", K("X"), false));
                         pos.Add(Pos("E26", 182, "Akumulasi penyusutan/amortisasi", E(26), "AI", K("AI"), true));
-                        pos.Add(Pos("E27", 183, "CKPN aset Ijarah", E(27), "AJ", K("AJ"), true));
-                        netoNeraca = E(25) - E(26) - E(27);
-                        // Piutang sewa & tunggakan ujroh: objek CKPN KC1100, bukan OS
+                        pos.Add(Pos("E15", 160, "Piutang sewa (tunggakan pokok)", E(15), "AL", K("AL"), false));
+                        netoNeraca = E(25) - E(26) + E(15);   // baki debet ijarah = sandi 181 − 182 + 160
+                        // CKPN aset ijarah & tunggakan ujroh: informasi, bukan OS
                         info.Add(new Dictionary<string, object>
                         {
-                            { "sel", "E15" }, { "sandi", 160 }, { "nama", "Piutang sewa (tunggakan pokok)" },
-                            { "neraca", E(15) }, { "kolomKC", "AL" }, { "kc", K("AL") }, { "selisih", E(15) - K("AL") },
-                            { "ket", "Bukan bagian OS — dikeluarkan dari OS neraca. Menjadi objek CKPN (EAD) KC1100, semua kualitas." }
+                            { "sel", "E27" }, { "sandi", 183 }, { "nama", "CKPN aset Ijarah" },
+                            { "neraca", E(27) }, { "kolomKC", "AJ" }, { "kc", K("AJ") }, { "selisih", E(27) - K("AJ") },
+                            { "ket", "Cadangan, tidak mengurangi baki debet ijarah." }
                         });
                         info.Add(new Dictionary<string, object>
                         {
@@ -324,15 +321,13 @@ namespace CKPNLibrary.Modules
             var subtotal = new List<object>();
             double rinciE7 = (E(8) - E(9)) + (E(10) - E(11)) + (E(12) - E(13)) + E(14) + E(15);
             double rinciE16 = E(17) + E(18) + E(19);
-            double rinciE24 = E(25) - E(26) - E(27);
             subtotal.Add(Subtotal("E7", "Piutang", E(7), rinciE7, "E8 − E9 + E10 − E11 + E12 − E13 + E14 + E15"));
             subtotal.Add(Subtotal("E16", "Pembiayaan bagi hasil", E(16), rinciE16, "E17 + E18 + E19"));
-            subtotal.Add(Subtotal("E24", "Ijarah", E(24), rinciE24, "E25 − E26 − E27"));
             double totSubtotal = osNeraca - (totNeto + totTanpa);
 
             return new Dictionary<string, object>
             {
-                { "rumusNeraca", "E7 + E16 + E21 + E24 − E15" },
+                { "rumusNeraca", "(E7 − E15) + E16 + E21 + (E25 − E26 + E15)" },
                 { "osNeraca", osNeraca }, { "netoNeraca", totNeto }, { "netoKC", totKC }, { "osSegmen", totOS },
                 { "selisih", osNeraca - totOS },
                 { "komponen", new Dictionary<string, object>
