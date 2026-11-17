@@ -21,6 +21,9 @@ namespace CKPNLibrary.Data
     ///   LGD gabungan = 1 − (Σ G + recovery ER) / (Σ C + hapus buku ER)          — kolom E blok "LGD Weighted"
     ///   Sheet B. CKPN - KOL INDV memakai satu sel LGD (= LGD gabungan) di blok Net Flow maupun Migration,
     ///   sehingga CKPN Kolektif berbanding lurus dengan LGD:  Kolektif baru = Kolektif lama × LGD baru / LGD lama.
+    ///   Bila LGD lama ≤ 0% (mis. tidak ada data WO/CS, atau versi lama terlanjur negatif) faktor itu tidak bisa dipakai;
+    ///   Kolektif dihitung ulang dari rincian tersimpan: Σ(EAD × PD) × LGD baru (rumus sel yang sama: EAD × PD × LGD).
+    ///   LGD CS dan LGD gabungan hasil koreksi TIDAK BOLEH di bawah 0% (realisasi melebihi pokok) — koreksi ditolak.
     ///
     /// Hasil koreksi disimpan sebagai VERSI BARU grup (versi lama tetap ada). Hanya periode itu yang berubah:
     /// penyesuaian tersimpan untuk perhitungan bulan berikutnya tidak disentuh.
@@ -39,12 +42,14 @@ namespace CKPNLibrary.Data
             public Dictionary<string, double> Ringkasan = new Dictionary<string, double>();
             public List<Indv> Individu = new List<Indv>();
             public List<Cs> LgdCs = new List<Cs>();
+            public double[] DasarKolektif;   // Σ(EAD × PD) Net Flow & Migration dari rincian tersimpan; null bila tidak ada
         }
 
         private class Indv
         {
             public long Id; public int Urut; public string Kc, Cif, Nama, Kontrak, AdaPN;
             public double Os, Jaminan, Biaya, Penurunan; public bool Disesuaikan, Diubah;
+            public double JaminanAwal;   // nilai agunan versi asal (sebelum koreksi ini)
             public double Hitung() { return Ya(AdaPN) ? Math.Max(0, Os - (Jaminan - Biaya)) : 0; }
         }
 
@@ -59,7 +64,8 @@ namespace CKPNLibrary.Data
         {
             public double WoCs, RecCs, WoEr, RecEr;
             public double? LgdCs, LgdEr, LgdGab;
-            public string SumberEr;      // "tersimpan" | "turunan" | null
+            public string SumberEr;      // "tersimpan" | "turunan" | "kosong" | null
+            public string Catatan;       // keterangan untuk panel (mis. LGD ER dianggap tanpa data)
             public string Masalah;       // alasan koreksi LGD CS tidak tersedia
             public double? Haircut;
         }
@@ -112,6 +118,8 @@ namespace CKPNLibrary.Data
                         Id = rd.GetInt64(0), Rek = Str(rd[1]), Nama = Str(rd[2]), Pokok = Num(rd[3]), Agunan = Num(rd[4]),
                         ThnSerah = Str(rd[5]), ThnEks = Str(rd[6]), Recovery = Num(rd[7]), Shortfall = Num(rd[8]), Sumber = Str(rd[9])
                     });
+            r.DasarKolektif = RincianCkpn.DasarEadPd(Database.Scalar(con,
+                "SELECT data FROM analisis_pd WHERE run_id=@p0 AND jenis=@p1", runId, RincianCkpn.Jenis) as string);
             return r;
         }
 
@@ -149,8 +157,24 @@ namespace CKPNLibrary.Data
                         i.WoEr = w; i.RecEr = a * w; i.SumberEr = "turunan";
                     }
                 }
-                else if (i.WoCs == 0)
-                    i.Masalah = "Versi ini tidak punya baris LGD CS dan total LGD ER tidak tersimpan. Simpan ulang grup ini sekali dari sheet agar totalnya tercatat.";
+            }
+
+            // Grup tanpa data WO/CS sama sekali: tidak ada baris LGD CS, total ER tidak tersimpan, dan LGD ER &
+            // gabungan 0% atau kosong (sel sheet B4 tidak berisi angka). Total ER dianggap 0 sehingga baris LGD CS
+            // tetap bisa ditambah dari panel — LGD gabungan baru = LGD CS baris tambahan.
+            if (i.SumberEr == null && i.WoCs == 0 &&
+                Math.Abs(i.LgdEr ?? 0) < 1e-9 && Math.Abs(i.LgdGab ?? 0) < 1e-9)
+            {
+                i.WoEr = 0; i.RecEr = 0; i.SumberEr = "kosong";
+                i.Catatan = "Versi ini tidak memiliki data LGD CS maupun LGD ER (LGD 0%); data hapus buku LGD ER dianggap kosong. " +
+                            "Bila sebenarnya ada data LGD ER, hitung ulang grup dari sheet agar totalnya tercatat.";
+            }
+            // LGD gabungan / ER tidak tersimpan tetapi total diketahui → rekonstruksi dari total
+            if (i.SumberEr != null)
+            {
+                if (!i.LgdGab.HasValue) i.LgdGab = Lgd(i.WoCs + i.WoEr, i.RecCs + i.RecEr);
+                if (!i.LgdEr.HasValue) i.LgdEr = Lgd(i.WoEr, i.RecEr);
+                if (!i.LgdCs.HasValue) i.LgdCs = Lgd(i.WoCs, i.RecCs);
             }
             double? acuan = Rg(r, "acuan_versi");
             if (acuan.HasValue)
@@ -231,9 +255,11 @@ namespace CKPNLibrary.Data
                     {
                         { "woCs", lgd.WoCs }, { "recCs", lgd.RecCs }, { "woEr", lgd.WoEr }, { "recEr", lgd.RecEr },
                         { "lgdCs", lgd.LgdCs }, { "lgdEr", lgd.LgdEr }, { "lgdGab", lgd.LgdGab },
-                        { "sumberEr", lgd.SumberEr }, { "masalah", lgd.Masalah }, { "haircut", lgd.Haircut }
+                        { "sumberEr", lgd.SumberEr }, { "masalah", lgd.Masalah }, { "haircut", lgd.Haircut },
+                        { "catatan", lgd.Catatan }
                     } },
-                { "bolehKoreksi", tolak == null }, { "alasanTolak", tolak }
+                { "bolehKoreksi", tolak == null }, { "alasanTolak", tolak },
+                { "dasarKolektif", DasarValid(r, lgd.LgdGab) ? new Dictionary<string, object> { { "nf", r.DasarKolektif[0] }, { "mig", r.DasarKolektif[1] } } : null }
             };
         }
 
@@ -243,7 +269,12 @@ namespace CKPNLibrary.Data
         /// <param name="individu">[{id, jaminan, biaya}] — hanya baris yang diubah</param>
         /// <param name="lgdcs">{ubah:[{id, agunan, recovery}], hapus:[id], tambah:[{rek,nama,pokok,agunan,thnSerah,thnEks,recovery}]}</param>
         /// <param name="simulasi">Tahap 7c: true = hanya hitung (pratinjau), tidak menulis database</param>
-        public static Dictionary<string, object> Simpan(long runId, object individu, object lgdcs, string alasan, bool simulasi = false)
+        /// <param name="jadikanPenyesuaian">
+        /// true: setiap perubahan juga dicatat sebagai penyesuaian tersimpan (DataPanel.SimpanDariKoreksi), sehingga
+        /// perhitungan bulan berikutnya otomatis memakai nilai yang sama.
+        /// </param>
+        public static Dictionary<string, object> Simpan(long runId, object individu, object lgdcs, string alasan, bool simulasi = false,
+                                                        bool jadikanPenyesuaian = false)
         {
             string info;
             if (!simulasi)
@@ -274,6 +305,7 @@ namespace CKPNLibrary.Data
                 double jam = Angka(d, "jaminan", b.Jaminan), bia = Angka(d, "biaya", b.Biaya);
                 if (jam < 0 || bia < 0) throw new InvalidOperationException("Nilai agunan/biaya kontrak " + b.Kontrak + " tidak boleh negatif.");
                 if (Math.Abs(jam - b.Jaminan) < 0.005 && Math.Abs(bia - b.Biaya) < 0.005) continue;
+                b.JaminanAwal = b.Jaminan;
                 b.Jaminan = jam; b.Biaya = bia; b.Diubah = true; nInd++;
             }
             foreach (var b in r.Individu)
@@ -286,6 +318,7 @@ namespace CKPNLibrary.Data
             InfoLgd lgd = HitungInfoLgd(r);
             var csDict = lgdcs as Dictionary<string, object>;
             int nCs = 0;
+            var csDihapus = new List<Cs>();
             var csById = new Dictionary<long, Cs>();
             foreach (var c in r.LgdCs) csById[c.Id] = c;
             if (csDict != null)
@@ -305,7 +338,7 @@ namespace CKPNLibrary.Data
                 {
                     long id = Convert.ToInt64(o, CultureInfo.InvariantCulture);
                     Cs c;
-                    if (csById.TryGetValue(id, out c) && r.LgdCs.Remove(c)) nCs++;
+                    if (csById.TryGetValue(id, out c) && r.LgdCs.Remove(c)) { nCs++; csDihapus.Add(c); }
                 }
                 foreach (var o in Daftar(Ambil(csDict, "tambah")))
                 {
@@ -344,19 +377,45 @@ namespace CKPNLibrary.Data
                 c.Shortfall = c.Recovery > c.Pokok ? 0 : c.Pokok - c.Recovery;   // =IF(G>C,0,C-G)
                 woCsBaru += c.Pokok; recCsBaru += c.Recovery;
             }
+            bool hitungUlang = false;   // Kolektif dihitung ulang dari Σ(EAD × PD) karena LGD lama ≤ 0%
             if (nCs > 0)
             {
                 double gabLama = Lgd(lgd.WoCs + lgd.WoEr, lgd.RecCs + lgd.RecEr);
                 double gabBaru = Lgd(woCsBaru + lgd.WoEr, recCsBaru + lgd.RecEr);
-                if (gabLama <= 0)
-                    throw new InvalidOperationException("LGD gabungan versi ini 0%, sehingga CKPN Kolektif tidak dapat disesuaikan secara proporsional. Hitung ulang grup dari sheet.");
-                faktor = gabBaru / gabLama;
-                rgBaru["lgd_cs"] = Lgd(woCsBaru, recCsBaru);
+                double csBaru = Lgd(woCsBaru, recCsBaru);
+
+                // LGD tidak boleh di bawah 0%: realisasi melebihi pokok akan membuat CKPN Kolektif negatif
+                if (csBaru < -1e-9 || gabBaru < -1e-9)
+                    throw new InvalidOperationException(
+                        "Koreksi ditolak: LGD CS menjadi " + FormatPersen(csBaru) + " dan LGD gabungan " + FormatPersen(gabBaru) +
+                        ". LGD tidak boleh di bawah 0% karena CKPN Kolektif akan bernilai negatif dan mengurangi CKPN. " +
+                        "Total realisasi (" + recCsBaru.ToString("#,##0", CultureInfo.InvariantCulture) + ") melebihi total pokok awal (" +
+                        woCsBaru.ToString("#,##0", CultureInfo.InvariantCulture) + ") — periksa realisasi baris yang ditambah/diubah.");
+                if (csBaru < 0) csBaru = 0;
+                if (gabBaru < 0) gabBaru = 0;
+
+                rgBaru["lgd_cs"] = csBaru;
                 rgBaru["lgd_gabungan"] = gabBaru;
-                foreach (var k in new[] { "nf_kolektif", "mig_kolektif" })
+                if (gabLama > 1e-9)
                 {
-                    double v;
-                    if (rgBaru.TryGetValue(k, out v)) rgBaru[k] = v * faktor;
+                    faktor = gabBaru / gabLama;
+                    foreach (var k in new[] { "nf_kolektif", "mig_kolektif" })
+                    {
+                        double v;
+                        if (rgBaru.TryGetValue(k, out v)) rgBaru[k] = v * faktor;
+                    }
+                }
+                else
+                {
+                    // LGD lama 0% (tidak ada data WO/CS) atau negatif: faktor proporsional tidak berarti.
+                    // Hitung ulang dari rincian: Kolektif = Σ(EAD × PD) × LGD baru.
+                    if (!DasarValid(r, lgd.LgdGab))
+                        throw new InvalidOperationException("LGD gabungan versi ini " + FormatPersen(gabLama) +
+                            " dan rincian EAD × PD versi ini tidak tersimpan/tidak cocok, sehingga CKPN Kolektif tidak dapat dihitung ulang dari panel. " +
+                            "Hitung ulang grup dari sheet.");
+                    hitungUlang = true;
+                    rgBaru["nf_kolektif"] = r.DasarKolektif[0] * gabBaru;
+                    rgBaru["mig_kolektif"] = r.DasarKolektif[1] * gabBaru;
                 }
             }
             rgBaru["lgd_cs_wo"] = woCsBaru;
@@ -380,7 +439,8 @@ namespace CKPNLibrary.Data
                 return new Dictionary<string, object>
                 {
                     { "runId", r.Id }, { "versi", r.Versi }, { "kodeKC", r.KodeKC }, { "lama", lama }, { "baru", baru },
-                    { "faktorKolektif", faktor }, { "jumlahIndividu", nInd }, { "jumlahLgdCs", nCs }
+                    { "faktorKolektif", faktor }, { "kolektifDihitungUlang", hitungUlang },
+                    { "jumlahIndividu", nInd }, { "jumlahLgdCs", nCs }
                 };
             }
 
@@ -451,7 +511,7 @@ namespace CKPNLibrary.Data
                             // Tahap 6c: rincian kolektif ikut koreksi (CKPN × faktor, LGD baru, CKPN Individu baru)
                             double indV;
                             data = RincianCkpn.SesuaikanKoreksi(data, faktor, nCs > 0 ? (double?)rgBaru["lgd_gabungan"] : null,
-                                nInd > 0 && rgBaru.TryGetValue("nf_individu", out indV) ? (double?)indV : null);
+                                nInd > 0 && rgBaru.TryGetValue("nf_individu", out indV) ? (double?)indV : null, hitungUlang);
                         }
                         else if (nCs > 0 && !string.IsNullOrEmpty(data))
                         {
@@ -477,18 +537,80 @@ namespace CKPNLibrary.Data
                     .Tambah("Baris LGD CS diubah/dihapus/ditambah", nCs)
                     .Tambah("CKPN Individu", indLama.ToString("#,##0", LogProses.Id) + " → " + indBaru.ToString("#,##0", LogProses.Id))
                     .TambahBila(nCs > 0, "LGD gabungan", nCs > 0 ? FormatPersen(Rg(r, "lgd_gabungan")) + " → " + FormatPersen(rgBaru["lgd_gabungan"]) : null)
-                    .TambahBila(nCs > 0, "Faktor Kolektif", faktor.ToString("0.000000", CultureInfo.InvariantCulture))
+                    .TambahBila(nCs > 0, "Faktor Kolektif", hitungUlang ? "dihitung ulang: Σ(EAD × PD) × LGD baru (LGD lama ≤ 0%)"
+                                                                          : faktor.ToString("0.000000", CultureInfo.InvariantCulture))
                     .Tambah("Total Net Flow", Format(Rg(r, "nf_total")) + " → " + Format(Get(rgBaru, "nf_total")))
                     .Tambah("Total Migration", Format(Rg(r, "mig_total")) + " → " + Format(Get(rgBaru, "mig_total")))
                     .Tambah("Alasan", alasan.Trim()));
+
+            // ---- d. Perubahan juga menjadi penyesuaian tersimpan (dipakai perhitungan berikutnya) ----
+            // Dilakukan setelah versi tersimpan: bila gagal, koreksi versi tetap berlaku dan user diberi tahu.
+            int nPenyesuaian = 0; string gagalPenyesuaian = null;
+            if (jadikanPenyesuaian)
+            {
+                var item = new List<Dictionary<string, object>>();
+                foreach (var b in r.Individu)
+                    if (b.Diubah)
+                        item.Add(new Dictionary<string, object>
+                        {
+                            { "modul", "individu" }, { "kunci", b.Kontrak }, { "jaminan", b.Jaminan }, { "biaya", b.Biaya },
+                            // agunan sistem: nilai versi asal bila kontrak itu belum pernah disesuaikan
+                            { "jaminanSistem", b.Disesuaikan ? (object)null : b.JaminanAwal }
+                        });
+                foreach (var c in r.LgdCs)
+                    if (c.Diubah)
+                        item.Add(ItemCs(c, c.Id == 0 ? "tambah" : "ubah"));
+                foreach (var c in csDihapus) item.Add(ItemCs(c, "hapus"));
+                try
+                {
+                    nPenyesuaian = DataPanel.SimpanDariKoreksi(item,
+                        alasan.Trim() + " (koreksi " + r.KodeKC + " " + r.Tanggal + " v" + versiBaru + ")", r.Tanggal);
+                }
+                catch (Exception ex)
+                {
+                    gagalPenyesuaian = ex.Message;
+                    CatatanLog.Tulis("Koreksi " + r.KodeKC + " v" + versiBaru + ": penyesuaian tersimpan gagal dicatat — " + ex.Message);
+                }
+            }
 
             var keluar = new Dictionary<string, object>();
             foreach (var kv in rgBaru) keluar[kv.Key] = kv.Value;
             return new Dictionary<string, object>
             {
                 { "runId", runBaru }, { "versi", versiBaru }, { "tanggal", r.Tanggal }, { "kodeKC", r.KodeKC },
-                { "ringkasan", keluar }, { "faktorKolektif", faktor }, { "jumlahIndividu", nInd }, { "jumlahLgdCs", nCs }
+                { "ringkasan", keluar }, { "faktorKolektif", faktor }, { "kolektifDihitungUlang", hitungUlang },
+                { "jumlahIndividu", nInd }, { "jumlahLgdCs", nCs },
+                { "jumlahPenyesuaian", nPenyesuaian }, { "gagalPenyesuaian", gagalPenyesuaian }
             };
+        }
+
+        private static Dictionary<string, object> ItemCs(Cs c, string jenis)
+        {
+            return new Dictionary<string, object>
+            {
+                { "modul", "lgdcs" }, { "kunci", c.Rek }, { "jenis", jenis }, { "sumber", c.Sumber ?? "" },
+                { "nilaiAgunan", c.Agunan }, { "recovery", c.Recovery }, { "pokok", c.Pokok }, { "nama", c.Nama ?? "" },
+                { "thnSerah", c.ThnSerah ?? "" }, { "thnEks", c.ThnEks ?? "" }
+            };
+        }
+
+        /// <summary>
+        /// Rincian EAD × PD dapat dipakai bila tersimpan dan cocok dengan Kolektif tersimpan
+        /// (Kolektif = Σ(EAD × PD) × LGD gabungan, toleransi Rp1 atau 0,0001%).
+        /// </summary>
+        private static bool DasarValid(Run r, double? gab)
+        {
+            if (r.DasarKolektif == null) return false;
+            if (!gab.HasValue) return false;
+            string[] kunci = { "nf_kolektif", "mig_kolektif" };
+            for (int i = 0; i < 2; i++)
+            {
+                double? kol = Rg(r, kunci[i]);
+                if (!kol.HasValue) continue;
+                double hitung = r.DasarKolektif[i] * gab.Value;
+                if (Math.Abs(hitung - kol.Value) > Math.Max(1, Math.Abs(kol.Value) * 1e-6)) return false;
+            }
+            return true;
         }
 
 

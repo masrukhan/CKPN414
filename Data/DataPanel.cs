@@ -197,7 +197,7 @@ namespace CKPNLibrary.Data
         }
 
         private static void SimpanIndividu(System.Data.SQLite.SQLiteConnection con, string kunci, Dictionary<string, object> d,
-                                           string alasan, out string sebelum, out string sesudah, out string aksi)
+                                           string alasan, out string sebelum, out string sesudah, out string aksi, string periodeBaru = "")
         {
             double? jaminan = Angka(Ambil(d, "jaminan"));
             double biaya = Angka(Ambil(d, "biaya")) ?? 0;
@@ -216,8 +216,9 @@ namespace CKPNLibrary.Data
                 }
             aksi = sebelum.Length == 0 ? "tambah-dari-panel" : "ubah-dari-panel";
 
-            // Kontrak baru: ambil nilai agunan sistem dari data dasar perhitungan terakhir di PC ini (bila ada)
-            if (jamSistem == null) jamSistem = JaminanSistemDariDasar(kunci);
+            // Kontrak baru: nilai agunan sistem dari pemanggil (koreksi versi) atau data dasar perhitungan terakhir di PC ini
+            if (jamSistem == null) jamSistem = Angka(Ambil(d, "jaminanSistem")) ?? JaminanSistemDariDasar(kunci);
+            if (periodeLama.Length == 0) periodeLama = periodeBaru ?? "";
 
             sesudah = "Agunan " + Rp(jaminan) + " · Biaya " + Rp(biaya);
             Database.Exec(con,
@@ -246,7 +247,7 @@ namespace CKPNLibrary.Data
         }
 
         private static void SimpanLgdCs(System.Data.SQLite.SQLiteConnection con, string kunci, Dictionary<string, object> d,
-                                        string alasan, out string sebelum, out string sesudah, out string aksi)
+                                        string alasan, out string sebelum, out string sesudah, out string aksi, string periodeBaru = "")
         {
             string jenis = Convert.ToString(Ambil(d, "jenis") ?? "");
             if (jenis != "ubah" && jenis != "hapus" && jenis != "tambah")
@@ -296,6 +297,7 @@ namespace CKPNLibrary.Data
                 }
             aksi = sebelum.Length == 0 ? "tambah-dari-panel" : "ubah-dari-panel";
             sesudah = UraianCs(jenis, agunan, rec, pokok, nama);
+            if (periodeLama.Length == 0) periodeLama = periodeBaru ?? "";
 
             Database.Exec(con,
                 "INSERT OR REPLACE INTO penyesuaian_lgdcs(no_rek,jenis,nilai_agunan,recovery,nama,pokok_awal,thn_diserahkan,thn_eksekusi," +
@@ -463,6 +465,74 @@ namespace CKPNLibrary.Data
                 tx.Commit();
             }
             CatatanLog.Tulis("Penyesuaian " + modul + " " + kunci + " dihapus: " + alasan);
+        }
+
+        // ================================================================
+        // Koreksi versi di Hitung › Per grup › Data grup → juga penyesuaian tersimpan
+        // ================================================================
+        /// <summary>
+        /// Mencatat perubahan koreksi versi (Individu & LGD CS) sebagai penyesuaian tersimpan, sehingga perhitungan
+        /// bulan berikutnya otomatis memakai nilai yang sama — user tidak perlu mengisi lagi di Hitung › Penyesuaian.
+        ///
+        /// item: { modul: individu|lgdcs, kunci, ... } — format sama dengan SimpanPenyesuaian, plus:
+        ///   individu: jaminanSistem (agunan hasil sistem sebelum dikoreksi; dipakai bila kontrak belum punya penyesuaian)
+        ///   lgdcs   : jenis ubah|hapus|tambah, sumber (asal baris di versi: sistem / manual / koreksi)
+        /// Aturan LGD CS terhadap penyesuaian yang sudah ada:
+        ///   - baris yang sudah berupa penyesuaian 'tambah' (baris manual) atau baris hasil koreksi tanpa penyesuaian:
+        ///     ubah → tetap/menjadi 'tambah' dengan nilai baru; hapus → penyesuaian 'tambah' dihapus (baris tidak muncul lagi);
+        ///   - baris hasil sistem: ubah → 'ubah', hapus → 'hapus' (pengecualian).
+        /// Satu transaksi; dipanggil SETELAH versi koreksi tersimpan.
+        /// </summary>
+        public static int SimpanDariKoreksi(List<Dictionary<string, object>> item, string alasan, string periode)
+        {
+            if (item == null || item.Count == 0) return 0;
+            string info;
+            if (!Database.BolehMenulis(out info)) throw new InvalidOperationException(info);
+            int n = 0;
+            using (var con = Database.BukaBersama(true))
+            using (var tx = con.BeginTransaction())
+            {
+                foreach (var d in item)
+                {
+                    string modul = Convert.ToString(Ambil(d, "modul") ?? "");
+                    string kunci = Convert.ToString(Ambil(d, "kunci") ?? "").Trim();
+                    if (kunci.Length == 0) continue;
+                    string sebelum, sesudah, aksi;
+                    if (modul == "individu")
+                        SimpanIndividu(con, kunci, d, alasan, out sebelum, out sesudah, out aksi, periode);
+                    else if (modul == "lgdcs")
+                    {
+                        string jenis = Convert.ToString(Ambil(d, "jenis") ?? "");
+                        string sumber = Convert.ToString(Ambil(d, "sumber") ?? "").ToLowerInvariant();
+                        string jenisLama = Database.Scalar(con, "SELECT jenis FROM penyesuaian_lgdcs WHERE no_rek=@p0", kunci) as string;
+                        bool barisManual = jenisLama == "tambah" ||
+                                           (jenisLama == null && (sumber.StartsWith("manual") || sumber.StartsWith("koreksi")));
+                        if (barisManual && jenis == "hapus")
+                        {
+                            // baris manual dihapus → penyesuaian 'tambah'-nya ikut dihapus (bukan pengecualian)
+                            if (jenisLama == null) continue;
+                            Database.Exec(con, "DELETE FROM penyesuaian_lgdcs WHERE no_rek=@p0", kunci);
+                            sebelum = "Baris manual"; sesudah = "Dihapus (koreksi versi)"; aksi = "hapus-dari-koreksi";
+                        }
+                        else
+                        {
+                            if (barisManual && jenis == "ubah") d["jenis"] = "tambah";
+                            SimpanLgdCs(con, kunci, d, alasan, out sebelum, out sesudah, out aksi, periode);
+                        }
+                    }
+                    else continue;
+
+                    Database.Exec(con,
+                        "INSERT INTO log_penyesuaian(waktu,pengguna,periode,modul,kunci,aksi,sebelum,sesudah,alasan) " +
+                        "VALUES(@p0,@p1,@p2,@p3,@p4,@p5,@p6,@p7,@p8)",
+                        Database.Sekarang(), Environment.UserName, periode ?? "", modul, kunci,
+                        aksi.Replace("-dari-panel", "-dari-koreksi"), sebelum, sesudah, alasan);
+                    n++;
+                }
+                tx.Commit();
+            }
+            CatatanLog.Tulis("Penyesuaian dari koreksi versi " + periode + ": " + n + " item");
+            return n;
         }
 
         /// <summary>Jejak perubahan satu kunci (maks. 50 terakhir).</summary>

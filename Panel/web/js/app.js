@@ -4926,6 +4926,7 @@
         kr.cs[c.id] = { agunan: c.agunan, recovery: c.recovery, rumus: rumus, manual: false };
       });
       $("kr-alasan").value = "";
+      $("kr-penyesuaian").checked = true;
       gambarKoreksi();
       $("kartu-koreksi").scrollIntoView({ block: "start" });
     }).catch(function (e) { teks("kr-sub", e.message); });
@@ -4960,21 +4961,35 @@
     function L(w, r) { return w === 0 ? 0 : 1 - r / w; }
     var gabLama = L(lgd.woCs + lgd.woEr, lgd.recCs + lgd.recEr);
     var gabBaru = nCs ? L(wo + lgd.woEr, rec + lgd.recEr) : gabLama;
-    var faktor = nCs && gabLama > 0 ? gabBaru / gabLama : 1;
+    var csBaru = nCs ? L(wo, rec) : rg.lgd_cs;
+    // LGD tidak boleh di bawah 0% (realisasi > pokok) — Simpan dinonaktifkan, server juga menolak
+    var negatif = nCs > 0 && (gabBaru < -1e-9 || csBaru < -1e-9);
+    // LGD lama ≤ 0%: Kolektif dihitung ulang dari Σ(EAD × PD) × LGD baru (dasar dari rincian tersimpan)
+    var dasar = d.dasarKolektif;
+    var hitungUlang = nCs > 0 && !(gabLama > 1e-9);
+    var tanpaDasar = hitungUlang && !dasar;
+    var faktor = nCs && gabLama > 1e-9 ? gabBaru / gabLama : 1;
     var dInd = indBaru - indLama;
     function ada(k) { return rg[k] !== undefined && rg[k] !== null; }
+    function kolBaru(k, kunciDasar) {
+      if (!ada(k)) return null;
+      if (hitungUlang) return dasar ? dasar[kunciDasar] * Math.max(0, gabBaru) : rg[k];
+      return rg[k] * faktor;
+    }
+    var nfKol = kolBaru("nf_kolektif", "nf"), migKol = kolBaru("mig_kolektif", "mig");
     var h = {
-      nInd: nInd, nCs: nCs, faktor: faktor,
+      nInd: nInd, nCs: nCs, faktor: faktor, negatif: negatif, hitungUlang: hitungUlang, tanpaDasar: tanpaDasar,
+      gabBaru: gabBaru, csBaru: csBaru, rec: rec, wo: wo,
       baris: [
         { label: "CKPN Individu", lama: rg.nf_individu, baru: ada("nf_individu") ? rg.nf_individu + dInd : null },
-        { label: "LGD CS", lama: rg.lgd_cs, baru: nCs ? L(wo, rec) : rg.lgd_cs, persen: true },
+        { label: "LGD CS", lama: rg.lgd_cs, baru: csBaru, persen: true },
         { label: "LGD gabungan", lama: rg.lgd_gabungan, baru: nCs ? gabBaru : rg.lgd_gabungan, persen: true },
-        { label: "Kolektif Net Flow", lama: rg.nf_kolektif, baru: ada("nf_kolektif") ? rg.nf_kolektif * faktor : null, metode: "nf" },
-        { label: "Kolektif Migration", lama: rg.mig_kolektif, baru: ada("mig_kolektif") ? rg.mig_kolektif * faktor : null, metode: "mig" },
+        { label: "Kolektif Net Flow", lama: rg.nf_kolektif, baru: nfKol, metode: "nf" },
+        { label: "Kolektif Migration", lama: rg.mig_kolektif, baru: migKol, metode: "mig" },
         { label: "Total Net Flow", lama: rg.nf_total, metode: "nf", tebal: true,
-          baru: ada("nf_individu") && ada("nf_kolektif") ? rg.nf_individu + dInd + rg.nf_kolektif * faktor : rg.nf_total },
+          baru: ada("nf_individu") && nfKol !== null ? rg.nf_individu + dInd + nfKol : rg.nf_total },
         { label: "Total Migration", lama: rg.mig_total, metode: "mig", tebal: true,
-          baru: ada("mig_individu") && ada("mig_kolektif") ? rg.mig_individu + dInd + rg.mig_kolektif * faktor : rg.mig_total }
+          baru: ada("mig_individu") && migKol !== null ? rg.mig_individu + dInd + migKol : rg.mig_total }
       ]
     };
     return h;
@@ -5056,6 +5071,7 @@
     var lgd = d.lgd;
     var info = d.lgdcs.length + kr.tambah.length + " rekening · LGD CS = 1 − Σ realisasi / Σ pokok awal.";
     if (lgd.masalah) info += " Koreksi LGD CS tidak tersedia: " + lgd.masalah;
+    else if (lgd.catatan) info += " " + lgd.catatan;
     else if (lgd.haircut !== null && lgd.haircut !== undefined)
       info += " Realisasi yang masih rumus agunan ikut berubah saat agunan diubah (haircut " + (lgd.haircut * 100).toFixed(1).replace(".", ",") + "%).";
     teks("kr-info-tabel", info);
@@ -5129,6 +5145,7 @@
 
   function gambarDampak() {
     var h = hitungKoreksi(), w = $("kr-dampak");
+    function pct(v) { return v === null || v === undefined ? "—" : (v * 100).toFixed(2).replace(".", ",") + "%"; }
     var metode = statusP && statusP.metode;
     w.innerHTML = "";
     var t = el("table", "tabel-staging tabel-dampak");
@@ -5151,14 +5168,26 @@
     w.appendChild(t);
 
     var cat = ["Perubahan: " + h.nInd + " kontrak Individu, " + h.nCs + " baris LGD CS."];
-    if (h.nCs) cat.push("CKPN Kolektif ikut berubah ×" + h.faktor.toFixed(4).replace(".", ",") +
+    if (h.nCs && h.hitungUlang) cat.push("LGD gabungan sebelumnya ≤ 0%, sehingga CKPN Kolektif dihitung ulang = Σ(EAD × PD) × LGD gabungan baru " +
+      "(rumus sheet KOL INDV per bucket: EAD × PD × LGD).");
+    else if (h.nCs) cat.push("CKPN Kolektif ikut berubah ×" + h.faktor.toFixed(4).replace(".", ",") +
       " karena sheet KOL INDV memakai satu LGD (LGD gabungan B4) untuk Net Flow dan Migration.");
+    if (h.negatif)
+      w.appendChild(el("div", "peringatan-box", "LGD tidak boleh di bawah 0%: setelah perubahan ini LGD CS " + pct(h.csBaru) +
+        " dan LGD gabungan " + pct(h.gabBaru) + " karena total realisasi (" + rp(h.rec) + ") melebihi total pokok awal (" + rp(h.wo) +
+        "). CKPN Kolektif akan negatif dan mengurangi CKPN. Periksa realisasi baris yang ditambah/diubah."));
+    else if (h.tanpaDasar)
+      w.appendChild(el("div", "peringatan-box", "LGD gabungan versi ini ≤ 0% dan rincian EAD × PD tidak tersimpan, sehingga CKPN Kolektif " +
+        "tidak dapat dihitung ulang dari panel. Hitung ulang grup dari sheet."));
     if (metode) cat.push("★ = metode konsolidasi tahun ini.");
-    cat.push("Hanya versi periode ini yang berubah — penyesuaian untuk perhitungan bulan berikutnya tidak ikut diubah.");
+    cat.push($("kr-penyesuaian").checked
+      ? "Perubahan juga dicatat sebagai penyesuaian tersimpan, sehingga perhitungan bulan berikutnya otomatis memakai nilai yang sama " +
+        "(agunan/biaya Individu per kontrak; LGD CS ubah, kecualikan, atau baris manual per rekening)."
+      : "Hanya versi periode ini yang berubah — penyesuaian untuk perhitungan bulan berikutnya tidak ikut diubah.");
     if (statusP && statusP.tanggal === kr.d.tanggal && statusP.kodeKCMaster === kr.d.kodeKC && statusP.periodeMaster)
       cat.push("Sheet di workbook masih berisi angka sebelum koreksi; Simpan grup dari sheet akan membuat versi baru tanpa koreksi ini.");
     teks("kr-catatan", cat.join(" "));
-    $("kr-simpan").disabled = !bisaEdit() || (h.nInd + h.nCs) === 0;
+    $("kr-simpan").disabled = !bisaEdit() || (h.nInd + h.nCs) === 0 || h.negatif || h.tanpaDasar;
     $("kr-simpan").textContent = (h.nInd + h.nCs) ? "Simpan sebagai v" + (kr.d.versi + 1) : "Simpan sebagai versi baru";
   }
 
@@ -5167,6 +5196,7 @@
   });
   $("kr-cari").addEventListener("input", gambarTabelKoreksi);
   $("kr-tutup").addEventListener("click", function () { tampil("kartu-koreksi", false); kr = null; });
+  $("kr-penyesuaian").addEventListener("change", function () { gambarDampak(); });
   $("kr-reset").addEventListener("click", function () { if (kr) bukaKoreksi(kr.d.runId, kr.nama); });
   $("kr-tambah-buka").addEventListener("click", function () { tampil("kr-tambah", true); tampil("kr-tambah-buka", false); $("kr-t-rek").focus(); });
   $("kr-t-batal").addEventListener("click", function () { tampil("kr-tambah", false); tampil("kr-tambah-buka", true); });
@@ -5203,13 +5233,17 @@
     var b = this;
     b.disabled = true;
     panggil("koreksiSimpan", { runId: d.runId, alasan: alasan, individu: ind,
-      lgdcs: { ubah: ubah, hapus: hapus, tambah: kr.tambah } }, 120000).then(function (r) {
+      lgdcs: { ubah: ubah, hapus: hapus, tambah: kr.tambah }, jadikanPenyesuaian: $("kr-penyesuaian").checked }, 120000).then(function (r) {
       var nama = kr.nama;
       if (statusP) muatPeriode(statusP.tanggal === statusP.tanggalMaster ? "" : statusP.tanggal);
       return bukaKoreksi(r.runId, nama).then(function () {
         $("kr-hasil").innerHTML = "";
         $("kr-hasil").appendChild(el("div", "info-box", "Tersimpan sebagai v" + r.versi + ". Total Net Flow " + rp(r.ringkasan.nf_total) +
-          " · Migration " + rp(r.ringkasan.mig_total) + ". Konsolidasi, riwayat, dan jurnal periode ini sudah memakai angka baru."));
+          " · Migration " + rp(r.ringkasan.mig_total) + ". Konsolidasi, riwayat, dan jurnal periode ini sudah memakai angka baru." +
+          (r.jumlahPenyesuaian ? " " + r.jumlahPenyesuaian + " perubahan dicatat sebagai penyesuaian tersimpan untuk perhitungan berikutnya." : "")));
+        if (r.gagalPenyesuaian)
+          $("kr-hasil").appendChild(el("div", "peringatan-box", "Versi baru tersimpan, tetapi penyesuaian untuk perhitungan berikutnya gagal dicatat: " +
+            r.gagalPenyesuaian + ". Isi manual di Hitung › Penyesuaian."));
       });
     }).catch(function (e) {
       b.disabled = false;

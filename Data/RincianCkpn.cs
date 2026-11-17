@@ -97,8 +97,40 @@ namespace CKPNLibrary.Data
             Database.Exec(con, "INSERT OR REPLACE INTO analisis_pd(run_id, jenis, data) VALUES(@p0,@p1,@p2)", runId, Jenis, json);
         }
 
-        /// <summary>Koreksi panel (Tahap 5b): kolektif × faktor, LGD = LGD gabungan baru, CKPN individu baru.</summary>
-        public static string SesuaikanKoreksi(string json, double faktor, double? lgdBaru, double? individuBaru)
+        /// <summary>
+        /// Dasar CKPN Kolektif tanpa LGD: Σ(EAD × PD) blok Net Flow dan Migration.
+        /// Sheet "B. CKPN - KOL INDV" menghitung CKPN per bucket = EAD × PD × LGD dengan SATU LGD (LGD gabungan),
+        /// sehingga Kolektif = Σ(EAD × PD) × LGD. Dipakai koreksi panel bila LGD lama ≤ 0% (faktor proporsional
+        /// tidak dapat dipakai). Null bila rincian tidak tersimpan / tidak terbaca.
+        /// </summary>
+        public static double[] DasarEadPd(string json)
+        {
+            if (string.IsNullOrEmpty(json)) return null;
+            try
+            {
+                var d = _json.Deserialize<Dictionary<string, object>>(json);
+                var hasil = new double[2];
+                bool ada = false;
+                string[] blok = { "netflow", "migrasi" };
+                for (int i = 0; i < 2; i++)
+                {
+                    var list = d.ContainsKey(blok[i]) ? d[blok[i]] as System.Collections.ArrayList : null;
+                    if (list == null) continue;
+                    ada = true;
+                    foreach (Dictionary<string, object> b in list)
+                        if (b["pd"] != null && b["ead"] != null)
+                            hasil[i] += Convert.ToDouble(b["ead"]) * Convert.ToDouble(b["pd"]);
+                }
+                return ada ? hasil : null;
+            }
+            catch { return null; }
+        }
+
+        /// <summary>
+        /// Koreksi panel (Tahap 5b): kolektif × faktor, LGD = LGD gabungan baru, CKPN individu baru.
+        /// hitungUlang = true (LGD lama ≤ 0%): CKPN per bucket dihitung ulang = EAD × PD × LGD baru.
+        /// </summary>
+        public static string SesuaikanKoreksi(string json, double faktor, double? lgdBaru, double? individuBaru, bool hitungUlang = false)
         {
             try
             {
@@ -107,14 +139,22 @@ namespace CKPNLibrary.Data
                 {
                     var list = d.ContainsKey(blok) ? d[blok] as System.Collections.ArrayList : null;
                     if (list == null) continue;
+                    double total = 0;
                     foreach (Dictionary<string, object> b in list)
                     {
-                        b["ckpn"] = Convert.ToDouble(b["ckpn"]) * faktor;
+                        if (hitungUlang && lgdBaru.HasValue)
+                            b["ckpn"] = b["pd"] == null || b["ead"] == null ? 0
+                                      : Convert.ToDouble(b["ead"]) * Convert.ToDouble(b["pd"]) * lgdBaru.Value;
+                        else
+                            b["ckpn"] = Convert.ToDouble(b["ckpn"]) * faktor;
                         if (lgdBaru.HasValue && b["lgd"] != null) b["lgd"] = lgdBaru.Value;
+                        total += Convert.ToDouble(b["ckpn"]);
                     }
+                    if (hitungUlang && lgdBaru.HasValue) d[blok == "netflow" ? "nfTotal" : "migTotal"] = total;
                 }
-                foreach (var k in new[] { "nfTotal", "migTotal" })
-                    if (d.ContainsKey(k) && d[k] != null) d[k] = Convert.ToDouble(d[k]) * faktor;
+                if (!(hitungUlang && lgdBaru.HasValue))
+                    foreach (var k in new[] { "nfTotal", "migTotal" })
+                        if (d.ContainsKey(k) && d[k] != null) d[k] = Convert.ToDouble(d[k]) * faktor;
                 var ind = d.ContainsKey("individu") ? d["individu"] as Dictionary<string, object> : null;
                 if (ind != null && individuBaru.HasValue) ind["ckpn"] = individuBaru.Value;
                 d["koreksi"] = true;

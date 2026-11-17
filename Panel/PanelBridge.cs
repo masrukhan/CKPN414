@@ -701,7 +701,8 @@ namespace CKPNLibrary.Panel
 
                     case "koreksiSimpan":
                         Balas(host, id, KoreksiRun.Simpan(Convert.ToInt64(Ambil(args, "runId")),
-                            Ambil(args, "individu"), Ambil(args, "lgdcs"), Convert.ToString(Ambil(args, "alasan") ?? "")));
+                            Ambil(args, "individu"), Ambil(args, "lgdcs"), Convert.ToString(Ambil(args, "alasan") ?? ""),
+                            false, Ambil(args, "jadikanPenyesuaian") is bool && (bool)Ambil(args, "jadikanPenyesuaian")));
                         break;
 
                     // ---- Tahap 7c: penyesuaian tersimpan → versi tersimpan (tanpa hitung ulang Excel) ----
