@@ -185,6 +185,7 @@ textarea, .isian { width: 100%; font: inherit; font-size: 13px; padding: 7px 9px
 .baris-versi .aksi-versi { display: flex; gap: 8px; flex-shrink: 0; }
 .baris-versi button { background: none; border: none; font: inherit; font-size: 12px; cursor: pointer; padding: 0; color: var(--aksen); }
 .baris-versi button.hapus { color: var(--galat); }
+.baris-versi button:disabled { color: #B5B9B6; cursor: not-allowed; text-decoration: none; }
 
 .tabel-konsolidasi { width: 100%; border-collapse: collapse; font-size: 12px; margin: 6px 0; }
 .tabel-konsolidasi th { text-align: right; font-weight: 500; color: var(--teks-2); border-bottom: 1px solid var(--garis); padding: 5px 3px; }
@@ -1035,3 +1036,6 @@ select.ref-diubah { border-color: var(--aksen); box-shadow: 0 0 0 1px var(--akse
 .gb-folder-isi { min-width: 0; flex: 1 1 auto; }
 .gb-folder-isi .path { word-break: break-all; }
 #btn-gb-folder { white-space: nowrap; flex: 0 0 auto; }
+
+/* v17: peringatan baris manual LGD CS untuk semua grup */
+.teks-peringatan { color: var(--peringatan); }

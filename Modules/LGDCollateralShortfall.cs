@@ -224,7 +224,11 @@ namespace CKPNLibrary.Modules
 
             // ---- Tulis baris detail ----
             int outRow = ROW_FIRST;
-            CKPNLibrary.Data.Penyesuaian.MulaiLgdCs();   // Tahap 3a
+            // Tahap 3a; v17: hanya penyesuaian milik grup yang sedang dihitung (atau yang berlaku semua grup)
+            string kodeGrup = null;
+            try { kodeGrup = CKPNLibrary.Panel.ModeHitung.KodeGrupWorkbook(CariSheet(wb, "Master")); }
+            catch { kodeGrup = null; }   // grup tidak terbaca → semua penyesuaian dipakai seperti sebelumnya
+            CKPNLibrary.Data.Penyesuaian.MulaiLgdCs(kodeGrup);
 
             foreach (string noRek in sortedKeys)
             {

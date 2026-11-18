@@ -1536,13 +1536,27 @@
   }
 
   // ---------------- Analisis › Versi: riwayat versi semua grup (Tahap 5f) ----------------
+  var dataVersi = null;
+  function idVersiAktif(d) {
+    var ids = [];
+    (d.grup || []).forEach(function (g) {
+      (g.versi || []).forEach(function (v) { if (v.aktif && !v.dihapus) ids.push(v.id); });
+    });
+    return ids;
+  }
   function gambarVersi(d) {
     var w = $("versi-isi");
     w.innerHTML = "";
+    dataVersi = d;
     var final = d.status === "Final";
     teks("versi-judul", "Riwayat versi · " + tanggalPanjang(d.tanggal));
-    $("versi-sub").textContent = "Pilih periode lain di header. Data = lihat isi versi; xlsx = snapshot saat disimpan." +
+    $("versi-sub").textContent = "Pilih periode lain di header. Data = lihat isi versi; xlsx = snapshot sheet saat disimpan " +
+      "(nilai saja, tidak ada untuk versi hasil koreksi); Kertas kerja = Excel dengan rumus hidup dari database." +
       (final ? " Periode Final: versi tidak bisa dihapus." : "");
+    var nAktif = idVersiAktif(d).length;
+    $("btn-versi-kk").disabled = !nAktif;
+    teks("btn-versi-kk", "Kertas kerja semua grup (" + nAktif + " versi aktif)");
+    pesanDi("versi-kk-hasil", "");
     var ada = false;
     (d.grup || []).forEach(function (g) {
       var blok = el("div", "blok-versi");
@@ -1855,8 +1869,23 @@
       row.appendChild(ket);
       var aksi = el("div", "aksi-versi");
       if (!v.dihapus) aksi.appendChild(tombol("Data", "", function () { bukaKoreksi(v.id, v.kodeKC); }));
-      if (v.adaSnapshot) aksi.appendChild(tombol("xlsx", "", function () {
+      // xlsx = snapshot sheet saat Simpan grup (nilai saja). Versi tanpa snapshot (hasil koreksi panel) → tombol nonaktif.
+      var bx = tombol("xlsx", "", function () {
         panggil("bukaSnapshot", { runId: v.id }).catch(function (e) { alert(e.message); });
+      });
+      if (!v.adaSnapshot) {
+        bx.disabled = true;
+        bx.title = v.dariKoreksi ? "Versi hasil koreksi panel tidak punya snapshot sheet — gunakan Kertas kerja"
+                                 : "Snapshot sheet tidak tersedia — gunakan Kertas kerja";
+      } else bx.title = "Snapshot sheet saat disimpan (nilai saja, tanpa rumus)";
+      aksi.appendChild(bx);
+      // Kertas kerja Excel dari database: sheet seperti aplikasi, rumus hidup, angka = versi ini
+      if (!v.dihapus) aksi.appendChild(tombol("Kertas kerja", "kk", function () {
+        var b = this, label = b.textContent;
+        b.disabled = true; b.textContent = "Membuat…";
+        panggil("eksporKertasKerja", { runIds: [v.id], buka: true }, 120000)
+          .catch(function (e) { alert(e.message); })
+          .then(function () { b.disabled = false; b.textContent = label; });
       }));
       if (!v.dihapus && !final && d.bolehMenulis) {
         var h = tombol("Hapus", "hapus", function () {
@@ -2970,6 +2999,23 @@
                       (p.recovery !== null ? " · realisasi " + rp(p.recovery) : "");
   }
 
+  // v17: grup tempat penyesuaian LGD CS berlaku ("" = semua grup)
+  function kodeNormal(k) {
+    return String(k || "").split(",").map(function (x) { return x.trim().toUpperCase(); })
+      .filter(function (x) { return x; }).sort().join(",");
+  }
+  function namaGrupKode(kode) {
+    var n = kodeNormal(kode), hasil = "";
+    ((statusP && statusP.grup) || []).forEach(function (g) { if (kodeNormal(g.kodeKC) === n) hasil = g.nama; });
+    return hasil;
+  }
+  function labelGrupPny(p) {
+    if (!p.grup) return "semua grup";
+    var nm = namaGrupKode(p.grup);
+    var lain = dataPny && p.modeGrup && dataPny.modeAktif && p.modeGrup !== dataPny.modeAktif;
+    return "hanya grup " + (nm ? nm + " (" + p.grup + ")" : p.grup) + (lain ? " · mode lain" : "");
+  }
+
   function gambarPenyesuaian() {
     var d = dataPny;
     if (!d) return;
@@ -2984,7 +3030,8 @@
     var semua = modulPny === "individu" ? d.individu : d.lgdcs;
     var list = semua.filter(function (p) {
       if (!cari) return true;
-      return (p.kunci + " " + (p.nama || "") + " " + (p.jenis || "") + " " + (p.alasan || "")).toLowerCase().indexOf(cari) >= 0;
+      return (p.kunci + " " + (p.nama || "") + " " + (p.jenis || "") + " " + (p.alasan || "") + " " +
+              (p.grup ? p.grup + " " + namaGrupKode(p.grup) : "")).toLowerCase().indexOf(cari) >= 0;
     });
     list.sort(function (a, b) { return (b.waktu || "").localeCompare(a.waktu || ""); });
 
@@ -3001,7 +3048,7 @@
       if (modulPny === "lgdcs") kepala.appendChild(el("span", "jenis-cs " + p.jenis, LABEL_JENIS_CS[p.jenis] || p.jenis));
       row.appendChild(kepala);
       if (p.nama) row.appendChild(el("div", "", p.nama));
-      row.appendChild(el("div", "teks-kecil", uraianPny(p)));
+      row.appendChild(el("div", "teks-kecil", uraianPny(p) + (modulPny === "lgdcs" ? " · berlaku " + labelGrupPny(p) : "")));
       row.appendChild(el("div", "teks-kecil", p.pengguna + " · " + p.waktu +
         (p.dipakai ? " · dipakai " + p.dipakai.tanggal + " (" + p.dipakai.kodeKC + ")" : " · belum dipakai di kiriman aktif") +
         (p.alasan ? " · " + p.alasan : "")));
@@ -3037,8 +3084,44 @@
     teks("pe-ket-jenis", j === "hapus" ? "Rekening ini tidak ikut LGD CS pada perhitungan berikutnya." :
       j === "tambah" ? "Baris ditambahkan di bawah data LGD CS (font ungu) bila rekening tidak ada di hasil sistem." :
       "Nilai menggantikan hasil sistem. Kosongkan realisasi untuk tetap memakai rumus prefill.");
+    aturKetBerlaku();
   }
   $("pe-jenis").addEventListener("change", aturFieldCs);
+
+  // v17: pilihan "Berlaku untuk" — semua grup atau satu grup
+  function isiPilihanBerlaku(p) {
+    var sel = $("pe-berlaku");
+    sel.innerHTML = "";
+    var o = el("option", "", "Semua grup");
+    o.value = "";
+    sel.appendChild(o);
+    var ada = false, kini = p && p.grup ? kodeNormal(p.grup) : "";
+    var lain = !!(p && p.grup && p.modeGrup && dataPny && dataPny.modeAktif && p.modeGrup !== dataPny.modeAktif);
+    if (!lain) ((statusP && statusP.grup) || []).forEach(function (g) {
+      var x = el("option", "", g.nama + " (" + g.kodeKC + ")");
+      x.value = g.kodeKC;
+      if (kodeNormal(g.kodeKC) === kini) { x.selected = true; ada = true; }
+      sel.appendChild(x);
+    });
+    if (kini && !ada) {
+      var y = el("option", "", "Grup " + p.grup + (lain ? " (mode lain)" : ""));
+      y.value = p.grup;
+      y.selected = true;
+      sel.appendChild(y);
+    }
+    sel.setAttribute("data-mode-lama", lain ? p.modeGrup : "");
+    sel.setAttribute("data-grup-lama", p && p.grup ? p.grup : "");
+  }
+  function aturKetBerlaku() {
+    var g = $("pe-berlaku").value, j = $("pe-jenis").value;
+    teks("pe-ket-berlaku", g
+      ? "Hanya dipakai saat grup ini dihitung (dan saat menerapkan penyesuaian ke versi grup ini)."
+      : j === "tambah"
+        ? "Perhatian: baris manual untuk semua grup akan muncul di LGD CS setiap grup. Pilih grup debitur ini."
+        : "Dipakai di setiap grup yang memuat rekening ini.");
+    $("pe-ket-berlaku").className = "teks-kecil jarak-atas" + (!g && j === "tambah" ? " teks-peringatan" : "");
+  }
+  $("pe-berlaku").addEventListener("change", aturKetBerlaku);
 
   function bukaEditorPny(p) {
     editPny = p;
@@ -3063,6 +3146,7 @@
       isiAngka("pe-pokok", p ? p.pokok : null);
       $("pe-thn-serah").value = p ? (p.thnSerah || "") : "";
       $("pe-thn-eks").value = p ? (p.thnEks || "") : "";
+      isiPilihanBerlaku(p);
       aturFieldCs();
     }
     $("pe-alasan").value = "";
@@ -3093,7 +3177,11 @@
         ? { kunci: $("pe-kunci").value.trim(), jaminan: bacaAngka("pe-jaminan"), biaya: bacaAngka("pe-biaya") }
         : { kunci: $("pe-kunci").value.trim(), jenis: $("pe-jenis").value, nama: $("pe-nama").value.trim(),
             nilaiAgunan: bacaAngka("pe-agunan"), recovery: bacaAngka("pe-recovery"), pokok: bacaAngka("pe-pokok"),
-            thnSerah: $("pe-thn-serah").value.trim(), thnEks: $("pe-thn-eks").value.trim() };
+            thnSerah: $("pe-thn-serah").value.trim(), thnEks: $("pe-thn-eks").value.trim(),
+            grup: $("pe-berlaku").value };
+      if (!ind && data.grup && data.grup === $("pe-berlaku").getAttribute("data-grup-lama") &&
+          $("pe-berlaku").getAttribute("data-mode-lama"))
+        data.modeGrup = $("pe-berlaku").getAttribute("data-mode-lama");   // grup mode lain dipertahankan apa adanya
     } catch (e) { pesanEditor(e.message); return; }
 
     var b = this;
@@ -5240,7 +5328,8 @@
         $("kr-hasil").innerHTML = "";
         $("kr-hasil").appendChild(el("div", "info-box", "Tersimpan sebagai v" + r.versi + ". Total Net Flow " + rp(r.ringkasan.nf_total) +
           " · Migration " + rp(r.ringkasan.mig_total) + ". Konsolidasi, riwayat, dan jurnal periode ini sudah memakai angka baru." +
-          (r.jumlahPenyesuaian ? " " + r.jumlahPenyesuaian + " perubahan dicatat sebagai penyesuaian tersimpan untuk perhitungan berikutnya." : "")));
+          (r.jumlahPenyesuaian ? " " + r.jumlahPenyesuaian + " perubahan dicatat sebagai penyesuaian tersimpan untuk perhitungan berikutnya." : "") +
+          " Excel versi ini tersedia lewat Analisis › Versi › Kertas kerja."));
         if (r.gagalPenyesuaian)
           $("kr-hasil").appendChild(el("div", "peringatan-box", "Versi baru tersimpan, tetapi penyesuaian untuk perhitungan berikutnya gagal dicatat: " +
             r.gagalPenyesuaian + ". Isi manual di Hitung › Penyesuaian."));
@@ -6681,6 +6770,23 @@
     return lembar;
   }
 
+  function hasilKertasKerja(r) {
+    var f = r.file || [];
+    var t = f.length === 1 ? "Kertas kerja dibuka di Excel: " + f[0].nama
+                           : f.length + " file kertas kerja tersimpan (satu per grup) — folder dibuka: " + f.map(function (x) { return x.grup; }).join(", ");
+    if ((r.gagal || []).length) t += ". Gagal: " + r.gagal.join("; ");
+    return t;
+  }
+
+  $("btn-versi-kk").addEventListener("click", function () {
+    var b = this, ids = dataVersi ? idVersiAktif(dataVersi) : [];
+    if (!ids.length) return;
+    b.disabled = true; pesanDi("versi-kk-hasil", "Menyusun kertas kerja " + ids.length + " grup…", true);
+    panggil("eksporKertasKerja", { runIds: ids, buka: true }, 300000).then(function (r) {
+      pesanDi("versi-kk-hasil", hasilKertasKerja(r), !(r.gagal || []).length);
+    }).catch(function (e) { pesanDi("versi-kk-hasil", e.message, false); }).then(function () { b.disabled = false; });
+  });
+
   function namaFileDokGrup(daftarData) {
     var d0 = daftarData[0];
     return bulanDok(d0.run.tanggal) + " Perhitungan CKPN " + (daftarData.length > 1 ? "semua grup" : d0.grup.nama + " v" + d0.run.versi);
@@ -6702,6 +6808,14 @@
   $("pg-excel").addEventListener("click", function () {
     var b = this, ids = runDokDipilih();
     if (!ids.length) { pesanDi("pg-hasil", "Pilih grup yang punya versi tersimpan.", false); return; }
+    if ($("pg-format-kk").checked) {
+      // Kertas kerja: satu file per grup, sheet seperti aplikasi dengan rumus hidup
+      b.disabled = true; pesanDi("pg-hasil", "Menyusun kertas kerja " + ids.length + " grup…", true);
+      panggil("eksporKertasKerja", { runIds: ids, buka: true }, 300000).then(function (r) {
+        pesanDi("pg-hasil", hasilKertasKerja(r), !(r.gagal || []).length);
+      }).catch(function (e) { pesanDi("pg-hasil", e.message, false); }).then(function () { b.disabled = false; });
+      return;
+    }
     b.disabled = true; pesanDi("pg-hasil", "Menyusun workbook…", true);
     muatDataPerhitungan(ids).then(function (list) {
       return panggil("eksporExcelDokumen", { nama: namaFileDokGrup(list), periode: list[0].run.tanggal, lembar: lembarEkspor(list, opsiDokGrup()) }, 120000);

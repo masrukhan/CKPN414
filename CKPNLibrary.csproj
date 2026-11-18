@@ -41,6 +41,8 @@
     <!-- JavaScriptSerializer untuk pesan JSON panel <-> C#.
          Bagian dari .NET Framework, jadi tidak ada DLL tambahan yang perlu di-pack. -->
     <Reference Include="System.Web.Extensions" />
+    <!-- Kertas kerja versi (.xlsx dari database) ditulis langsung sebagai zip, tanpa membuka Excel -->
+    <Reference Include="System.IO.Compression" />
   </ItemGroup>
 
   <!-- ============================================================

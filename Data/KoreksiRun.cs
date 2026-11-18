@@ -564,7 +564,7 @@ namespace CKPNLibrary.Data
                 try
                 {
                     nPenyesuaian = DataPanel.SimpanDariKoreksi(item,
-                        alasan.Trim() + " (koreksi " + r.KodeKC + " " + r.Tanggal + " v" + versiBaru + ")", r.Tanggal);
+                        alasan.Trim() + " (koreksi " + r.KodeKC + " " + r.Tanggal + " v" + versiBaru + ")", r.Tanggal, r.KodeKC);
                 }
                 catch (Exception ex)
                 {
@@ -573,6 +573,10 @@ namespace CKPNLibrary.Data
                 }
             }
 
+            // Versi koreksi tidak punya snapshot sheet. File Excel-nya dibuat saat diminta lewat tombol Kertas kerja
+            // (dibangun dari database, rumus hidup) — tidak dibuat otomatis supaya tidak ada dua file untuk versi yang sama.
+            string snapshot = null, pesanSnapshot = null;
+
             var keluar = new Dictionary<string, object>();
             foreach (var kv in rgBaru) keluar[kv.Key] = kv.Value;
             return new Dictionary<string, object>
@@ -580,7 +584,8 @@ namespace CKPNLibrary.Data
                 { "runId", runBaru }, { "versi", versiBaru }, { "tanggal", r.Tanggal }, { "kodeKC", r.KodeKC },
                 { "ringkasan", keluar }, { "faktorKolektif", faktor }, { "kolektifDihitungUlang", hitungUlang },
                 { "jumlahIndividu", nInd }, { "jumlahLgdCs", nCs },
-                { "jumlahPenyesuaian", nPenyesuaian }, { "gagalPenyesuaian", gagalPenyesuaian }
+                { "jumlahPenyesuaian", nPenyesuaian }, { "gagalPenyesuaian", gagalPenyesuaian },
+                { "snapshot", snapshot }, { "pesanSnapshot", pesanSnapshot }
             };
         }
 
@@ -634,6 +639,9 @@ namespace CKPNLibrary.Data
         private static Rencana BuatRencana(Run r, Dictionary<string, PenyesuaianIndividu> pInd, Dictionary<string, PenyesuaianLgdCs> pCs)
         {
             var rc = new Rencana();
+            // v17: hanya penyesuaian LGD CS milik grup ini (atau yang berlaku semua grup) —
+            // baris manual dari koreksi grup Murabahah tidak boleh muncul sebagai "belum masuk" di grup Istishna
+            pCs = Penyesuaian.SaringGrup(pCs, CKPNLibrary.Panel.ModeHitung.Aktif.Id, r.KodeKC);
             foreach (var b in r.Individu)
             {
                 PenyesuaianIndividu p;
@@ -740,6 +748,7 @@ namespace CKPNLibrary.Data
             }
             hasil["statusPeriode"] = status;
             if (runs.Count == 0) return hasil;
+            try { Penyesuaian.IsiGrupLama(); } catch (Exception ex) { CatatanLog.Tulis("Isi grup penyesuaian lama: " + ex.Message); }
             var pInd = Penyesuaian.MuatIndividu();
             var pCs = Penyesuaian.MuatLgdCs();
             string info;
@@ -774,6 +783,7 @@ namespace CKPNLibrary.Data
         {
             string info;
             if (!Database.BolehMenulis(out info)) throw new InvalidOperationException(info);
+            try { Penyesuaian.IsiGrupLama(); } catch (Exception ex) { CatatanLog.Tulis("Isi grup penyesuaian lama: " + ex.Message); }
             var pInd = Penyesuaian.MuatIndividu();
             var pCs = Penyesuaian.MuatLgdCs();
             var hasil = new List<object>();

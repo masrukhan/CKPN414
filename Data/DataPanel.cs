@@ -76,7 +76,9 @@ namespace CKPNLibrary.Data
             {
                 string path = Convert.ToString(Database.Scalar(con, "SELECT snapshot FROM run_grup WHERE id=@p0", runId) ?? "");
                 if (path.Length == 0 || !File.Exists(path))
-                    throw new FileNotFoundException("Snapshot tidak ditemukan.", path);
+                    throw new FileNotFoundException("Snapshot sheet tidak ada untuk versi ini. Gunakan Kertas kerja.", path);
+                if (path.EndsWith("_db.xlsx", StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("Versi ini tidak punya snapshot sheet. Gunakan Kertas kerja.");
                 // Hanya file di folder staging yang boleh dibuka dari panel
                 if (!Path.GetFullPath(path).StartsWith(Path.GetFullPath(AppPaths.FolderStaging), StringComparison.OrdinalIgnoreCase))
                     throw new InvalidOperationException("Lokasi snapshot di luar folder arsip aplikasi.");
@@ -118,6 +120,8 @@ namespace CKPNLibrary.Data
                         { "dipakai", pk }
                     });
                 }
+                // v17: baris manual lama dari koreksi versi → kenali grupnya (sekali, bila boleh menulis)
+                try { Penyesuaian.IsiGrupLama(); } catch (Exception ex) { CatatanLog.Tulis("Isi grup penyesuaian lama: " + ex.Message); }
                 foreach (var p in Penyesuaian.MuatLgdCs().Values)
                 {
                     Dictionary<string, object> pk;
@@ -129,6 +133,7 @@ namespace CKPNLibrary.Data
                         { "nilaiAgunan", p.NilaiAgunan }, { "recovery", p.Recovery }, { "pokok", p.PokokAwal },
                         { "thnSerah", p.ThnDiserahkan }, { "thnEks", p.ThnEksekusi },
                         { "alasan", p.Alasan }, { "pengguna", p.Pengguna }, { "waktu", p.Waktu }, { "periode", p.Periode },
+                        { "grup", p.Grup ?? "" }, { "modeGrup", p.ModeGrup ?? "" },
                         { "dipakai", pk }
                     });
                 }
@@ -137,7 +142,8 @@ namespace CKPNLibrary.Data
             bool boleh = Database.BolehMenulis(out info);
             return new Dictionary<string, object>
             {
-                { "individu", ind }, { "lgdcs", cs }, { "bolehMenulis", boleh }, { "infoPengirim", info }
+                { "individu", ind }, { "lgdcs", cs }, { "bolehMenulis", boleh }, { "infoPengirim", info },
+                { "modeAktif", CKPNLibrary.Panel.ModeHitung.Aktif.Id }
             };
         }
 
@@ -284,27 +290,46 @@ namespace CKPNLibrary.Data
                 agunan = null; rec = null; thnS = ""; thnE = "";
             }
 
-            string alasanLama = null, periodeLama = "";
+            string alasanLama = null, periodeLama = "", grupLama = "", modeLama = "";
             sebelum = "";
             using (var cmd = Database.Cmd(con,
-                "SELECT jenis, nilai_agunan, recovery, pokok_awal, nama, alasan, periode FROM penyesuaian_lgdcs WHERE no_rek=@p0", kunci))
+                "SELECT jenis, nilai_agunan, recovery, pokok_awal, nama, alasan, periode, grup, mode_grup FROM penyesuaian_lgdcs WHERE no_rek=@p0", kunci))
             using (var rd = cmd.ExecuteReader())
                 if (rd.Read())
                 {
-                    sebelum = UraianCs(rd.GetString(0), Database.Dbl(rd[1]), Database.Dbl(rd[2]), Database.Dbl(rd[3]), Str(rd[4]));
+                    grupLama = Str(rd[7]); modeLama = Str(rd[8]);
+                    sebelum = UraianCs(rd.GetString(0), Database.Dbl(rd[1]), Database.Dbl(rd[2]), Database.Dbl(rd[3]), Str(rd[4])) +
+                              UraianGrup(grupLama);
                     if (nama.Length == 0) nama = Str(rd[4]);
                     alasanLama = Str(rd[5]); periodeLama = Str(rd[6]);
                 }
+
+            // v17: grup tempat penyesuaian berlaku. Kunci "grup" dikirim → ditetapkan ("" = semua grup);
+            // tidak dikirim → grup lama dipertahankan.
+            string grup = grupLama, modeGrup = modeLama;
+            if (d != null && d.ContainsKey("grup"))
+            {
+                grup = Penyesuaian.KodeNormal(Convert.ToString(Ambil(d, "grup") ?? ""));
+                string m = Convert.ToString(Ambil(d, "modeGrup") ?? "").Trim();
+                modeGrup = grup.Length == 0 ? "" : (m.Length > 0 ? m : CKPNLibrary.Panel.ModeHitung.Aktif.Id);
+            }
+
             aksi = sebelum.Length == 0 ? "tambah-dari-panel" : "ubah-dari-panel";
-            sesudah = UraianCs(jenis, agunan, rec, pokok, nama);
+            sesudah = UraianCs(jenis, agunan, rec, pokok, nama) + UraianGrup(grup);
             if (periodeLama.Length == 0) periodeLama = periodeBaru ?? "";
 
             Database.Exec(con,
                 "INSERT OR REPLACE INTO penyesuaian_lgdcs(no_rek,jenis,nilai_agunan,recovery,nama,pokok_awal,thn_diserahkan,thn_eksekusi," +
-                "alasan,pengguna,waktu,periode) VALUES(@p0,@p1,@p2,@p3,@p4,@p5,@p6,@p7,@p8,@p9,@p10,@p11)",
+                "alasan,pengguna,waktu,periode,grup,mode_grup) VALUES(@p0,@p1,@p2,@p3,@p4,@p5,@p6,@p7,@p8,@p9,@p10,@p11,@p12,@p13)",
                 kunci, jenis, agunan, rec, nama, pokok, thnS, thnE,
                 alasan.Length > 0 ? alasan : (alasanLama ?? "Diubah dari panel"),
-                Environment.UserName, Database.Sekarang(), periodeLama);
+                Environment.UserName, Database.Sekarang(), periodeLama,
+                grup.Length > 0 ? (object)grup : null, modeGrup.Length > 0 ? (object)modeGrup : null);
+        }
+
+        private static string UraianGrup(string grup)
+        {
+            return string.IsNullOrEmpty(grup) ? "" : " · hanya grup " + grup;
         }
 
         private static string UraianCs(string jenis, double? agunan, double? rec, double? pokok, string nama)
@@ -483,7 +508,8 @@ namespace CKPNLibrary.Data
         ///   - baris hasil sistem: ubah → 'ubah', hapus → 'hapus' (pengecualian).
         /// Satu transaksi; dipanggil SETELAH versi koreksi tersimpan.
         /// </summary>
-        public static int SimpanDariKoreksi(List<Dictionary<string, object>> item, string alasan, string periode)
+        /// <param name="grup">v17: kode grup versi yang dikoreksi — penyesuaian LGD CS hanya berlaku di grup ini.</param>
+        public static int SimpanDariKoreksi(List<Dictionary<string, object>> item, string alasan, string periode, string grup = null)
         {
             if (item == null || item.Count == 0) return 0;
             string info;
@@ -517,6 +543,7 @@ namespace CKPNLibrary.Data
                         else
                         {
                             if (barisManual && jenis == "ubah") d["jenis"] = "tambah";
+                            if (grup != null) d["grup"] = grup;   // v17: berlaku hanya di grup yang dikoreksi
                             SimpanLgdCs(con, kunci, d, alasan, out sebelum, out sesudah, out aksi, periode);
                         }
                     }

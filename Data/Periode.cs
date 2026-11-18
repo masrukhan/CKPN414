@@ -612,7 +612,10 @@ namespace CKPNLibrary.Data
                         { "id", rd.GetInt64(0) }, { "kodeKC", rd.GetString(1) }, { "versi", rd.GetInt32(2) },
                         { "aktif", rd.GetInt32(3) == 1 }, { "dihapus", rd.GetInt32(4) == 1 },
                         { "pengguna", Str(rd[5]) }, { "waktu", Str(rd[6]) }, { "catatan", Str(rd[7]) },
-                        { "adaSnapshot", !string.IsNullOrEmpty(Str(rd[8])) && File.Exists(Str(rd[8])) },
+                        // Snapshot = salinan sheet saat Simpan grup (nilai saja). File "_db" (dibangun dari database oleh versi
+                        // sebelumnya) bukan snapshot sheet — versi seperti itu memakai tombol Kertas kerja.
+                        { "adaSnapshot", !string.IsNullOrEmpty(Str(rd[8])) && File.Exists(Str(rd[8])) &&
+                                         !Str(rd[8]).EndsWith("_db.xlsx", StringComparison.OrdinalIgnoreCase) },
                         { "alasanHapus", Str(rd[9]) }, { "penggunaHapus", Str(rd[10]) }, { "waktuHapus", Str(rd[11]) }
                     });
 
@@ -623,6 +626,8 @@ namespace CKPNLibrary.Data
                 using (var rd = cmd.ExecuteReader())
                     while (rd.Read()) nilai[rd.GetString(0)] = Database.Dbl(rd[1]);
                 run["ringkasan"] = nilai;
+                // Versi hasil koreksi/penyesuaian panel tidak punya snapshot sheet → panel menonaktifkan tombol xlsx
+                run["dariKoreksi"] = nilai.ContainsKey("koreksi_dari_versi");
                 run["ppkaGrup"] = PpkaGrup(nilai, ModeHitung.KCGrup(mode, (string)run["kodeKC"]));
                 run["labelKode"] = ModeHitung.LabelKode(mode, (string)run["kodeKC"]);
             }
@@ -650,19 +655,21 @@ namespace CKPNLibrary.Data
             if (!Database.BolehMenulis(out info)) throw new InvalidOperationException(info);
             if (string.IsNullOrWhiteSpace(alasan)) throw new InvalidOperationException("Alasan penghapusan wajib diisi.");
 
+            string snapshot = null;
             Database.Cadangkan();
             using (var con = Database.Buka(true))
             using (var tx = con.BeginTransaction())
             {
                 long periodeId; string kode, tanggal, status; int versi; bool aktif;
                 using (var cmd = Database.Cmd(con,
-                    "SELECT g.periode_id, g.kode_kc, g.versi, g.aktif, p.tanggal, p.status FROM run_grup g " +
+                    "SELECT g.periode_id, g.kode_kc, g.versi, g.aktif, p.tanggal, p.status, g.snapshot FROM run_grup g " +
                     "JOIN periode p ON p.id=g.periode_id WHERE g.id=@p0 AND g.dihapus=0", runId))
                 using (var rd = cmd.ExecuteReader())
                 {
                     if (!rd.Read()) throw new InvalidOperationException("Versi tidak ditemukan atau sudah dihapus.");
                     periodeId = rd.GetInt64(0); kode = rd.GetString(1); versi = rd.GetInt32(2);
                     aktif = rd.GetInt32(3) == 1; tanggal = rd.GetString(4); status = rd.GetString(5);
+                    snapshot = Str(rd[6]);
                 }
                 if (status == "Final") throw new InvalidOperationException("Periode " + tanggal + " sudah dikunci. Buka kunci terlebih dahulu.");
 
@@ -679,6 +686,11 @@ namespace CKPNLibrary.Data
                 Database.CatatAktivitas(con, tanggal, "hapus-versi", kode + " v" + versi + " | " + alasan.Trim());
                 tx.Commit();
             }
+            // File .xlsx versi ikut dihapus (versi terhapus tidak bisa dipulihkan, jadi filenya tidak diperlukan lagi).
+            // File yang sedang dibuka di Excel gagal dihapus → hanya dicatat; penghapusan versi tetap berlaku.
+            if (KertasKerjaVersi.HapusSnapshot(snapshot))
+                using (var con = Database.Buka(true))
+                    Database.Exec(con, "UPDATE run_grup SET snapshot=NULL WHERE id=@p0", runId);
         }
 
         public static void PastikanTerbuka(SQLiteConnection con, string tanggal)

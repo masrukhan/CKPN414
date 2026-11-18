@@ -24,6 +24,8 @@ namespace CKPNLibrary.Data
         public double? NilaiAgunan, Recovery, PokokAwal;
         public string Nama, ThnDiserahkan, ThnEksekusi;
         public string Alasan, Pengguna, Waktu, Periode;
+        // v17: grup tempat penyesuaian berlaku (kosong = semua grup) + mode saat dicatat
+        public string Grup, ModeGrup;
     }
 
     /// <summary>Baris LGD CS hasil sistem (sebelum edit user) — disimpan lokal.</summary>
@@ -216,15 +218,117 @@ namespace CKPNLibrary.Data
         // =================================================================
         // LGD COLLATERAL SHORTFALL
         // =================================================================
-        public static void MulaiLgdCs()
+        /// <param name="kodeGrup">
+        /// Kode grup yang sedang dihitung (ModeHitung.KodeGrupWorkbook). Penyesuaian yang dicatat untuk
+        /// grup lain dilewati — mis. baris manual hasil koreksi grup Murabahah tidak ikut ke grup Istishna.
+        /// null = grup tidak diketahui → semua penyesuaian dipakai (perilaku lama).
+        /// </param>
+        public static void MulaiLgdCs(string kodeGrup = null)
         {
             _dasarCs = new List<DasarLgdCs>();
             _ovCs = new Dictionary<string, PenyesuaianLgdCs>(StringComparer.OrdinalIgnoreCase);
             _csDiterapkan = Aktif;
             _masalahDb = null;
+            _csGrupLain = 0;
             if (!Aktif) return;
-            try { _ovCs = MuatLgdCs(); }
+            try
+            {
+                var semua = MuatLgdCs();
+                _ovCs = kodeGrup == null ? semua : SaringGrup(semua, CKPNLibrary.Panel.ModeHitung.Aktif.Id, kodeGrup);
+                _csGrupLain = semua.Count - _ovCs.Count;
+                if (_csGrupLain > 0)
+                    CatatanLog.Tulis("Penyesuaian LGD CS: " + _csGrupLain + " penyesuaian milik grup lain dilewati (grup " + kodeGrup + ")");
+            }
             catch (Exception ex) { CatatMasalah("Penyesuaian LGD CS tidak dapat dibaca: " + ex.Message); }
+        }
+        private static int _csGrupLain;
+
+        // ================================================================
+        // v17: penyesuaian LGD CS per grup
+        // ================================================================
+        /// <summary>
+        /// Apakah penyesuaian berlaku di grup (modeId, kodeGrup)?
+        ///   • grup kosong                 → berlaku di semua grup (penyesuaian lama / dari Hitung › Penyesuaian)
+        ///   • mode sama                   → hanya bila kode grup sama (urutan KC diabaikan)
+        ///   • mode lain (kode beda arti)  → ubah/hapus tetap berlaku (cocok per rekening, aman);
+        ///                                   baris manual tidak — kalau ikut, ia muncul di setiap grup mode itu.
+        /// </summary>
+        public static bool BerlakuDiGrup(PenyesuaianLgdCs p, string modeId, string kodeGrup)
+        {
+            if (p == null || string.IsNullOrWhiteSpace(p.Grup)) return true;
+            if (!string.Equals(p.ModeGrup ?? "", modeId ?? "", StringComparison.OrdinalIgnoreCase))
+                return p.Jenis != "tambah";
+            return KodeSama(p.Grup, kodeGrup);
+        }
+
+        public static Dictionary<string, PenyesuaianLgdCs> SaringGrup(Dictionary<string, PenyesuaianLgdCs> semua,
+                                                                      string modeId, string kodeGrup)
+        {
+            var hasil = new Dictionary<string, PenyesuaianLgdCs>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kv in semua)
+                if (BerlakuDiGrup(kv.Value, modeId, kodeGrup)) hasil[kv.Key] = kv.Value;
+            return hasil;
+        }
+
+        /// <summary>"KC0700,KC0600" sama dengan "KC0600, KC0700".</summary>
+        public static bool KodeSama(string a, string b)
+        {
+            return string.Equals(KodeNormal(a), KodeNormal(b), StringComparison.OrdinalIgnoreCase);
+        }
+        public static string KodeNormal(string kode)
+        {
+            var l = new List<string>();
+            foreach (var x in (kode ?? "").Split(','))
+                if (x.Trim().Length > 0) l.Add(x.Trim().ToUpperInvariant());
+            l.Sort(StringComparer.Ordinal);
+            return string.Join(",", l.ToArray());
+        }
+
+        /// <summary>
+        /// Penyesuaian 'tambah' lama (sebelum v17) yang dibuat dari koreksi versi belum punya grup, sehingga
+        /// ikut ke semua grup. Grupnya bisa dikenali dari alasan log "… (koreksi KC0600 2026-09-30 v3)".
+        /// Hanya kode mode akad (KCxxxx) yang dikenali; sisanya tetap "semua grup" (bisa diatur di panel).
+        /// </summary>
+        public static int IsiGrupLama()
+        {
+            if (!Database.AdaBersama) return 0;
+            string info;
+            if (!Database.BolehMenulis(out info)) return 0;
+            int n = 0;
+            var rx = new System.Text.RegularExpressions.Regex(@"\(koreksi ((?:KC\d{4},?)+) \d{4}-\d{2}-\d{2} v\d+\)\s*$");
+            using (var con = Database.BukaBersama(true))
+            {
+                var calon = new List<string>();
+                using (var cmd = Database.Cmd(con,
+                    "SELECT no_rek FROM penyesuaian_lgdcs WHERE jenis='tambah' AND (grup IS NULL OR grup='')"))
+                using (var rd = cmd.ExecuteReader())
+                    while (rd.Read()) calon.Add(rd.GetString(0));
+                if (calon.Count == 0) return 0;
+
+                using (var tx = con.BeginTransaction())
+                {
+                    foreach (var rek in calon)
+                    {
+                        // log pertama yang membuat baris manual ini dari koreksi
+                        string alasan = Database.Scalar(con,
+                            "SELECT alasan FROM log_penyesuaian WHERE modul='lgdcs' AND kunci=@p0 AND aksi LIKE '%-dari-koreksi' " +
+                            "ORDER BY id LIMIT 1", rek) as string;
+                        var m = rx.Match(alasan ?? "");
+                        if (!m.Success) continue;
+                        string kode = m.Groups[1].Value.TrimEnd(',');
+                        Database.Exec(con, "UPDATE penyesuaian_lgdcs SET grup=@p1, mode_grup=@p2 WHERE no_rek=@p0",
+                                      rek, kode, CKPNLibrary.Panel.ModeHitung.Utama.Id);
+                        Database.Exec(con,
+                            "INSERT INTO log_penyesuaian(waktu,pengguna,periode,modul,kunci,aksi,sebelum,sesudah,alasan) " +
+                            "VALUES(@p0,@p1,'','lgdcs',@p2,'grup-otomatis','Semua grup',@p3,'Grup dikenali dari koreksi versi')",
+                            Database.Sekarang(), Environment.UserName, rek, "Hanya grup " + kode);
+                        n++;
+                    }
+                    tx.Commit();
+                }
+            }
+            if (n > 0) CatatanLog.Tulis("Penyesuaian LGD CS: grup " + n + " baris manual lama dikenali dari koreksi versi");
+            return n;
         }
 
         /// <summary>
@@ -380,6 +484,7 @@ namespace CKPNLibrary.Data
                     { "dikecualikan", kecuali },
                     { "diubah", diubah },
                     { "ditambah", _csDiterapkan ? _reviewCsManual : 0 },
+                    { "grupLain", _csGrupLain },   // v17: penyesuaian milik grup lain yang dilewati
                     { "baru", baru },
                     { "dikenalTersedia", dikenal != null },
                     { "masalah", _masalahDb }
@@ -477,9 +582,12 @@ namespace CKPNLibrary.Data
             var hasil = new Dictionary<string, PenyesuaianLgdCs>(StringComparer.OrdinalIgnoreCase);
             if (!Database.AdaBersama) return hasil;   // Tahap 8: tabel bersama semua mode
             using (var con = Database.BukaBersama(false))
+            {
+            // v17: kolom grup belum ada bila database dibuka hanya-baca sebelum dimigrasi pengirim
+            bool adaGrup = AdaKolom(con, "penyesuaian_lgdcs", "grup");
             using (var cmd = Database.Cmd(con,
                 "SELECT no_rek, jenis, nilai_agunan, recovery, nama, pokok_awal, thn_diserahkan, thn_eksekusi, " +
-                "alasan, pengguna, waktu, periode FROM penyesuaian_lgdcs"))
+                "alasan, pengguna, waktu, periode" + (adaGrup ? ", grup, mode_grup" : "") + " FROM penyesuaian_lgdcs"))
             using (var rd = cmd.ExecuteReader())
             {
                 while (rd.Read())
@@ -492,10 +600,25 @@ namespace CKPNLibrary.Data
                         ThnDiserahkan = Str(rd[6]), ThnEksekusi = Str(rd[7]),
                         Alasan = Str(rd[8]), Pengguna = Str(rd[9]), Waktu = Str(rd[10]), Periode = Str(rd[11])
                     };
+                    if (adaGrup) { p.Grup = Str(rd[12]); p.ModeGrup = Str(rd[13]); }
                     hasil[p.NoRek] = p;
                 }
             }
+            }
             return hasil;
+        }
+
+        private static bool AdaKolom(SQLiteConnection con, string tabel, string kolom)
+        {
+            try
+            {
+                using (var cmd = Database.Cmd(con, "PRAGMA table_info(" + tabel + ")"))
+                using (var rd = cmd.ExecuteReader())
+                    while (rd.Read())
+                        if (string.Equals(Convert.ToString(rd["name"]), kolom, StringComparison.OrdinalIgnoreCase)) return true;
+            }
+            catch { }
+            return false;
         }
 
         // Kontrak / rekening yang pernah masuk staging (untuk menandai "baru").

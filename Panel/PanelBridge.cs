@@ -568,6 +568,12 @@ namespace CKPNLibrary.Panel
                         });
                         break;
 
+                    // Kertas kerja Excel versi grup dari database (rumus hidup, satu file per grup)
+                    case "eksporKertasKerja":
+                        var idsKk = Ambil(args, "runIds") as System.Collections.IList;
+                        Balas(host, id, KertasKerjaVersi.Ekspor(idsKk, !(Ambil(args, "buka") is bool) || (bool)Ambil(args, "buka")));
+                        break;
+
                     case "eksporExcelDokumen":
                         string namaEks = Convert.ToString(Ambil(args, "nama") ?? "Dokumen CKPN");
                         string periodeEks = Convert.ToString(Ambil(args, "periode") ?? "");

@@ -527,7 +527,8 @@ namespace CKPNLibrary.Data
             if (Database.AdaBersama)
             {
                 ovInd = Penyesuaian.MuatIndividu();
-                ovCs  = Penyesuaian.MuatLgdCs();
+                // v17: penyesuaian LGD CS grup lain tidak dibandingkan dengan sheet grup ini
+                ovCs  = Penyesuaian.SaringGrup(Penyesuaian.MuatLgdCs(), CKPNLibrary.Panel.ModeHitung.Aktif.Id, r.KodeKC);
             }
             if (Database.Ada)
             {
@@ -632,11 +633,30 @@ namespace CKPNLibrary.Data
             var dasar = DasarCs();
             var lewati = DiubahDiPanel("lgdcs", dasarFile, r);
 
+            // v17: baris manual milik grup lain (ov sudah disaring per grup). Bila sheet ini masih memuatnya —
+            // biasanya karena dihitung dengan versi add-in lama — jangan dicatat ulang sebagai milik grup ini.
+            var milikGrupLain = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                if (Database.AdaBersama)
+                    foreach (var x in Penyesuaian.MuatLgdCs().Values)
+                        if (x.Jenis == "tambah" && !string.IsNullOrEmpty(x.Grup) && !ov.ContainsKey(x.NoRek))
+                            milikGrupLain[x.NoRek] = x.Grup;
+            }
+            catch { }
+            var grupLainDiSheet = new List<string>();
+
             var diSheet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var b in r.Cs)
             {
                 diSheet.Add(b.Rek);
                 if (lewati.Contains(b.Rek)) continue;   // diubah di panel setelah dihitung
+                string grupLain;
+                if (!dasar.ContainsKey(b.Rek) && milikGrupLain.TryGetValue(b.Rek, out grupLain))
+                {
+                    grupLainDiSheet.Add(b.Rek + " (grup " + grupLain + ")");
+                    continue;
+                }
                 PenyesuaianLgdCs lama;
                 ov.TryGetValue(b.Rek, out lama);
                 Dictionary<string, object> d;
@@ -689,6 +709,11 @@ namespace CKPNLibrary.Data
                             Sebelum = "Baris manual (versi lama)", Sesudah = "Baris manual: " + uraian });
                 }
             }
+
+            if (grupLainDiSheet.Count > 0)
+                r.Peringatan.Add("Baris manual LGD CS berikut milik grup lain dan tidak dicatat untuk grup ini: " +
+                                 string.Join(", ", grupLainDiSheet.ToArray()) +
+                                 ". Hitung ulang grup ini agar baris tersebut hilang dari sheet.");
 
             // ---- baris sistem yang dihapus user → pengecualian baru (alasan opsional) ----
             foreach (var kv in dasar)
@@ -822,11 +847,13 @@ namespace CKPNLibrary.Data
                     {
                         var d = (PenyesuaianLgdCs)p.Data;
                         if (string.IsNullOrEmpty(d.Alasan)) d.Alasan = catatan ?? "";
+                        // v17: edit dari sheet grup ini → penyesuaian hanya berlaku di grup ini
+                        d.Grup = r.KodeKC; d.ModeGrup = CKPNLibrary.Panel.ModeHitung.Aktif.Id;
                         Database.Exec(con,
-                            "INSERT OR REPLACE INTO penyesuaian_lgdcs(no_rek,jenis,nilai_agunan,recovery,nama,pokok_awal,thn_diserahkan,thn_eksekusi,alasan,pengguna,waktu,periode) " +
-                            "VALUES(@p0,@p1,@p2,@p3,@p4,@p5,@p6,@p7,@p8,@p9,@p10,@p11)",
+                            "INSERT OR REPLACE INTO penyesuaian_lgdcs(no_rek,jenis,nilai_agunan,recovery,nama,pokok_awal,thn_diserahkan,thn_eksekusi,alasan,pengguna,waktu,periode,grup,mode_grup) " +
+                            "VALUES(@p0,@p1,@p2,@p3,@p4,@p5,@p6,@p7,@p8,@p9,@p10,@p11,@p12,@p13)",
                             d.NoRek, d.Jenis, d.NilaiAgunan, d.Recovery, d.Nama, d.PokokAwal, d.ThnDiserahkan, d.ThnEksekusi,
-                            d.Alasan, d.Pengguna, d.Waktu, d.Periode);
+                            d.Alasan, d.Pengguna, d.Waktu, d.Periode, d.Grup, d.ModeGrup);
                     }
                 }
 

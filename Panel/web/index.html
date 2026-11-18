@@ -492,6 +492,9 @@
             <option value="tambah">Baris manual</option>
           </select>
           <div id="pe-ket-jenis" class="teks-kecil jarak-atas"></div>
+          <label class="label-isian" for="pe-berlaku">Berlaku untuk</label>
+          <select id="pe-berlaku" class="isian"></select>
+          <div id="pe-ket-berlaku" class="teks-kecil jarak-atas"></div>
           <div id="pe-grup-pokok">
             <label class="label-isian" for="pe-pokok">Pokok awal (C)</label>
             <input id="pe-pokok" class="isian angka" type="text" inputmode="numeric">
@@ -658,9 +661,16 @@
           <label class="opsi"><input type="checkbox" id="pg-b-ttd"> <span>Lembar tanda tangan (penandatangan dari isian Ringkasan)</span></label>
         </fieldset>
         <p class="teks-kecil">Selalu dicetak: identitas versi, ringkasan CKPN grup, CKPN kolektif per bucket (Net Flow) &amp; per kualitas (Migration), dan ringkasan LGD.</p>
+        <fieldset class="pilih-metode">
+          <legend class="label-isian">Format Ekspor Excel</legend>
+          <label class="opsi"><input type="radio" name="pg-format" id="pg-format-kk" checked>
+            <span><b>Kertas kerja</b> — sheet seperti aplikasi (Summary, A, B, B1–B4, tanpa Master), rumus hidup, satu file per grup</span></label>
+          <label class="opsi"><input type="radio" name="pg-format" id="pg-format-dok">
+            <span><b>Tabel dokumen</b> — isi seperti Preview, bagian yang dicentang di atas</span></label>
+        </fieldset>
         <div class="baris-tombol jarak-atas">
           <button id="pg-pratinjau" class="tombol-utama" type="button">Preview</button>
-          <button id="pg-excel" class="tombol-sekunder" type="button" title="Workbook baru (.xlsx) di library\dokumen, angka tetap angka">Ekspor Excel</button>
+          <button id="pg-excel" class="tombol-sekunder" type="button" title="Workbook .xlsx di library\dokumen — format dipilih di bawah">Ekspor Excel</button>
         </div>
         <div id="pg-hasil" role="status"></div>
       </div>
@@ -881,6 +891,13 @@
       <div class="kartu">
         <div class="judul-kartu" id="versi-judul">Riwayat versi grup</div>
         <div id="versi-sub" class="teks-kecil"></div>
+        <!-- Kertas kerja Excel dari database: satu file per grup, sheet seperti aplikasi, rumus hidup -->
+        <div class="baris-tombol jarak-atas">
+          <button id="btn-versi-kk" class="tombol-sekunder" type="button" disabled
+            title="Satu file .xlsx per grup di library\dokumen — Summary, A, B, B1–B4 dengan rumus hidup, angka sama dengan versi aktif">Kertas kerja semua grup</button>
+          <button class="tautan" type="button" data-folder="dokumen">Folder arsip</button>
+        </div>
+        <div id="versi-kk-hasil" role="status"></div>
         <div id="versi-isi" class="teks-kecil">—</div>
       </div>
 

@@ -25,7 +25,7 @@ namespace CKPNLibrary.Data
     /// </summary>
     internal static class Database
     {
-        public const int VersiSkema = 16;
+        public const int VersiSkema = 17;
         private static readonly HashSet<string> _skemaSiap = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly object _kunci = new object();
 
@@ -468,7 +468,19 @@ namespace CKPNLibrary.Data
                     }
                     CatatanLog.Tulis("Database: migrasi ke skema v16 selesai (" + Path.GetFileName(path) + ")");
                 }
-                // Migrasi versi berikutnya ditambahkan di sini: if (versi < 17) { ... }
+                // ---- v17: penyesuaian LGD CS bisa dibatasi pada satu grup (mis. baris manual dari koreksi grup Murabahah) ----
+                if (versi < 17)
+                {
+                    using (var tx = con.BeginTransaction())
+                    {
+                        // penyesuaian_lgdcs adalah tabel bersama → hanya di database utama
+                        if (utama) foreach (var sql in SkemaV17) Exec(con, sql);
+                        Exec(con, "INSERT OR REPLACE INTO meta(kunci,nilai) VALUES('versi_skema','17')");
+                        tx.Commit();
+                    }
+                    CatatanLog.Tulis("Database: migrasi ke skema v17 selesai (" + Path.GetFileName(path) + ")");
+                }
+                // Migrasi versi berikutnya ditambahkan di sini: if (versi < 18) { ... }
                 // (perubahan pada TabelBersama: jalankan hanya bila utama == true)
 
                 if (!utama)
@@ -845,6 +857,15 @@ namespace CKPNLibrary.Data
         // Ruang lingkup KC1000: tunggakan bagi hasil (AN) masuk perhitungan CKPN? Belum diisi = tidak.
         // Tunggakan pokok (AL) selalu hanya kualitas Macet (5).
         // Tahap 10: sandi sektor ekonomi (kolom T) rekening yang sama di KC0600–KC1100; isian manual & sebaran kelompok per kode produk
+        // v17: grup tempat penyesuaian LGD CS berlaku.
+        //   grup      : kode grup (run_grup.kode_kc, mis. "KC0600" atau "KC0700,KC0800"); NULL = semua grup
+        //   mode_grup : id mode hitung saat grup dicatat (kode grup tiap mode berbeda arti)
+        private static readonly string[] SkemaV17 =
+        {
+            "ALTER TABLE penyesuaian_lgdcs ADD COLUMN grup TEXT",
+            "ALTER TABLE penyesuaian_lgdcs ADD COLUMN mode_grup TEXT"
+        };
+
         private static readonly string[] SkemaV16 =
         {
             "ALTER TABLE ref_kc_hapusbuku ADD COLUMN sektor_rekening TEXT",
