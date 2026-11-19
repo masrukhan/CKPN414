@@ -590,6 +590,16 @@ namespace CKPNLibrary.Modules
         }
 
         /// <summary>
+        /// PPKA ABA (sheet KC0500) dengan aturan yang sama persis dengan Summary!H2 — dipakai juga oleh
+        /// Ringkasan (DataOverviewBuilder) supaya PPKA verifikasi data awal ikut menghitung ABA.
+        /// </summary>
+        internal static double PpkaAba(Excel.Worksheet wsKC0500, out int nBaris)
+        {
+            int nLewat; double nilaiLewat;
+            return JumlahPPKA(wsKC0500, new PpkaSpec("H2", "KC0500", "X", "Y", "R", 4, false), out nBaris, out nLewat, out nilaiLewat);
+        }
+
+        /// <summary>
         /// Jumlah PPKA satu sheet KC — hanya baris data (lihat aturan di HitungPPKA).
         /// nLewat/nilaiLewat = baris berisi nilai PPKA yang TIDAK dihitung (untuk laporan).
         /// </summary>

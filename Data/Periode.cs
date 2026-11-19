@@ -625,6 +625,8 @@ namespace CKPNLibrary.Data
                 using (var cmd = Database.Cmd(con, "SELECT kunci, nilai FROM ringkasan WHERE run_id=@p0", run["id"]))
                 using (var rd = cmd.ExecuteReader())
                     while (rd.Read()) nilai[rd.GetString(0)] = Database.Dbl(rd[1]);
+                var idRun = run["id"];
+                LengkapiTotalCkpn(nilai, () => JumlahIndividuRun(con, idRun));
                 run["ringkasan"] = nilai;
                 // Versi hasil koreksi/penyesuaian panel tidak punya snapshot sheet → panel menonaktifkan tombol xlsx
                 run["dariKoreksi"] = nilai.ContainsKey("koreksi_dari_versi");
@@ -758,6 +760,9 @@ namespace CKPNLibrary.Data
                 var belum = new List<string>();
                 Dictionary<string, object> ringkasTerbaru = null;
                 string waktuTerbaru = "";
+                // ABA diambil dari versi terbaru yang MEMILIKI angka ABA (versi dengan sel Summary ABA kosong dilewati)
+                Dictionary<string, object> ringkasAba = null;
+                string waktuAba = "";
                 double totNf = 0, totMig = 0, totPpka = 0, totDipakai = 0;
                 bool adaDipakai = true;
 
@@ -786,7 +791,9 @@ namespace CKPNLibrary.Data
                     });
                     string w = Convert.ToString(aktif["waktu"]);
                     if (string.CompareOrdinal(w, waktuTerbaru) > 0) { waktuTerbaru = w; ringkasTerbaru = rg; }
+                    if (NilaiN(rg, "aba_ckpn").HasValue && string.CompareOrdinal(w, waktuAba) > 0) { waktuAba = w; ringkasAba = rg; }
                 }
+                if (ringkasAba != null) ringkasTerbaru = ringkasAba;
 
                 // CKPN & PPKA antar bank (KC0500) sama untuk semua grup — ambil dari kiriman terbaru
                 double abaCkpn = ringkasTerbaru == null ? 0 : Nilai(ringkasTerbaru, "aba_ckpn");
@@ -1012,6 +1019,55 @@ namespace CKPNLibrary.Data
         {
             object v;
             return d != null && d.TryGetValue(k, out v) && v != null ? Convert.ToDouble(v) : 0;
+        }
+
+        // ================================================================
+        // Total CKPN grup yang tidak lengkap
+        // ================================================================
+        /// <summary>
+        /// Grup tanpa debitur individu (umum di mode sektor/kantor) membuat sel Summary B6/B13 (individu) — dan
+        /// karena itu B8/B15 (total) — berisi error/kosong, sehingga nf_individu & nf_total tidak tersimpan padahal
+        /// nf_kolektif ada. Akibatnya Total CKPN grup terbaca 0 di Konsolidasi, Dokumen, dan jurnal.
+        /// Di sini yang kosong dilengkapi: individu = jumlah tabel individu versi (0 bila tidak ada debitur),
+        /// total = individu + kolektif. Nilai yang sudah ada tidak diubah.
+        /// </summary>
+        internal static void LengkapiTotalCkpn(IDictionary<string, object> rg, Func<double> jumlahIndividu)
+        {
+            double? indTabel = null;
+            foreach (var p in new[] { "nf", "mig" })
+            {
+                double? kol = NilaiN(rg, p + "_kolektif");
+                if (!kol.HasValue) continue;
+                double? ind = NilaiN(rg, p + "_individu");
+                if (!ind.HasValue)
+                {
+                    if (!indTabel.HasValue) indTabel = jumlahIndividu();
+                    ind = indTabel;
+                    rg[p + "_individu"] = ind.Value;
+                }
+                if (!NilaiN(rg, p + "_total").HasValue) rg[p + "_total"] = ind.Value + kol.Value;
+            }
+        }
+
+        internal static void LengkapiTotalCkpn(IDictionary<string, double> rg, Func<double> jumlahIndividu)
+        {
+            var o = new Dictionary<string, object>();
+            foreach (var kv in rg) o[kv.Key] = kv.Value;
+            LengkapiTotalCkpn(o, jumlahIndividu);
+            foreach (var kv in o) if (kv.Value is double) rg[kv.Key] = (double)kv.Value;
+        }
+
+        /// <summary>Jumlah penurunan nilai tabel individu satu versi (dasar pelengkap total).</summary>
+        internal static double JumlahIndividuRun(SQLiteConnection con, object runId)
+        {
+            object v = Database.Scalar(con, "SELECT COALESCE(SUM(penurunan_nilai),0) FROM hasil_individu WHERE run_id=@p0", runId);
+            return v == null || v is DBNull ? 0 : Convert.ToDouble(v);
+        }
+
+        private static double? NilaiN(IDictionary<string, object> d, string k)
+        {
+            object v;
+            return d != null && d.TryGetValue(k, out v) && v != null && !(v is DBNull) ? Convert.ToDouble(v) : (double?)null;
         }
 
         private static object Ambil(Dictionary<string, object> d, string k)

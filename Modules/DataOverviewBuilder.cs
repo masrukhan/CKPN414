@@ -118,6 +118,10 @@ namespace CKPNLibrary.Modules
             public int SektorCadangan;
             public List<string> Log = new List<string>();
             public int GunaCadangan;   // baris pembiayaan tanpa jenis penggunaan → Konsumsi
+            /// <summary>PPKA ABA (KC0500) — tidak masuk segmen pembiayaan, tetapi masuk PPKA total bank.</summary>
+            public double PpkaAba;
+            public bool AbaAda;
+            public int AbaBaris;
             /// <summary>Kontrol OS neraca vs segmen (Analisis › Kontrol): nilai sel GB0200 E1..E40.</summary>
             public Dictionary<int, double> GB;
             /// <summary>Kontrol OS neraca vs segmen: jumlah kolom nominatif & baris penyebab per KC.</summary>
@@ -255,7 +259,8 @@ namespace CKPNLibrary.Modules
                     } : null },
                 { "segmen", segmen },
                 { "kantor", kantor },
-                { "total", KeData("Total", true, "", totDebitur, totOS, totEAD, totPPKA) },
+                { "total", TotalBank(KeData("Total", true, "", totDebitur, totOS, totEAD, totPPKA), h) },
+                { "aba", new Dictionary<string, object> { { "ada", h.AbaAda }, { "ppka", h.PpkaAba }, { "baris", h.AbaBaris } } },
                 { "log", h.Log }
             };
         }
@@ -276,6 +281,17 @@ namespace CKPNLibrary.Modules
                 { "npf", tOS > 0 ? npfOS / tOS : (double?)null },
                 { "npfEAD", tEAD > 0 ? npfEAD / tEAD : (double?)null }
             };
+        }
+
+        /// <summary>
+        /// Total pembiayaan (OS/EAD/PPKA per kualitas) + PPKA total bank = pembiayaan + ABA (KC0500).
+        /// totalPPKA tetap pembiayaan saja agar konsisten dengan tabel per kualitas; Ringkasan memakai totalPPKABank.
+        /// </summary>
+        private static Dictionary<string, object> TotalBank(Dictionary<string, object> t, HasilOverview h)
+        {
+            t["ppkaAba"] = h.AbaAda ? (object)h.PpkaAba : null;
+            t["totalPPKABank"] = (double)t["totalPPKA"] + (h.AbaAda ? h.PpkaAba : 0);
+            return t;
         }
 
         private static double Jumlah(double[] b) { double t = 0; for (int k = 1; k <= 5; k++) t += b[k]; return t; }
@@ -345,6 +361,16 @@ namespace CKPNLibrary.Modules
 
             foreach (string kode in SegmenOverview)
                 h.Segmen.Add(BacaSegmen(wbTpl, kode, h.Log, h));
+
+            // PPKA ABA langsung dari sheet KC0500 (aturan sama dengan Summary!H2). Segmen di atas hanya
+            // KC0600–KC1100 (pembiayaan), jadi tanpa ini PPKA verifikasi di Ringkasan tidak memuat ABA.
+            var wsAba = CariSheet(wbTpl, "KC0500");
+            if (wsAba != null)
+            {
+                try { h.PpkaAba = RefreshSummary.PpkaAba(wsAba, out h.AbaBaris); h.AbaAda = true; }
+                catch (Exception ex) { h.Log.Add("KC0500: PPKA ABA tidak terbaca — " + ex.Message); }
+            }
+            else h.Log.Add("Sheet 'KC0500' tidak ada di template — PPKA ABA tidak ikut.");
             return h;
         }
 

@@ -78,6 +78,7 @@ namespace CKPNLibrary.Data
                 using (var cmd = Database.Cmd(con, "SELECT kunci, nilai FROM ringkasan WHERE run_id=@p0", runId))
                 using (var rd = cmd.ExecuteReader())
                     while (rd.Read()) rg[rd.GetString(0)] = Database.Dbl(rd[1]);
+                Periode.LengkapiTotalCkpn(rg, () => Periode.JumlahIndividuRun(con, runId));
                 h["ringkasan"] = rg;
                 double ppka = 0;
                 foreach (var kc in ModeHitung.KCGrup(mode, kode))

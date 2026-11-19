@@ -217,6 +217,8 @@ namespace CKPNLibrary.Data
                 string tolakLingkup = RuangLingkup.CekBeda(wb, r.Tanggal.Year);
                 if (tolakLingkup != null) throw new InvalidOperationException(tolakLingkup);
                 var ringkasan = BacaRingkasan(wb);
+                // Grup tanpa debitur individu: sel Summary individu/total kosong/error → lengkapi dari tabel individu
+                Periode.LengkapiTotalCkpn(ringkasan, () => { double jmlInd = 0; foreach (var bi in r.Indv) jmlInd += bi.Penurunan; return jmlInd; });
                 // Jejak ruang lingkup KC1000: 1 = tunggakan bagi hasil ikut dihitung, 0 = tidak (pokok selalu hanya Macet)
                 ringkasan["kc1000_basil"] = RuangLingkup.BasilKC1000(wb) ? 1d : 0d;
                 string analisisJson = AnalisisPD.BacaWorkbookJson(wb);   // Tahap 4: bahan sankey

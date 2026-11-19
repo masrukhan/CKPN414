@@ -120,6 +120,8 @@ namespace CKPNLibrary.Data
                     });
             r.DasarKolektif = RincianCkpn.DasarEadPd(Database.Scalar(con,
                 "SELECT data FROM analisis_pd WHERE run_id=@p0 AND jenis=@p1", runId, RincianCkpn.Jenis) as string);
+            // Grup tanpa debitur individu: nf/mig individu & total tidak tersimpan → lengkapi agar koreksi menghitung total benar
+            Periode.LengkapiTotalCkpn(r.Ringkasan, () => { double jmlInd = 0; foreach (var bi in r.Individu) jmlInd += bi.Penurunan; return jmlInd; });
             return r;
         }
 
@@ -244,7 +246,12 @@ namespace CKPNLibrary.Data
             else if (r.Dihapus) tolak = "Versi ini sudah dihapus.";
             else if (!r.Aktif) tolak = "Hanya versi aktif yang dapat dikoreksi.";
             else if (r.StatusPeriode == "Final") tolak = "Periode " + r.Tanggal + " sudah dikunci (Final). Buka kunci terlebih dahulu.";
-            else if (r.Individu.Count == 0 && r.LgdCs.Count == 0) tolak = "Versi ini tidak menyimpan tabel Individu maupun LGD CS.";
+            // Grup tanpa debitur individu dan tanpa baris LGD CS (umum di mode sektor/kantor: grup kecil tanpa debitur macet
+            // beragunan) tetap boleh dikoreksi — satu-satunya koreksi yang mungkin adalah MENAMBAH baris LGD CS.
+            // Ditolak hanya bila LGD versi ini tidak bisa direkonstruksi (lgd.Masalah), karena penambahan baris lalu
+            // tidak bisa dihitung dengan benar (mis. versi lama yang ringkasannya ber-LGD CS tetapi rinciannya tidak tersimpan).
+            else if (r.Individu.Count == 0 && r.LgdCs.Count == 0 && lgd.Masalah != null)
+                tolak = "Versi ini tidak menyimpan tabel Individu maupun LGD CS, dan LGD-nya tidak dapat ditambah: " + lgd.Masalah;
 
             return new Dictionary<string, object>
             {

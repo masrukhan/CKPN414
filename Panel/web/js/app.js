@@ -3522,8 +3522,11 @@
     var lain = [["Selisih EAD − OS", t.selisih, t.selisih < 0 ? "kurang" : ""]];
     if (d.keuangan) lain = lain.concat([
       ["Aset", d.keuangan.asset], ["Laba tahun lalu", d.keuangan.labaLalu], ["Laba berjalan", d.keuangan.labaBerjalan, d.keuangan.labaBerjalan < 0 ? "kurang" : ""],
-      ["OS neraca (GB0200)", d.keuangan.osNeraca], ["CKPN neraca", d.keuangan.ckpnNeraca], ["PPKA template", t.totalPPKA]
+      ["OS neraca (GB0200)", d.keuangan.osNeraca], ["CKPN neraca", d.keuangan.ckpnNeraca],
+      ["PPKA template" + (t.totalPPKABank !== undefined && t.totalPPKABank !== null ? " (termasuk ABA)" : ""),
+       t.totalPPKABank !== undefined && t.totalPPKABank !== null ? t.totalPPKABank : t.totalPPKA]
     ]);
+    if (d.aba && d.aba.ada) lain.push(["PPKA ABA (KC0500)", d.aba.ppka]);
     lain.forEach(function (x) { k.appendChild(tileAngka(x[0], nilaiOv(x[1]), null, x[2])); });
 
     var rekon = $("ov-rekon"), chip = $("ov-rekon-chip");
@@ -3574,10 +3577,13 @@
     if (npfTinggi) tNpf.title = "Di atas 5%";
     w.appendChild(tNpf);
     var adaCkpn = ckpnRingkas && statusP && ckpnRingkas.tanggal === statusP.tanggal && ckpnRingkas.ckpn !== null && ckpnRingkas.ckpn !== undefined;
-    var tc = tileAngka("CKPN / PPKA", adaCkpn ? nilaiOv(ckpnRingkas.ckpn) : "—",
-      nilaiOv(adaCkpn && ckpnRingkas.ppka !== null ? ckpnRingkas.ppka : t.totalPPKA));
-    tc.title = adaCkpn ? "Total CKPN (metode tahunan + ABA) dan PPKA dari Tetapkan › Konsolidasi vs PPKA OJK."
-                       : "CKPN tersedia setelah semua grup tersimpan. PPKA dari template.";
+    // PPKA = verifikasi data awal: selalu dari template (KC0600–KC1100 + ABA KC0500), tidak bergantung mode/Tetapkan.
+    // Data muatan lama (sebelum ABA ikut dibaca) belum punya totalPPKABank → pakai PPKA pembiayaan + petunjuk muat ulang.
+    var adaAba = t.totalPPKABank !== undefined && t.totalPPKABank !== null;
+    var tc = tileAngka("CKPN / PPKA", adaCkpn ? nilaiOv(ckpnRingkas.ckpn) : "—", nilaiOv(adaAba ? t.totalPPKABank : t.totalPPKA));
+    tc.title = (adaCkpn ? "CKPN: total metode tahunan + ABA dari Tetapkan › Konsolidasi. " : "CKPN tersedia setelah semua grup tersimpan. ") +
+      (adaAba ? "PPKA dari template: pembiayaan " + nilaiOv(t.totalPPKA) + " + ABA (KC0500) " + nilaiOv(t.ppkaAba || 0) + "."
+              : "PPKA dari template tanpa ABA — muat ulang data template agar PPKA ABA (KC0500) ikut.");
     w.appendChild(tc);
   }
 
@@ -5005,7 +5011,9 @@
     teks("kr-sub", "Memuat…");
     $("kr-hasil").innerHTML = "";
     return panggil("koreksiData", { runId: runId }).then(function (d) {
-      kr = { d: d, nama: nama, tab: (kr && kr.tab) || "individu", ind: {}, cs: {}, hapus: {}, tambah: [] };
+      var tabAwal = (kr && kr.tab) || "individu";
+      if (tabAwal === "individu" && d.individu.length === 0) tabAwal = "lgdcs";   // grup tanpa individu → langsung ke LGD CS
+      kr = { d: d, nama: nama, tab: tabAwal, ind: {}, cs: {}, hapus: {}, tambah: [] };
       d.individu.forEach(function (b) { kr.ind[b.id] = { jaminan: b.jaminan, biaya: b.biaya }; });
       d.lgdcs.forEach(function (c) {
         var h = d.lgd.haircut;
@@ -5127,7 +5135,7 @@
 
     if (kr.tab === "individu") {
       var list = d.individu.filter(function (b) { return !cari || (b.kontrak + " " + b.nama + " " + b.cif + " " + b.kc).toLowerCase().indexOf(cari) >= 0; });
-      teks("kr-info-tabel", d.individu.length === 0 ? "Versi ini tidak menyimpan tabel Individu." :
+      teks("kr-info-tabel", d.individu.length === 0 ? "Grup ini tidak memiliki debitur individu pada versi ini." :
         list.length + " kontrak · CKPN = MAX(0, OS − (agunan − biaya)) bila ada penurunan nilai.");
       list.forEach(function (b) {
         var n = kr.ind[b.id];

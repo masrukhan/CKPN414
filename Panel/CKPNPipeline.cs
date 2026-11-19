@@ -249,6 +249,7 @@ namespace CKPNLibrary.Panel
             // dalam modul. Bisa dimatikan per run untuk melihat hasil sistem murni.
             Data.Penyesuaian.Aktif = terapkanPenyesuaian;
             MatikanGhostingSekali();
+            BekukanLayar(app);
             try { app.Cursor = Excel.XlMousePointer.xlWait; } catch { }
 
             var daftar = new List<object>();
@@ -382,7 +383,9 @@ namespace CKPNLibrary.Panel
                 try { app.EnableEvents = ev; }   catch { }
                 try { app.DisplayAlerts = da; }  catch { }
                 try { app.Calculation = calc; }  catch { }
-                try { app.ScreenUpdating = su; } catch { }
+                // Layar TIDAK dinyalakan di antara langkah (dulu: su dipulihkan → Excel menggambar ulang setiap
+                // segmen = berkedip). Layar dipulihkan sekali di Akhiri. Perhitungan modul tidak berubah.
+                try { app.ScreenUpdating = false; } catch { }
             }
             sw.Stop();
 
@@ -588,6 +591,32 @@ namespace CKPNLibrary.Panel
             }
             // Tutup konteks — kecuali lanjutan sudah memulai run baru (grup berikutnya) dengan id sendiri
             if (LogProses.IdJalan == jalanIni) LogProses.SelesaiJalan();
+            // Layar dinyalakan sekali di akhir. Hitung semua grup: lanjutan sudah memulai grup berikutnya →
+            // layar tetap beku sampai grup terakhir selesai (tidak berkedip antargrup).
+            if (!SedangBerjalan) PulihkanLayar(app);
+        }
+
+        // ------------------------------------------------------------
+        // Layar Excel beku sepanjang antrian (tampilan saja — tidak memengaruhi perhitungan)
+        // ------------------------------------------------------------
+        private static bool _layarBeku;
+
+        /// <summary>
+        /// Matikan penggambaran ulang Excel dari langkah pertama sampai run selesai. Progres tetap terlihat
+        /// di panel (panel adalah jendela terpisah, tidak terpengaruh ScreenUpdating).
+        /// </summary>
+        private static void BekukanLayar(Excel.Application app)
+        {
+            _layarBeku = true;
+            try { app.ScreenUpdating = false; } catch { }
+        }
+
+        /// <summary>Nyalakan kembali layar Excel (selalu ke kondisi normal = menyala).</summary>
+        internal static void PulihkanLayar(Excel.Application app)
+        {
+            if (!_layarBeku) return;
+            _layarBeku = false;
+            try { app.ScreenUpdating = true; } catch { }
         }
 
         // ------------------------------------------------------------
@@ -610,7 +639,17 @@ namespace CKPNLibrary.Panel
                 _timer.Tick += (s, e) =>
                 {
                     _timer.Stop();
-                    ExcelAsyncUtil.QueueAsMacro(LangkahBerikut);
+                    ExcelAsyncUtil.QueueAsMacro(() =>
+                    {
+                        // Jaring pengaman: error tak terduga di luar modul tidak boleh meninggalkan layar Excel beku
+                        try { LangkahBerikut(); }
+                        catch (Exception ex)
+                        {
+                            var a = (Excel.Application)ExcelDnaUtil.Application;
+                            try { Akhiri(a, "gagal", "Kesalahan tak terduga: " + PesanError(ex)); }
+                            catch { PulihkanLayar(a); }
+                        }
+                    });
                 };
             }
             _timer.Stop();
