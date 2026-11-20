@@ -107,6 +107,9 @@ namespace CKPNLibrary.Modules
             public Dictionary<string, Segmen> Kantor = new Dictionary<string, Segmen>(StringComparer.OrdinalIgnoreCase);
             /// <summary>sandi → KC → OS (komposisi segmen tiap kantor)</summary>
             public Dictionary<string, Dictionary<string, double>> KantorKC = new Dictionary<string, Dictionary<string, double>>(StringComparer.OrdinalIgnoreCase);
+            /// <summary>Mode per produk: agregat per kode produk (potongan nomor rekening kolom J menurut pola).</summary>
+            public Dictionary<string, Segmen> Produk = new Dictionary<string, Segmen>(StringComparer.OrdinalIgnoreCase);
+            public Dictionary<string, Dictionary<string, double>> ProdukKC = new Dictionary<string, Dictionary<string, double>>(StringComparer.OrdinalIgnoreCase);
             /// <summary>Tahap 8c: agregat per jenis penggunaan (kolom S; agunan ikut kontraknya; kosong → Konsumsi).</summary>
             public Dictionary<string, Segmen> Guna = new Dictionary<string, Segmen>(StringComparer.OrdinalIgnoreCase);
             public Dictionary<string, Dictionary<string, double>> GunaKC = new Dictionary<string, Dictionary<string, double>>(StringComparer.OrdinalIgnoreCase);
@@ -193,6 +196,28 @@ namespace CKPNLibrary.Modules
                 kantor.Add(d);
             }
 
+            // Per kode produk (urut numerik) — tersedia tanpa susunan grup; nama produk dari daftar pindai bila diisi
+            var namaProduk = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                foreach (var d in CKPNLibrary.Data.KodeProduk.Daftar())
+                    if (!string.IsNullOrEmpty(Convert.ToString(d["nama"]))) namaProduk[(string)d["kode"]] = Convert.ToString(d["nama"]);
+            }
+            catch { }
+            var kodeProduk = new List<string>(h.Produk.Keys);
+            kodeProduk.Sort(CKPNLibrary.Panel.ModeHitung.BandingSandi);
+            var produk = new List<object>();
+            foreach (var kode in kodeProduk)
+            {
+                var s = h.Produk[kode];
+                var d = KeData(kode, true, "", s.Debitur, s.OS, s.EAD, s.PPKA);
+                string nm;
+                d["nama"] = namaProduk.TryGetValue(kode, out nm) ? nm : "";
+                Dictionary<string, double> perKC;
+                d["perKC"] = h.ProdukKC.TryGetValue(kode, out perKC) ? perKC : new Dictionary<string, double>();
+                produk.Add(d);
+            }
+
             // Tahap 8c: per jenis penggunaan (urut kode 1–3)
             var guna = new List<object>();
             for (int i = 0; i < CKPNLibrary.Panel.ModeHitung.JenisPenggunaan.GetLength(0); i++)
@@ -259,6 +284,7 @@ namespace CKPNLibrary.Modules
                     } : null },
                 { "segmen", segmen },
                 { "kantor", kantor },
+                { "produk", produk }, { "polaProduk", CKPNLibrary.Data.KodeProduk.Pola.Teks },
                 { "total", TotalBank(KeData("Total", true, "", totDebitur, totOS, totEAD, totPPKA), h) },
                 { "aba", new Dictionary<string, object> { { "ada", h.AbaAda }, { "ppka", h.PpkaAba }, { "baris", h.AbaBaris } } },
                 { "log", h.Log }
@@ -451,11 +477,17 @@ namespace CKPNLibrary.Modules
                 }
                 Segmen se2;
                 if (!h.Sektor.TryGetValue(kodeSektor, out se2)) { se2 = new Segmen { Kode = kodeSektor, Ada = true }; h.Sektor[kodeSektor] = se2; }
+                // Kode produk: dari nomor rekening baris ini (baris agunan juga berisi nomor rekening kontraknya)
+                string kodePr = CKPNLibrary.Data.KodeProduk.Dari(rk);
+                if (kodePr.Length == 0) kodePr = "(kosong)";
+                Segmen pr;
+                if (!h.Produk.TryGetValue(kodePr, out pr)) { pr = new Segmen { Kode = kodePr, Ada = true }; h.Produk[kodePr] = pr; }
                 // PPKA dijumlah untuk semua baris berkualitas (sama seperti CONTROL PPKA di Dashboard)
                 s.PPKA[kual] += ppkaArr[i];
                 kt.PPKA[kual] += ppkaArr[i];
                 gu.PPKA[kual] += ppkaArr[i];
                 se2.PPKA[kual] += ppkaArr[i];
+                pr.PPKA[kual] += ppkaArr[i];
                 if (string.IsNullOrEmpty(namaArr[i])) continue;   // baris agunan
                 s.OS[kual]  += osArr[i];
                 s.EAD[kual] += eadArr[i];
@@ -469,6 +501,12 @@ namespace CKPNLibrary.Modules
                 se2.OS[kual]  += osArr[i];
                 se2.EAD[kual] += eadArr[i];
                 se2.Debitur++;
+                pr.OS[kual]  += osArr[i];
+                pr.EAD[kual] += eadArr[i];
+                pr.Debitur++;
+                Dictionary<string, double> perKCp;
+                if (!h.ProdukKC.TryGetValue(kodePr, out perKCp)) { perKCp = new Dictionary<string, double>(); h.ProdukKC[kodePr] = perKCp; }
+                perKCp[kode] = (perKCp.ContainsKey(kode) ? perKCp[kode] : 0) + osArr[i];
                 Dictionary<string, double> perKCs;
                 if (!h.SektorKC.TryGetValue(kodeSektor, out perKCs)) { perKCs = new Dictionary<string, double>(); h.SektorKC[kodeSektor] = perKCs; }
                 perKCs[kode] = (perKCs.ContainsKey(kode) ? perKCs[kode] : 0) + osArr[i];

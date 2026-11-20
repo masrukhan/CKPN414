@@ -291,10 +291,11 @@ namespace CKPNLibrary.Data
                 return hasil;
             }
             var ada = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var d in SandiKantor.Daftar())
+            bool produk = m.Id == ModeHitung.Produk;
+            foreach (var d in produk ? KodeProduk.Daftar() : SandiKantor.Daftar())
             {
                 ada.Add((string)d["kode"]);
-                d["label"] = "Sandi " + d["kode"];
+                d["label"] = (produk ? "Produk " : "Sandi ") + d["kode"];
                 hasil.Add(d);
             }
             try
@@ -308,7 +309,7 @@ namespace CKPNLibrary.Data
                                 if (k.Length > 0 && ada.Add(k))
                                     hasil.Add(new Dictionary<string, object>
                                     {
-                                        { "kode", k }, { "label", "Sandi " + k }, { "nama", "" }, { "rekening", 0 },
+                                        { "kode", k }, { "label", (produk ? "Produk " : "Sandi ") + k }, { "nama", "" }, { "rekening", 0 },
                                         { "rincian", new Dictionary<string, object>() }, { "tanggal", "" }, { "file", "" }
                                     });
             }
@@ -349,13 +350,14 @@ namespace CKPNLibrary.Data
                 {
                     string k = (string)u["kode"];
                     int nRek = u["rekening"] == null ? 0 : Convert.ToInt32(u["rekening"]);
-                    bool wajib = u.ContainsKey("wajib") && (bool)u["wajib"];
+                    bool wajib = (u.ContainsKey("wajib") && (bool)u["wajib"]) ||
+                                 (u.ContainsKey("wajibIsi") && (bool)u["wajibIsi"]);   // mode produk: termasuk produk lama di data hapus buku
                     string nm;
                     // Sandi tanpa rekening di template terakhir boleh tidak dimasukkan (kantor tutup / sandi lama)
                     if (wajib || nRek > 0 || (peta.TryGetValue(k, out nm) && !string.IsNullOrWhiteSpace(nm))) semuaUnit.Add(k);
                 }
                 if (semuaUnit.Count == 0)
-                    throw new InvalidOperationException("Belum ada sandi kantor. Pindai template APOLLO (Master!D14) dari editor susunan grup terlebih dahulu.");
+                    throw new InvalidOperationException("Belum ada " + mode.NamaUnit + ". Pindai template APOLLO (Master!D14) dari editor susunan grup terlebih dahulu.");
             }
 
             var grup = new List<Grup>();
@@ -365,7 +367,8 @@ namespace CKPNLibrary.Data
                 string nama;
                 if (!peta.TryGetValue(kc, out nama) || string.IsNullOrWhiteSpace(nama))
                     throw new InvalidOperationException((mode.Utama ? "Kode " + kc : ModeHitung.UnitTetap(mode) != null
-                        ? Kapital(mode.NamaUnit) + " " + ModeHitung.NamaUnitKode(mode, kc) + " (" + kc + ")" : "Sandi kantor " + kc) +
+                        ? Kapital(mode.NamaUnit) + " " + ModeHitung.NamaUnitKode(mode, kc) + " (" + kc + ")"
+                        : (mode.Id == ModeHitung.Produk ? "Kode produk " : "Sandi kantor ") + kc) +
                         " belum masuk grup mana pun.");
                 nama = nama.Trim();
                 Grup g;
@@ -545,7 +548,24 @@ namespace CKPNLibrary.Data
             bool susunanDitetapkan = susunan != null;
             if (susunan == null) susunan = SusunanBawaan();
             hasil["susunanDitetapkan"] = susunanDitetapkan;
-            hasil["unitSusunan"] = UnitSusunan();
+            var unitS = UnitSusunan();
+            hasil["unitSusunan"] = unitS;
+            if (ModeHitung.Aktif.Id == ModeHitung.Produk)
+            {
+                var pola = KodeProduk.Pola;
+                hasil["polaProduk"] = new Dictionary<string, object> { { "posisi", pola.Posisi }, { "panjang", pola.Panjang } };
+                // Kode produk hasil pindai terakhir (berjalan maupun produk lama di KC2900) yang belum masuk grup mana pun
+                // → panel menampilkannya sebagai daftar tindak lanjut; pipeline juga menolak menghitung.
+                var tercakupP = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                if (susunanDitetapkan) foreach (var gP in susunan) foreach (var kP in gP.KodeKC.Split(',')) tercakupP.Add(kP);
+                var belumP = new List<object>();
+                foreach (var uP in unitS)
+                {
+                    bool wajibP = uP.ContainsKey("wajibIsi") && (bool)uP["wajibIsi"];
+                    if (wajibP && !tercakupP.Contains((string)uP["kode"])) belumP.Add(uP);
+                }
+                hasil["produkBelumGrup"] = belumP;
+            }
             hasil["susunanTahun"] = sumberTahun;
             hasil["susunanDasar"] = susunan.Count > 0 ? susunan[0].Dasar : "";
             hasil["metode"] = peng == null ? null : peng.Metode;
@@ -707,10 +727,12 @@ namespace CKPNLibrary.Data
         // =================================================================
 
         /// <summary>
-        /// Posisi pertama yang dianggap transisi PSAK 414: CKPN posisi Desember 2026
-        /// menjadi saldo pembukaan 1 Januari 2027. Periode sebelumnya = simulasi (parallel run).
+        /// Posisi pertama yang dianggap transisi PSAK 414: CKPN posisi Desember 2028
+        /// menjadi saldo pembukaan 1 Januari 2029. Periode sebelumnya = simulasi (parallel run).
+        /// Diundur dari Desember 2026 (awal 2027) karena penerapan CKPN di BPRS diundur ke 1 Januari 2029,
+        /// sehingga seluruh periode 2026–2028 menjadi uji paralel dan tidak dibukukan.
         /// </summary>
-        public const string AwalTransisi = "2026-12-01";
+        public const string AwalTransisi = "2028-12-01";
 
         public static Dictionary<string, object> Konsolidasi(string tanggal)
         {
@@ -840,8 +862,8 @@ namespace CKPNLibrary.Data
         }
 
         /// <summary>
-        /// transisi : jurnal 1x — posisi pertama ≥ Desember 2026 (saldo awal 2027) yang belum punya
-        ///            jurnal transisi Final sebelumnya. Periode sebelum Desember 2026 juga dihitung
+        /// transisi : jurnal 1x — posisi pertama ≥ Desember 2028 (saldo awal 2029) yang belum punya
+        ///            jurnal transisi Final sebelumnya. Periode sebelum Desember 2028 juga dihitung
         ///            sebagai transisi dengan tanda "simulasi" (parallel run, tidak dibukukan).
         /// reguler  : periode sesudah jurnal transisi.
         /// </summary>

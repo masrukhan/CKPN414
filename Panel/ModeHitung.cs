@@ -43,7 +43,7 @@ namespace CKPNLibrary.Panel
             public bool Utama;
         }
 
-        public const string Akad = "akad", Kantor = "kantor", Penggunaan = "penggunaan", Sektor = "sektor";
+        public const string Akad = "akad", Kantor = "kantor", Penggunaan = "penggunaan", Sektor = "sektor", Produk = "produk";
 
         public static readonly Mode[] Semua =
         {
@@ -72,6 +72,15 @@ namespace CKPNLibrary.Panel
                 Keterangan = "Grup disusun dari sandi sektor ekonomi (kolom T) yang diringkas menjadi 10 kelompok: pertanian, industri, " +
                              "konstruksi & developer, perdagangan, akomodasi, transportasi, jasa, dan tiga kelompok konsumtif penghasilan tetap. " +
                              "Semua jenis akad dihitung bersama."
+            },
+            // Mode per produk: kode produk diambil dari nomor rekening/kontrak (kolom J KC0600–KC1100, terisi juga di
+            // baris agunan; kolom H KC2900) dengan pola posisi + panjang yang diatur user (KodeProduk.Pola).
+            new Mode
+            {
+                Id = Produk, Nama = "Per produk pembiayaan", NamaPendek = "Per produk", FileDb = "ckpn_produk.db",
+                KolomFilter = "J", NamaUnit = "kode produk",
+                Keterangan = "Grup disusun dari kode produk yang dibaca dari nomor rekening (mis. 3 digit awal: 451 Murabahah konsumsi, " +
+                             "456 Murabahah modal kerja). Kode produk lama di data hapus buku dipetakan ke grup oleh user."
             },
         };
 
@@ -120,6 +129,7 @@ namespace CKPNLibrary.Panel
         {
             if (m != null && m.Id == Penggunaan) return NormPenggunaan(v);
             if (m != null && m.Id == Sektor) return SektorEkonomi.NormKelompok(v);
+            if (m != null && m.Id == Produk) return KodeProduk.Dari(v);   // isian sel = nomor rekening → kode produk
             return NormSandi(v);
         }
 
@@ -367,7 +377,9 @@ namespace CKPNLibrary.Panel
             var hasil = new List<string>();
             foreach (var bagian in (kode ?? "").Split(new[] { ',', ';', ' ', '|' }, StringSplitOptions.RemoveEmptyEntries))
             {
-                string k = m != null && m.Utama ? bagian.Trim().ToUpperInvariant() : NormUnit(m, bagian);
+                // Mode produk: bagian kode grup sudah berupa kode produk (bukan nomor rekening) → jangan dipotong lagi
+                string k = m != null && m.Utama ? bagian.Trim().ToUpperInvariant()
+                         : m != null && m.Id == Produk ? KodeProduk.NormKode(bagian) : NormUnit(m, bagian);
                 if (k.Length > 0 && !hasil.Contains(k)) hasil.Add(k);
             }
             if (m != null && m.Utama)

@@ -192,6 +192,7 @@
         <button type="button" data-dim="kantor" aria-pressed="false">Kantor</button>
         <button type="button" data-dim="penggunaan" aria-pressed="false">Jenis penggunaan</button>
         <button type="button" data-dim="sektor" aria-pressed="false">Sektor ekonomi</button>
+        <button type="button" data-dim="produk" aria-pressed="false">Kode produk</button>
       </div>
       <div id="ov-cara" class="kotak-cara teks-kecil" hidden></div>
       <div class="baris-antara ov-tampil-baris" id="ov-tampil-baris" hidden>
@@ -1034,9 +1035,21 @@
       <p class="teks-kecil" id="susunan-pengantar">Beri nama grup untuk setiap kode segmen. Kode dengan nama grup yang sama dihitung bersama (PD &amp; LGD gabungan). Berlaku untuk seluruh periode di tahun ini.</p>
       <!-- Tahap 8: mode per kantor — daftar sandi dari kolom B template APOLLO -->
       <div id="susunan-pindai-baris" class="baris-tombol" hidden>
+        <!-- Mode per produk: pola identifikasi kode produk dari nomor rekening -->
+        <span id="susunan-pola-produk" class="pola-produk" hidden>
+          <label for="pola-posisi">Kode produk: digit ke-</label>
+          <input id="pola-posisi" class="isian isian-pendek" type="number" min="1" max="20" value="1">
+          <label for="pola-panjang">sepanjang</label>
+          <input id="pola-panjang" class="isian isian-pendek" type="number" min="1" max="10" value="3">
+          <span>digit</span>
+          <span id="pola-contoh" class="teks-kecil"></span>
+        </span>
         <button id="btn-susunan-pindai" class="tombol-sekunder" type="button">Pindai sandi kantor dari template</button>
         <span id="susunan-pindai-hasil" class="teks-kecil" role="status"></span>
       </div>
+      <datalist id="susunan-nama-grup"></datalist>
+      <!-- Mode produk: kode produk wajib (berjalan / produk lama di hapus buku) yang belum diberi grup -->
+      <div id="susunan-belum" class="peringatan-box" role="status" hidden></div>
       <div id="susunan-isi" class="susunan-isi"></div>
       <div class="baris-tombol">
         <button id="btn-susunan-perkc" class="tombol-sekunder" type="button">Satu grup per kode</button>

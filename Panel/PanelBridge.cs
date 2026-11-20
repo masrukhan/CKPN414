@@ -355,6 +355,50 @@ namespace CKPNLibrary.Panel
                         });
                         break;
 
+                    // Mode per produk: atur pola (posisi + panjang) lalu pindai kode produk dari kolom J KC0600–KC1100 dan
+                    // kolom H KC2900 template bulan berjalan.
+                    case "pindaiKodeProduk":
+                        JalankanDiExcel(host, id, app =>
+                        {
+                            if (CKPNPipeline.SedangBerjalan || BatchGrup.Aktif)
+                                throw new InvalidOperationException("Perhitungan sedang berjalan. Coba lagi setelah selesai.");
+                            string infoTulisP;
+                            if (!Database.BolehMenulis(out infoTulisP)) throw new InvalidOperationException(infoTulisP);
+                            Excel.Workbook wbP = CariWorkbookAplikasi(app);
+                            if (wbP == null) throw new InvalidOperationException("Workbook aplikasi CKPN tidak sedang terbuka.");
+                            bool polaBerubah = false;
+                            if (Ambil(args, "posisi") != null && Ambil(args, "panjang") != null)
+                                polaBerubah = KodeProduk.AturPola(Convert.ToInt32(Ambil(args, "posisi")), Convert.ToInt32(Ambil(args, "panjang")));
+                            DateTime tP;
+                            string tglP = ParameterMaster.BacaTanggalLaporan(wbP, out tP) ? tP.ToString("yyyy-MM-dd") : "";
+                            CKPNPipeline.MatikanGhostingSekali();
+                            var hasilP = KodeProduk.Pindai(app, ParameterMaster.BacaPathTemplate(wbP), tglP);
+                            try { wbP.Activate(); } catch { }
+                            KodeProduk.Simpan(hasilP);
+                            int nPemb = 0, nLama = 0;
+                            foreach (var kv in hasilP.Kode) { if (kv.Value.Rekening > 0) nPemb++; else if (kv.Value.RekHb.Count > 0) nLama++; }
+                            return new Dictionary<string, object>
+                            {
+                                { "unit", Periode.UnitSusunan() }, { "kosong", hasilP.Kosong }, { "hbKosong", hasilP.HbKosong },
+                                { "jumlahProduk", nPemb }, { "jumlahLama", nLama }, { "polaBerubah", polaBerubah },
+                                { "posisi", KodeProduk.Pola.Posisi }, { "panjang", KodeProduk.Pola.Panjang },
+                                { "file", System.IO.Path.GetFileName(hasilP.File) }, { "tanggal", tglP }
+                            };
+                        });
+                        break;
+
+                    case "rekeningHbProduk":
+                        Balas(host, id, KodeProduk.RekeningHapusBuku(Convert.ToString(Ambil(args, "kode") ?? "")));
+                        break;
+
+                    case "simpanNamaProduk":
+                        var namaP = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                        var npMap = Ambil(args, "nama") as Dictionary<string, object>;
+                        if (npMap != null) foreach (var kv in npMap) namaP[kv.Key] = Convert.ToString(kv.Value);
+                        KodeProduk.SimpanNama(namaP);
+                        Balas(host, id, Periode.UnitSusunan());
+                        break;
+
                     // Rekomendasi susunan grup & Top-N: baca CIF + baki debet per unit dari template Master!D14.
                     // Hanya membaca (tidak perlu hak pengirim); panel yang menyusun opsi grup & Top-N.
                     case "rekomendasiSusunan":

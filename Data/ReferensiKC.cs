@@ -332,7 +332,9 @@ namespace CKPNLibrary.Data
                     if (Filter != null)
                         LogProses.Catat("LGD ER - Referensi KC", "Saringan " + Filter.Label, _tanpaSandi.Count == 0 ? LogProses.OK : LogProses.Peringatan, LogProses.R()
                             .Tambah("Rekening KC2900 di luar grup (tidak dihitung)", _luarKantor.Count - _tanpaSandi.Count)
-                            .Tambah(Filter.ModeId == ModeHitung.Kantor
+                            .Tambah(Filter.ModeId == ModeHitung.Produk
+                                ? "Rekening tanpa kode produk (nomor rekening KC2900 kolom H lebih pendek dari pola " + KodeProduk.Pola.Teks + ")"
+                                : Filter.ModeId == ModeHitung.Kantor
                                 ? "Rekening tanpa sandi kantor (KC2900 kolom B kosong/0 dan rekening tidak ditemukan di KC0600–KC1100)"
                                 : "Rekening tanpa " + NamaUnitMode(Filter.ModeId) + " (tidak ditemukan di KC0600–KC1100 dan belum diisi di Pengaturan)", _tanpaSandi.Count)
                             .TambahBila(_tanpaSandi.Count > 0, "Baki tanpa " + NamaUnitMode(Filter.ModeId), _bakiTanpaSandi)
@@ -1003,6 +1005,9 @@ namespace CKPNLibrary.Data
         {
             if (modeId == ModeHitung.Penggunaan) { string s; return p.TentukanGuna(norm, out s); }
             if (modeId == ModeHitung.Sektor) { string s; return p.Sektor.Tentukan(norm, out s); }
+            // Mode produk: kode produk diambil dari nomor rekening hapus buku itu sendiri. Yang dikembalikan nomor
+            // rekeningnya (bukan kodenya) karena FilterLingkup.Cocok memotong kode dari isian sel rekening.
+            if (modeId == ModeHitung.Produk) return KodeProduk.Dari(norm).Length == 0 ? "" : norm;
             return r == null ? "" : r.SandiEfektif;
         }
 

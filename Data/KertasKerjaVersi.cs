@@ -1018,7 +1018,7 @@ namespace CKPNLibrary.Data
             ws.Rumus(33, 3, "=IF(C32>0,\"PPKA lebih besar dari CKPN\",IF(C32<0,\"PPKA lebih kecil dari CKPN\",\"PPKA = CKPN\"))",
                      sel > 0 ? "PPKA lebih besar dari CKPN" : sel < 0 ? "PPKA lebih kecil dari CKPN" : "PPKA = CKPN", G.Biasa);
             ws.Teks(34, 1, "Nilai penyesuaian"); ws.Rumus(34, 3, "=ABS(C32)", Math.Abs(sel), G.Angka);
-            ws.Teks(35, 1, "Jurnal transisi (1x - awal 2027)");
+            ws.Teks(35, 1, "Jurnal transisi (1x - awal 2029)");
             ws.Rumus(35, 3, "=IF(C32<0,\"Db. Laba - Kr. CKPN (bentuk tambahan CKPN)\",IF(C32>0,\"Db. CKPN - Kr. Saldo Laba (pemulihan kelebihan)\",\"Tidak ada jurnal\"))",
                      sel < 0 ? "Db. Laba - Kr. CKPN (bentuk tambahan CKPN)" : sel > 0 ? "Db. CKPN - Kr. Saldo Laba (pemulihan kelebihan)" : "Tidak ada jurnal", G.Biasa);
             ws.Teks(36, 1, "Jurnal reguler (periode berikutnya)");

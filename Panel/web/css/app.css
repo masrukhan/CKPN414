@@ -1039,3 +1039,12 @@ select.ref-diubah { border-color: var(--aksen); box-shadow: 0 0 0 1px var(--akse
 
 /* v17: peringatan baris manual LGD CS untuk semua grup */
 .teks-peringatan { color: var(--peringatan); }
+
+/* Mode per produk: pola kode produk & penanda produk lama */
+.pola-produk { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; width: 100%; }
+.pola-produk label, .pola-produk span { font-size: 12px; }
+.isian-pendek { width: 56px; }
+.kode-lama { color: var(--peringatan); }
+.belum-baris { padding: 6px 0; border-top: 1px solid rgba(0,0,0,.08); }
+.belum-baris:first-of-type { border-top: 0; }
+.daftar-hb { margin-top: 4px; max-height: 220px; overflow: auto; }

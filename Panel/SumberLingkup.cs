@@ -61,7 +61,9 @@ namespace CKPNLibrary.Panel
                 l.Sort(StringComparer.OrdinalIgnoreCase);
                 tambahanKunci = Hash(string.Join(",", l.ToArray()));
             }
-            string kunci = full + "|" + fi.Length + "@" + fi.LastWriteTimeUtc.Ticks + "|" + f.ModeId + ":" + f.Kode + "|" + tambahanKunci;
+            string kunci = full + "|" + fi.Length + "@" + fi.LastWriteTimeUtc.Ticks + "|" + f.ModeId + ":" + f.Kode + "|" + tambahanKunci +
+                           // mode produk: kode yang sama bisa berarti lain bila pola posisi/panjang diganti → salinan lama tidak dipakai
+                           (f.ModeId == ModeHitung.Produk ? "|pola" + Data.KodeProduk.Pola.Teks : "");
             string nama = System.IO.Path.GetFileNameWithoutExtension(full) + "__" + f.ModeId + "_" + f.Kode.Replace(",", "-") +
                           (tambahanKunci.Length > 0 ? "_m" + tambahanKunci.Substring(0, 8) : "") + "_" + Hash(full).Substring(0, 6) +
                           System.IO.Path.GetExtension(full);

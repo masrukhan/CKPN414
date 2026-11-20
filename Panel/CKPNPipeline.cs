@@ -517,6 +517,7 @@ namespace CKPNLibrary.Panel
             }
             int kosong;
             string path = ParameterMaster.BacaPathTemplate(wb);
+            if (ModeHitung.Aktif.Id == ModeHitung.Produk) return CekCakupanProduk(app, wb, path, tgl, tercakup, sumber);
             var diTemplate = Data.SandiKantor.SandiTemplate(app, path, tgl.ToString("yyyy-MM-dd"), out kosong);
             try { wb.Activate(); } catch { }
             var luar = diTemplate.FindAll(x => !tercakup.Contains(x));
@@ -531,6 +532,41 @@ namespace CKPNLibrary.Panel
             LogProses.CatatPanel(tgl.ToString("yyyy-MM-dd"), "Mode per kantor", "Cakupan sandi kantor", LogProses.Gagal, LogProses.R()
                 .Tambah("Template", path).TambahBila(luar.Count > 0, "Sandi di luar susunan", string.Join(", ", luar.ToArray()))
                 .TambahBila(kosong > 0, "Baris tanpa sandi", kosong));
+            return string.Join("\n", pesan.ToArray());
+        }
+
+        /// <summary>
+        /// Mode per produk: setiap kode produk di template periode — pembiayaan berjalan MAUPUN produk lama yang hanya ada
+        /// di data hapus buku (KC2900) — wajib masuk salah satu grup. Bila tidak, perhitungan ditolak supaya saldo/
+        /// rekening hapus buku produk itu tidak hilang dari semua grup.
+        /// </summary>
+        private static string CekCakupanProduk(Excel.Application app, Excel.Workbook wb, string path, DateTime tgl,
+                                               HashSet<string> tercakup, int sumber)
+        {
+            List<string> pemb, hb;
+            int kosong;
+            Data.KodeProduk.KodeTemplate(app, path, tgl.ToString("yyyy-MM-dd"), out pemb, out hb, out kosong);
+            try { wb.Activate(); } catch { }
+            var luar = pemb.FindAll(x => !tercakup.Contains(x));
+            var luarHb = hb.FindAll(x => !tercakup.Contains(x));
+            if (luar.Count == 0 && luarHb.Count == 0 && kosong == 0) return null;
+
+            var pesan = new List<string>();
+            string file = System.IO.Path.GetFileName(path);
+            if (luar.Count > 0)
+                pesan.Add("Kode produk " + string.Join(", ", luar.ToArray()) + " ada di pembiayaan template " + file +
+                          " tetapi belum masuk grup mana pun di susunan " + sumber + ". Tambahkan ke susunan grup (⚙ Pengaturan) lalu hitung ulang.");
+            if (luarHb.Count > 0)
+                pesan.Add("Kode produk lama " + string.Join(", ", luarHb.ToArray()) + " hanya ada di data hapus buku (KC2900) dan belum dipetakan ke grup. " +
+                          "Pilih grupnya di susunan grup (⚙ Pengaturan) supaya rekening hapus buku itu ikut LGD Expected Recoveries.");
+            if (kosong > 0)
+                pesan.Add(kosong + " baris pembiayaan di template tidak memiliki nomor rekening (kolom J) yang cukup panjang untuk pola kode produk " +
+                          Data.KodeProduk.Pola.Teks + ". Lengkapi template atau ubah pola kode produk.");
+            LogProses.CatatPanel(tgl.ToString("yyyy-MM-dd"), "Mode per produk", "Cakupan kode produk", LogProses.Gagal, LogProses.R()
+                .Tambah("Template", path).Tambah("Pola (posisi,panjang)", Data.KodeProduk.Pola.Teks)
+                .TambahBila(luar.Count > 0, "Kode pembiayaan di luar susunan", string.Join(", ", luar.ToArray()))
+                .TambahBila(luarHb.Count > 0, "Kode hapus buku di luar susunan", string.Join(", ", luarHb.ToArray()))
+                .TambahBila(kosong > 0, "Baris tanpa kode produk", kosong));
             return string.Join("\n", pesan.ToArray());
         }
 

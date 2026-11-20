@@ -36,8 +36,21 @@ namespace CKPNLibrary.Panel
         public const string Format = "CKPN414-LISENSI-1";
         public const string Pengembang = "Rukhan · PT BPR Syariah Barokah Dana Sejahtera";
 
-        /// <summary>Akhir masa trial tanpa file lisensi (inklusif).</summary>
-        public static readonly DateTime TrialSampai = new DateTime(2026, 12, 31);
+        /// <summary>
+        /// Akhir masa trial tanpa file lisensi (inklusif).
+        /// Diundur dari 31 Des 2026 ke 31 Des 2029 karena penerapan CKPN PSAK 414 di BPRS diundur ke
+        /// 1 Jan 2029: bank perlu masa persiapan, uji paralel, dan tahun penerapan perdana tanpa
+        /// harus memutuskan pembelian lebih dulu.
+        /// </summary>
+        public static readonly DateTime TrialSampai = new DateTime(2029, 12, 31);
+
+        /// <summary>
+        /// Jumlah hari sebelum <see cref="TrialSampai"/> ketika status trial mulai ditampilkan di panel
+        /// (lencana, banner pemberitahuan, keterangan di dokumen). Sebelum itu tampilan dibuat bersih
+        /// supaya tidak mengganggu pemakaian sehari-hari &amp; pelatihan. Keterangan lengkap trial tetap
+        /// selalu ada di Pengaturan › Tentang &amp; lisensi.
+        /// </summary>
+        public const int PemberitahuanTrialHari = 90;
 
         /// <summary>
         /// Kunci publik penerbit (output alat-lisensi\BuatKunci.ps1 → kunci_publik.xml).
@@ -235,6 +248,10 @@ namespace CKPNLibrary.Panel
                 { "lisensiBerakhir", s.LisensiBerakhir }, { "file", s.File }, { "masalah", s.Masalah },
                 { "trialSampai", TrialSampai.ToString("yyyy-MM-dd") },
                 { "sisaHariTrial", Math.Max(0, (int)(TrialSampai - s.Hari).TotalDays + 1) },
+                // Satu sumber keputusan untuk panel: trial baru "terlihat" mulai 90 hari sebelum berakhir.
+                { "trialTampak", s.Edisi == Trial && (TrialSampai - s.Hari).TotalDays + 1 <= PemberitahuanTrialHari },
+                { "pemberitahuanTrialHari", PemberitahuanTrialHari },
+                { "trialTampakMulai", TrialSampai.AddDays(1 - PemberitahuanTrialHari).ToString("yyyy-MM-dd") },
                 { "sisaHariLisensi", s.BerlakuSampai.HasValue ? (object)Math.Max(0, (int)(s.BerlakuSampai.Value - s.Hari).TotalDays + 1) : null },
                 { "hari", s.Hari.ToString("yyyy-MM-dd") },
                 { "kunciTerpasang", !KunciPublikXml.Contains("GANTI") },

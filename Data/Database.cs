@@ -25,7 +25,7 @@ namespace CKPNLibrary.Data
     /// </summary>
     internal static class Database
     {
-        public const int VersiSkema = 17;
+        public const int VersiSkema = 18;
         private static readonly HashSet<string> _skemaSiap = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly object _kunci = new object();
 
@@ -480,7 +480,18 @@ namespace CKPNLibrary.Data
                     }
                     CatatanLog.Tulis("Database: migrasi ke skema v17 selesai (" + Path.GetFileName(path) + ")");
                 }
-                // Migrasi versi berikutnya ditambahkan di sini: if (versi < 18) { ... }
+                // ---- v18: mode per produk — daftar kode produk hasil pindai template (tabel bersama) ----
+                if (versi < 18)
+                {
+                    using (var tx = con.BeginTransaction())
+                    {
+                        if (utama) foreach (var sql in SkemaV18) Exec(con, sql);
+                        Exec(con, "INSERT OR REPLACE INTO meta(kunci,nilai) VALUES('versi_skema','18')");
+                        tx.Commit();
+                    }
+                    CatatanLog.Tulis("Database: migrasi ke skema v18 selesai (" + Path.GetFileName(path) + ")");
+                }
+                // Migrasi versi berikutnya ditambahkan di sini: if (versi < 19) { ... }
                 // (perubahan pada TabelBersama: jalankan hanya bila utama == true)
 
                 if (!utama)
@@ -860,6 +871,27 @@ namespace CKPNLibrary.Data
         // v17: grup tempat penyesuaian LGD CS berlaku.
         //   grup      : kode grup (run_grup.kode_kc, mis. "KC0600" atau "KC0700,KC0800"); NULL = semua grup
         //   mode_grup : id mode hitung saat grup dicatat (kode grup tiap mode berbeda arti)
+        // v18: kode produk pembiayaan (diambil dari nomor rekening/kontrak) untuk mode per produk.
+        //   rekening    : jumlah rekening pembiayaan di template terakhir (0 = tidak ada di bulan berjalan)
+        //   rincian     : JSON KC → jumlah rekening
+        //   hb, baki_hb : jumlah rekening & baki debet di KC2900 (hapus buku) template terakhir
+        //   contoh      : contoh nomor rekening (membantu user mengenali produk lama)
+        private static readonly string[] SkemaV18 =
+        {
+            @"CREATE TABLE IF NOT EXISTS kode_produk (
+                kode      TEXT PRIMARY KEY,
+                nama      TEXT,
+                rekening  INTEGER,
+                rincian   TEXT,
+                os        REAL,
+                hb        INTEGER,
+                baki_hb   REAL,
+                contoh    TEXT,
+                tanggal   TEXT,
+                file      TEXT,
+                waktu     TEXT)"
+        };
+
         private static readonly string[] SkemaV17 =
         {
             "ALTER TABLE penyesuaian_lgdcs ADD COLUMN grup TEXT",
